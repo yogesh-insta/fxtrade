@@ -14,11 +14,13 @@ import (
 	"github.com/ym/fxtrade/internal/config"
 	"github.com/ym/fxtrade/internal/execution"
 	"github.com/ym/fxtrade/internal/health"
+	"github.com/ym/fxtrade/internal/journal"
 	"github.com/ym/fxtrade/internal/monitor"
 	"github.com/ym/fxtrade/internal/notify"
 	"github.com/ym/fxtrade/internal/oanda"
 	"github.com/ym/fxtrade/internal/risk"
 	"github.com/ym/fxtrade/internal/sentiment"
+	"github.com/ym/fxtrade/internal/state"
 	"github.com/ym/fxtrade/internal/strategy"
 )
 
@@ -40,14 +42,25 @@ func main() {
 	stream := oanda.NewStream(cfg.OANDA.StreamBaseURL(), cfg.OANDA.AccountID, cfg.OANDA.Token)
 	notifier := notify.New(cfg.Email)
 	rm := risk.NewManager(cfg.Risk)
+	stateStore := state.NewStore(cfg.State.File)
+	persisted, _ := stateStore.Load()
+
+	tradeJournal := journal.New(cfg.Strategy.JournalDir)
+	tradeRecorder := state.NewTradeRecorder(stateStore, tradeJournal)
+
+	var sentimentWorker *sentiment.Worker
+	var sentimentCache *sentiment.Cache
+
 	exec := execution.NewExecutor(client, rm, notifier)
+	exec.SetCloseHook(func(tradeID, correlationID string, pl float64) {
+		tradeRecorder.OnClose(tradeID, correlationID, pl, rm, sentimentCache)
+	})
 	posMon := monitor.New(client, notifier, 30*time.Second)
 	healthSrv := health.NewServer()
 	healthSrv.SetHaltedCheck(rm.IsHalted)
 	healthSrv.SetKillHandler(rm.ActivateKillSwitch)
 	healthSrv.SetOpenPositions(posMon.OpenCount)
 
-	var sentimentWorker *sentiment.Worker
 	if cfg.SentimentEnabled() {
 		sw, err := sentiment.NewWorker(cfg, client, notifier)
 		if err != nil {
@@ -55,6 +68,11 @@ func main() {
 			os.Exit(1)
 		}
 		sentimentWorker = sw
+		sentimentCache = sentimentWorker.Cache()
+		if !persisted.SavedAt.IsZero() {
+			state.ApplySnapshot(persisted, rm, sentimentCache)
+			slog.Info("state restored", "saved_at", persisted.SavedAt, "trades_this_month", persisted.Risk.TradesThisMonth)
+		}
 		healthSrv.SetSentimentStatus(func() (bool, string, float64, time.Time) {
 			sig, ok := sentimentWorker.Cache().Current(time.Now())
 			if !ok {
@@ -63,14 +81,22 @@ func main() {
 			return true, sig.Direction, sig.Confidence, sig.AnalyzedAt
 		})
 	} else {
+		if !persisted.SavedAt.IsZero() {
+			state.ApplySnapshot(persisted, rm, nil)
+			slog.Info("state restored", "saved_at", persisted.SavedAt)
+		}
 		slog.Warn("sentiment pipeline disabled", "hint", "add finnhub.api_key and llm.api_key to .credentials")
 	}
 
-	stratEngine := strategy.NewEngine(cfg, client, exec, rm, notifier, nil)
-	if sentimentWorker != nil {
-		stratEngine = strategy.NewEngine(cfg, client, exec, rm, notifier, sentimentWorker.Cache())
-	}
+	stratEngine := strategy.NewEngine(cfg, client, exec, rm, notifier, sentimentCache)
 	healthSrv.SetTradingMode(stratEngine.LastMode)
+
+	saveState := func() {
+		snap := state.BuildSnapshot(rm, sentimentCache, tradeRecorder.LastTrade())
+		if err := stateStore.Save(snap); err != nil {
+			slog.Warn("state save failed", "error", err)
+		}
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -79,6 +105,19 @@ func main() {
 		slog.Error("startup checks failed", "error", err)
 		os.Exit(1)
 	}
+
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				saveState()
+			}
+		}
+	}()
 
 	ticks := make(chan oanda.PriceUpdate, 64)
 	go func() {
@@ -121,6 +160,7 @@ func main() {
 	for {
 		select {
 		case <-ctx.Done():
+			saveState()
 			notifier.Send(ctx, "fxtrade: daemon stopping", "graceful shutdown")
 			slog.Info("shutting down")
 			return

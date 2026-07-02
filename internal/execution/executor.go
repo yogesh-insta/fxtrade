@@ -11,13 +11,18 @@ import (
 )
 
 type Executor struct {
-	client *oanda.Client
-	risk   *risk.Manager
-	notify notify.Notifier
+	client   *oanda.Client
+	risk     *risk.Manager
+	notify   notify.Notifier
+	onClose  func(tradeID, correlationID string, pl float64)
 }
 
 func NewExecutor(client *oanda.Client, rm *risk.Manager, n notify.Notifier) *Executor {
 	return &Executor{client: client, risk: rm, notify: n}
+}
+
+func (e *Executor) SetCloseHook(fn func(tradeID, correlationID string, pl float64)) {
+	e.onClose = fn
 }
 
 func (e *Executor) PlaceMarket(ctx context.Context, req risk.EntryRequest, params MarketOrderParams) (oanda.OrderResult, error) {
@@ -127,6 +132,9 @@ func (e *Executor) CloseTrade(ctx context.Context, tradeID, correlationID string
 	}
 
 	e.risk.RecordTradeClosed(pl)
+	if e.onClose != nil {
+		e.onClose(tradeID, correlationID, pl)
+	}
 	e.notify.Send(ctx, "fxtrade: position closed",
 		fmt.Sprintf("correlation_id=%s\ntrade_id=%s\nrealized_pl=%.2f\n", correlationID, tradeID, pl))
 	slog.Info("position closed", "correlation_id", correlationID, "trade_id", tradeID, "pl", pl)

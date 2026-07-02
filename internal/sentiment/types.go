@@ -40,6 +40,10 @@ func (s SentimentSignal) IsValid(now time.Time) bool {
 	return now.Before(s.ValidUntil())
 }
 
+func Empty() SentimentSignal {
+	return SentimentSignal{Direction: "FLAT", EventRisk: "low", Confidence: 0.5}
+}
+
 type RawData struct {
 	Headlines []Headline
 	Events    []CalendarEvent
