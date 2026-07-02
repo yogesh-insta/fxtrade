@@ -23,6 +23,7 @@ type Config struct {
 	RangeMode RangeModeConfig `json:"range_mode"`
 	TrendMode TrendModeConfig `json:"trend_mode"`
 	LLMGate   LLMGateConfig   `json:"llm_gate"`
+	State     StateConfig     `json:"state"`
 }
 
 type OANDAConfig struct {
@@ -87,6 +88,14 @@ func DefaultRiskConfig() RiskConfig {
 		MaxSpreadPips:           2.5,
 		HaltFile:                DefaultHaltFile,
 	}
+}
+
+type StateConfig struct {
+	File string `json:"file"`
+}
+
+func DefaultStateConfig() StateConfig {
+	return StateConfig{File: "data/state.json"}
 }
 
 func DefaultLLMConfig() LLMConfig {
@@ -199,6 +208,13 @@ func (c *Config) applyDefaults() {
 	}
 
 	applyStrategyDefaults(c)
+	applyStateDefaults(c)
+}
+
+func applyStateDefaults(c *Config) {
+	if c.State.File == "" {
+		c.State.File = "data/state.json"
+	}
 }
 
 func (c *Config) Validate() error {

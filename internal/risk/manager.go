@@ -27,14 +27,14 @@ type Manager struct {
 }
 
 type State struct {
-	DayStart        time.Time
-	WeekStart       time.Time
-	DailyPnL        float64
-	WeeklyPnL       float64
-	TradesThisMonth int
-	MonthKey        string
-	LastLossAt      time.Time
-	TradesOpened    int
+	DayStart        time.Time `json:"day_start"`
+	WeekStart       time.Time `json:"week_start"`
+	DailyPnL        float64   `json:"daily_pnl"`
+	WeeklyPnL       float64   `json:"weekly_pnl"`
+	TradesThisMonth int       `json:"trades_this_month"`
+	MonthKey        string    `json:"month_key"`
+	LastLossAt      time.Time `json:"last_loss_at,omitempty"`
+	TradesOpened    int       `json:"trades_opened"`
 }
 
 func NewManager(cfg config.RiskConfig) *Manager {
@@ -136,6 +136,17 @@ func (m *Manager) Snapshot() State {
 	defer m.mu.Unlock()
 	m.rollPeriods(time.Now())
 	return m.state
+}
+
+func (m *Manager) ExportState() State {
+	return m.Snapshot()
+}
+
+func (m *Manager) RestoreState(s State) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.state = s
+	m.rollPeriods(time.Now())
 }
 
 func (m *Manager) dailyLossLimit(balance float64) float64 {

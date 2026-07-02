@@ -34,6 +34,17 @@ func (c *Cache) History() []SentimentSignal {
 	return out
 }
 
+func (c *Cache) Restore(history []SentimentSignal) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.history = make([]SentimentSignal, len(history))
+	copy(c.history, history)
+	if len(history) > 0 {
+		copy := history[0]
+		c.signal = &copy
+	}
+}
+
 func (c *Cache) Get() (SentimentSignal, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
