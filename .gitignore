@@ -1,0 +1,12 @@
+.credentials
+.credentials.example
+!.credentials.example
+.env
+*.log
+/fxtrade
+/order-test
+/sentiment-test
+/strategy-test
+.DS_Store
+.halt
+logs/
