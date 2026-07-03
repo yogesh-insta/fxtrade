@@ -11,6 +11,7 @@ import (
 	"github.com/ym/fxtrade/internal/market"
 	"github.com/ym/fxtrade/internal/notify"
 	"github.com/ym/fxtrade/internal/oanda"
+	"github.com/ym/fxtrade/internal/schedule"
 )
 
 type Worker struct {
@@ -62,24 +63,11 @@ func (w *Worker) Instruments() []string {
 
 func (w *Worker) Run(ctx context.Context) {
 	interval := time.Duration(w.cfg.IntervalMinutes) * time.Minute
-	if interval <= 0 {
-		interval = 30 * time.Minute
-	}
-
-	slog.Info("sentiment worker started", "interval", interval, "instruments", w.instruments)
-	w.runOnce(ctx)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			slog.Info("sentiment worker stopping")
-			return
-		case <-ticker.C:
-			w.runOnce(ctx)
+	schedule.RunPeriodic(ctx, "sentiment worker", interval, func(cycleCtx context.Context) {
+		if _, err := w.runOnce(cycleCtx); err != nil {
+			slog.Warn("sentiment cycle finished with errors", "error", err)
 		}
-	}
+	})
 }
 
 // RunOnce runs one full cycle over all instruments and returns the primary
@@ -162,7 +150,7 @@ func (w *Worker) analyzeInstrument(ctx context.Context, instrument string, norm 
 
 	subject := fmt.Sprintf("fxtrade: %s sentiment %s (%.0f%%)", instrument, signal.Direction, signal.Confidence*100)
 	body := FormatEmailBody(signal, w.cfg.IntervalMinutes)
-	w.notifier.Send(ctx, subject, body)
+	notify.SendDigest(w.notifier, ctx, "sentiment:"+instrument, subject, body)
 
 	return signal, nil
 }
