@@ -34,11 +34,12 @@ type OANDAConfig struct {
 }
 
 type EmailConfig struct {
-	SMTPHost string `json:"smtp_host"`
-	SMTPPort int    `json:"smtp_port"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	AlertTo  string `json:"alert_to"`
+	SMTPHost            string `json:"smtp_host"`
+	SMTPPort            int    `json:"smtp_port"`
+	Username            string `json:"username"`
+	Password            string `json:"password"`
+	AlertTo             string `json:"alert_to"`
+	MinIntervalMinutes  int    `json:"min_interval_minutes"`
 }
 
 func (e EmailConfig) Enabled() bool {

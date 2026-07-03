@@ -15,6 +15,7 @@ import (
 	"github.com/ym/fxtrade/internal/notify"
 	"github.com/ym/fxtrade/internal/oanda"
 	"github.com/ym/fxtrade/internal/risk"
+	"github.com/ym/fxtrade/internal/schedule"
 	"github.com/ym/fxtrade/internal/sentiment"
 )
 
@@ -67,19 +68,10 @@ func RunAll(ctx context.Context, engines []*Engine, cfg *config.Config) {
 	for i, e := range engines {
 		instruments[i] = e.instrument
 	}
-	slog.Info("strategy engines started", "interval", interval, "enabled", cfg.Strategy.Enabled, "instruments", instruments)
-
-	runAllOnce(ctx, engines)
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			runAllOnce(ctx, engines)
-		}
-	}
+	slog.Info("strategy engines configured", "interval", interval, "enabled", cfg.Strategy.Enabled, "instruments", instruments)
+	schedule.RunPeriodic(ctx, "strategy engines", interval, func(cycleCtx context.Context) {
+		runAllOnce(cycleCtx, engines)
+	})
 }
 
 func runAllOnce(ctx context.Context, engines []*Engine) {
@@ -202,7 +194,7 @@ func (e *Engine) runCycle(ctx context.Context) {
 func (e *Engine) sendCycleReport(ctx context.Context, snap market.Snapshot, band RangeBand, sig sentiment.SentimentSignal, hasSig bool) {
 	subject := CycleEmailSubject(e.cycleSummary)
 	body := FormatCycleEmail(snap, band, e.cfg, e.cycleSummary, sig, hasSig)
-	e.notify.Send(ctx, subject, body)
+	notify.SendDigest(e.notify, ctx, "strategy:"+e.instrument, subject, body)
 }
 
 func (e *Engine) abortCycle(ctx context.Context, snap market.Snapshot, band RangeBand, reason string) {
