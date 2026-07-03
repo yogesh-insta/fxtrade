@@ -1,6 +1,6 @@
 # fxtrade
 
-AUD/USD trading daemon for **OANDA practice**. It streams live prices, runs a sentiment pipeline every 30 minutes, and trades when range/trend rules pass.
+Multi-instrument forex trading daemon for **OANDA practice** (default: AUD/USD + EUR/USD, set via `"instruments"` in `.credentials`). It streams live prices, runs a per-instrument sentiment pipeline every 30 minutes, and trades when range/trend rules pass. Account-wide 1-position cap and a correlation guard prevent doubled USD exposure across pairs.
 
 ---
 
@@ -49,9 +49,9 @@ Leave this terminal open. The daemon runs:
 
 | Component | What it does |
 |-----------|----------------|
-| Price stream | Live AUD/USD ticks from OANDA |
+| Price stream | Live ticks from OANDA for all configured instruments |
 | Sentiment | News + LLM every 30 min |
-| Strategy | Mode detection + orders every 5 min (if enabled) |
+| Strategy | Mode detection + orders every 30 min (if enabled) |
 | Health API | `http://localhost:8080/health` |
 | State | Saves to `data/state.json` every 5 min |
 

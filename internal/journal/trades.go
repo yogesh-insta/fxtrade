@@ -10,6 +10,7 @@ import (
 
 type TradeRecord struct {
 	At            time.Time `json:"at"`
+	Instrument    string    `json:"instrument,omitempty"`
 	TradeID       string    `json:"trade_id"`
 	CorrelationID string    `json:"correlation_id,omitempty"`
 	Direction     string    `json:"direction,omitempty"`

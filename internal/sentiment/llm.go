@@ -51,13 +51,13 @@ type chatResponse struct {
 	} `json:"choices"`
 }
 
-func (c *LLMClient) Analyze(ctx context.Context, payload []byte) (SentimentSignal, error) {
+func (c *LLMClient) Analyze(ctx context.Context, systemPrompt string, payload []byte) (SentimentSignal, error) {
 	reqBody := chatRequest{
 		Model:       c.cfg.Model,
 		Temperature: 0,
 		ResponseFormat: &responseFormat{Type: "json_object"},
 		Messages: []chatMessage{
-			{Role: "system", Content: SystemPrompt},
+			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: string(payload)},
 		},
 	}
@@ -107,5 +107,19 @@ func (c *LLMClient) Analyze(ctx context.Context, payload []byte) (SentimentSigna
 	if signal.ValidMinutes <= 0 {
 		signal.ValidMinutes = 30
 	}
+	signal.Confidence = normalizeConfidence(signal.Confidence)
 	return signal, nil
+}
+
+func normalizeConfidence(v float64) float64 {
+	if v > 1 {
+		if v <= 100 {
+			return v / 100
+		}
+		return 1
+	}
+	if v < 0 {
+		return 0
+	}
+	return v
 }

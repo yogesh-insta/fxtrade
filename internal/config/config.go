@@ -13,8 +13,9 @@ const (
 )
 
 type Config struct {
-	OANDA     OANDAConfig     `json:"oanda"`
-	Email     EmailConfig     `json:"email"`
+	OANDA       OANDAConfig     `json:"oanda"`
+	Instruments []string        `json:"instruments"`
+	Email       EmailConfig     `json:"email"`
 	Risk      RiskConfig      `json:"risk"`
 	Finnhub   FinnhubConfig   `json:"finnhub"`
 	LLM       LLMConfig       `json:"llm"`
@@ -142,6 +143,9 @@ func (c *Config) applyDefaults() {
 	if c.OANDA.Environment == "" {
 		c.OANDA.Environment = EnvPractice
 	}
+	if len(c.Instruments) == 0 {
+		c.Instruments = []string{"AUD_USD"}
+	}
 	if c.Email.SMTPPort == 0 && c.Email.SMTPHost != "" {
 		c.Email.SMTPPort = 587
 	}
@@ -226,6 +230,11 @@ func (c *Config) Validate() error {
 	}
 	if c.OANDA.Environment != EnvPractice && c.OANDA.Environment != EnvLive {
 		return fmt.Errorf("oanda.environment must be %q or %q", EnvPractice, EnvLive)
+	}
+	for _, inst := range c.Instruments {
+		if inst == "" {
+			return fmt.Errorf("instruments must not contain empty strings")
+		}
 	}
 	return nil
 }

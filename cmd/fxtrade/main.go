@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -43,19 +44,29 @@ func main() {
 	notifier := notify.New(cfg.Email)
 	rm := risk.NewManager(cfg.Risk)
 	stateStore := state.NewStore(cfg.State.File)
-	persisted, _ := stateStore.Load()
+	persisted, err := stateStore.Load()
+	if err != nil {
+		slog.Warn("state load failed", "error", err)
+	}
 
 	tradeJournal := journal.New(cfg.Strategy.JournalDir)
 	tradeRecorder := state.NewTradeRecorder(stateStore, tradeJournal)
 
+	instruments := cfg.Instruments
+	primaryInstrument := instruments[0]
+
 	var sentimentWorker *sentiment.Worker
-	var sentimentCache *sentiment.Cache
+	sentimentCaches := make(map[string]*sentiment.Cache, len(instruments))
+	for _, inst := range instruments {
+		sentimentCaches[inst] = sentiment.NewCache()
+	}
 
 	exec := execution.NewExecutor(client, rm, notifier)
-	exec.SetCloseHook(func(tradeID, correlationID string, pl float64) {
-		tradeRecorder.OnClose(tradeID, correlationID, pl, rm, sentimentCache)
+	posMon := monitor.New(client, rm, notifier, 30*time.Second)
+	exec.SetTradeAccounting(posMon)
+	posMon.SetOnTradeClosed(func(tradeID, correlationID string, pl float64) {
+		tradeRecorder.OnClose(tradeID, correlationID, pl, rm, sentimentCaches)
 	})
-	posMon := monitor.New(client, notifier, 30*time.Second)
 	healthSrv := health.NewServer()
 	healthSrv.SetHaltedCheck(rm.IsHalted)
 	healthSrv.SetKillHandler(rm.ActivateKillSwitch)
@@ -68,31 +79,64 @@ func main() {
 			os.Exit(1)
 		}
 		sentimentWorker = sw
-		sentimentCache = sentimentWorker.Cache()
-		if !persisted.SavedAt.IsZero() {
-			state.ApplySnapshot(persisted, rm, sentimentCache)
-			slog.Info("state restored", "saved_at", persisted.SavedAt, "trades_this_month", persisted.Risk.TradesThisMonth)
+		for _, inst := range instruments {
+			if c := sw.CacheFor(inst); c != nil {
+				sentimentCaches[inst] = c
+			}
 		}
 		healthSrv.SetSentimentStatus(func() (bool, string, float64, time.Time) {
-			sig, ok := sentimentWorker.Cache().Current(time.Now())
-			if !ok {
-				return true, "", 0, time.Time{}
+			// Combined view across instruments; confidence/time from primary.
+			now := time.Now()
+			var parts []string
+			var primaryConf float64
+			var primaryAt time.Time
+			for _, inst := range instruments {
+				sig, ok := sentimentCaches[inst].Current(now)
+				if !ok {
+					continue
+				}
+				parts = append(parts, fmt.Sprintf("%s %s %.0f%%", inst, sig.Direction, sig.Confidence*100))
+				if inst == primaryInstrument {
+					primaryConf = sig.Confidence
+					primaryAt = sig.AnalyzedAt
+				}
 			}
-			return true, sig.Direction, sig.Confidence, sig.AnalyzedAt
+			return true, strings.Join(parts, " | "), primaryConf, primaryAt
 		})
 	} else {
-		if !persisted.SavedAt.IsZero() {
-			state.ApplySnapshot(persisted, rm, nil)
-			slog.Info("state restored", "saved_at", persisted.SavedAt)
-		}
 		slog.Warn("sentiment pipeline disabled", "hint", "add finnhub.api_key and llm.api_key to .credentials")
 	}
 
-	stratEngine := strategy.NewEngine(cfg, client, exec, rm, notifier, sentimentCache)
-	healthSrv.SetTradingMode(stratEngine.LastMode)
+	if !persisted.SavedAt.IsZero() {
+		state.ApplySnapshot(persisted, rm, sentimentCaches, primaryInstrument)
+		slog.Info("state restored", "saved_at", persisted.SavedAt, "trades_this_month", persisted.Risk.TradesThisMonth)
+	}
+
+	engines := make([]*strategy.Engine, 0, len(instruments))
+	for _, inst := range instruments {
+		engines = append(engines, strategy.NewEngine(cfg, inst, client, exec, rm, notifier, sentimentCaches[inst]))
+	}
+	posMon.SetOnTradeOpened(func(t oanda.Trade) {
+		for _, eng := range engines {
+			if eng.Instrument() == t.Instrument {
+				eng.CancelAllPendingNow(context.Background(), "position_opened")
+			}
+		}
+	})
+	healthSrv.SetTradingMode(func() string {
+		var parts []string
+		for _, e := range engines {
+			mode := e.LastMode()
+			if mode == "" {
+				mode = "-"
+			}
+			parts = append(parts, fmt.Sprintf("%s:%s", e.Instrument(), mode))
+		}
+		return strings.Join(parts, " ")
+	})
 
 	saveState := func() {
-		snap := state.BuildSnapshot(rm, sentimentCache, tradeRecorder.LastTrade())
+		snap := state.BuildSnapshot(rm, sentimentCaches, tradeRecorder.LastTrade())
 		if err := stateStore.Save(snap); err != nil {
 			slog.Warn("state save failed", "error", err)
 		}
@@ -101,7 +145,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	if err := runStartupChecks(ctx, client, notifier); err != nil {
+	if err := runStartupChecks(ctx, client, notifier, cfg); err != nil {
 		slog.Error("startup checks failed", "error", err)
 		os.Exit(1)
 	}
@@ -123,7 +167,7 @@ func main() {
 	go func() {
 		healthSrv.SetStreamConnected(true)
 		defer healthSrv.SetStreamConnected(false)
-		if err := stream.RunPricingStream(ctx, []string{oanda.DefaultInstrument}, ticks); err != nil && ctx.Err() == nil {
+		if err := stream.RunPricingStream(ctx, instruments, ticks); err != nil && ctx.Err() == nil {
 			slog.Error("pricing stream exited", "error", err)
 		}
 	}()
@@ -135,7 +179,7 @@ func main() {
 	}
 
 	if cfg.Strategy.Enabled {
-		go stratEngine.Run(ctx)
+		go strategy.RunAll(ctx, engines, cfg)
 	} else {
 		slog.Warn("strategy loop disabled", "hint", "set strategy.enabled=true in .credentials to trade")
 	}
@@ -150,7 +194,7 @@ func main() {
 
 	slog.Info("fxtrade running",
 		"environment", cfg.OANDA.Environment,
-		"instrument", oanda.DefaultInstrument,
+		"instruments", instruments,
 		"email", cfg.Email.Enabled(),
 		"sentiment", cfg.SentimentEnabled(),
 		"strategy", cfg.Strategy.Enabled,
@@ -181,7 +225,7 @@ func main() {
 	}
 }
 
-func runStartupChecks(ctx context.Context, client *oanda.Client, notifier notify.Notifier) error {
+func runStartupChecks(ctx context.Context, client *oanda.Client, notifier notify.Notifier, cfg *config.Config) error {
 	summary, err := client.AccountSummary(ctx)
 	if err != nil {
 		return err
@@ -192,31 +236,34 @@ func runStartupChecks(ctx context.Context, client *oanda.Client, notifier notify
 		"nav", summary.Account.NAV,
 	)
 
-	pricing, err := client.Pricing(ctx, oanda.DefaultInstrument)
-	if err != nil {
-		return err
-	}
-	if len(pricing.Prices) > 0 {
-		tick, err := pricing.Prices[0].ToUpdate()
+	for _, inst := range cfg.Instruments {
+		pricing, err := client.Pricing(ctx, inst)
 		if err != nil {
 			return err
 		}
-		slog.Info("pricing snapshot",
-			"instrument", tick.Instrument,
-			"bid", tick.Bid,
-			"ask", tick.Ask,
-			"spread_pips", fmt.Sprintf("%.1f", oanda.SpreadPips(tick.Spread)),
-		)
-	}
+		if len(pricing.Prices) > 0 {
+			tick, err := pricing.Prices[0].ToUpdate()
+			if err != nil {
+				return err
+			}
+			slog.Info("pricing snapshot",
+				"instrument", tick.Instrument,
+				"bid", tick.Bid,
+				"ask", tick.Ask,
+				"spread_pips", fmt.Sprintf("%.1f", oanda.SpreadPips(tick.Spread)),
+			)
+		}
 
-	candles, err := client.Candles(ctx, oanda.DefaultInstrument, "H1", 5)
-	if err != nil {
-		return err
+		candles, err := client.Candles(ctx, inst, "H1", 5)
+		if err != nil {
+			return err
+		}
+		slog.Info("candles fetched", "instrument", inst, "count", len(candles.Candles), "granularity", candles.Granularity)
 	}
-	slog.Info("candles fetched", "count", len(candles.Candles), "granularity", candles.Granularity)
 
 	notifier.Send(ctx, "fxtrade: daemon started",
-		fmt.Sprintf("environment=practice\ninstrument=%s\n", oanda.DefaultInstrument))
+		fmt.Sprintf("fxtrade daemon is running.\n\nEnvironment: %s\nInstruments: %s\nStrategy cycle: every %d min\nSentiment cycle: every %d min\n",
+			cfg.OANDA.Environment, strings.Join(cfg.Instruments, ", "), cfg.Strategy.CycleMinutes, cfg.Sentiment.IntervalMinutes))
 
 	return nil
 }

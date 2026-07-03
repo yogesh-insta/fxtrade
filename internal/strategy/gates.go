@@ -61,7 +61,7 @@ func SentimentVetoBuy(sig sentiment.SentimentSignal, hasSig bool, cfg config.LLM
 	if sig.EventRisk == "high" {
 		return true
 	}
-	return sig.AUDBias == "bearish" && sig.Confidence >= cfg.VetoConfidence
+	return sig.BaseBias == "bearish" && sig.Confidence >= cfg.VetoConfidence
 }
 
 func SentimentVetoSell(sig sentiment.SentimentSignal, hasSig bool, cfg config.LLMGateConfig) bool {
@@ -71,7 +71,7 @@ func SentimentVetoSell(sig sentiment.SentimentSignal, hasSig bool, cfg config.LL
 	if sig.EventRisk == "high" {
 		return true
 	}
-	return sig.AUDBias == "bullish" && sig.Confidence >= cfg.VetoConfidence
+	return sig.BaseBias == "bullish" && sig.Confidence >= cfg.VetoConfidence
 }
 
 func SentimentAligned(direction string, sig sentiment.SentimentSignal, hasSig bool) bool {
@@ -80,9 +80,9 @@ func SentimentAligned(direction string, sig sentiment.SentimentSignal, hasSig bo
 	}
 	switch direction {
 	case "LONG":
-		return sig.Direction == "LONG" || sig.AUDBias == "bullish"
+		return sig.Direction == "LONG" || sig.BaseBias == "bullish"
 	case "SHORT":
-		return sig.Direction == "SHORT" || sig.AUDBias == "bearish"
+		return sig.Direction == "SHORT" || sig.BaseBias == "bearish"
 	}
 	return false
 }

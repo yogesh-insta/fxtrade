@@ -19,10 +19,13 @@ type LastTrade struct {
 }
 
 type Snapshot struct {
-	Risk              risk.State              `json:"risk"`
-	LastTrade         *LastTrade              `json:"last_trade,omitempty"`
-	SentimentHistory  []sentiment.SentimentSignal `json:"sentiment_history,omitempty"`
-	SavedAt           time.Time               `json:"saved_at"`
+	Risk      risk.State `json:"risk"`
+	LastTrade *LastTrade `json:"last_trade,omitempty"`
+	// SentimentHistory is the legacy single-instrument field, kept so state
+	// files written before multi-instrument support still restore.
+	SentimentHistory   []sentiment.SentimentSignal            `json:"sentiment_history,omitempty"`
+	SentimentHistories map[string][]sentiment.SentimentSignal `json:"sentiment_histories,omitempty"`
+	SavedAt            time.Time                              `json:"saved_at"`
 }
 
 type Store struct {

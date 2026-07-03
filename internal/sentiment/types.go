@@ -18,9 +18,10 @@ type CalendarEvent struct {
 }
 
 type SentimentSignal struct {
+	Instrument   string    `json:"instrument,omitempty"`
 	Direction    string    `json:"direction"`
 	Confidence   float64   `json:"confidence"`
-	AUDBias      string    `json:"aud_bias"`
+	BaseBias     string    `json:"base_bias"`
 	Drivers      []string  `json:"drivers"`
 	Risks        []string  `json:"risks"`
 	EventRisk    string    `json:"event_risk"`
@@ -51,8 +52,9 @@ type RawData struct {
 }
 
 type AuditRecord struct {
-	At       time.Time       `json:"at"`
-	Payload  any             `json:"payload"`
-	Response SentimentSignal `json:"response"`
-	Error    string          `json:"error,omitempty"`
+	At         time.Time       `json:"at"`
+	Instrument string          `json:"instrument,omitempty"`
+	Payload    any             `json:"payload"`
+	Response   SentimentSignal `json:"response"`
+	Error      string          `json:"error,omitempty"`
 }

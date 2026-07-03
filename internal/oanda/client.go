@@ -102,6 +102,17 @@ func (c *Client) PendingOrders(ctx context.Context) (*PendingOrdersResponse, err
 	return &out, nil
 }
 
+func (c *Client) TransactionsSince(ctx context.Context, since time.Time) (*TransactionsResponse, error) {
+	path := fmt.Sprintf("/v3/accounts/%s/transactions", c.accountID)
+	q := url.Values{}
+	q.Set("from", since.UTC().Format(time.RFC3339))
+	var out TransactionsResponse
+	if err := c.getJSON(ctx, path, q, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Client) CancelOrder(ctx context.Context, orderID string) (*CancelOrderResponse, error) {
 	path := fmt.Sprintf("/v3/accounts/%s/orders/%s/cancel", c.accountID, orderID)
 	var out CancelOrderResponse

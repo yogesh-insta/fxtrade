@@ -33,7 +33,10 @@ type PayloadHeadline struct {
 	Summary string    `json:"summary"`
 }
 
-func BuildPayload(norm Normalized, price market.PriceContext, asOf time.Time) LLMPayload {
+func BuildPayload(instrument string, norm Normalized, price market.PriceContext, asOf time.Time) LLMPayload {
+	if instrument == "" {
+		instrument = oanda.DefaultInstrument
+	}
 	events := make([]PayloadEvent, 0, len(norm.Events))
 	for _, e := range norm.Events {
 		events = append(events, PayloadEvent{
@@ -55,9 +58,9 @@ func BuildPayload(norm Normalized, price market.PriceContext, asOf time.Time) LL
 	}
 
 	return LLMPayload{
-		Task:           "usd_aud_sentiment_analysis",
+		Task:           strings.ToLower(instrument) + "_sentiment_analysis",
 		AsOf:           asOf.UTC(),
-		Instrument:     oanda.DefaultInstrument,
+		Instrument:     instrument,
 		PriceContext:   price,
 		UpcomingEvents: events,
 		Headlines:      headlines,
