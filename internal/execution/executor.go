@@ -10,19 +10,26 @@ import (
 	"github.com/ym/fxtrade/internal/risk"
 )
 
+// TradeAccounting records opens/closes idempotently (typically the position monitor).
+type TradeAccounting interface {
+	NoteTradeOpened(tradeID string)
+	NoteTradeClosed(tradeID string, pl float64)
+	RecordPartialPL(pl float64)
+}
+
 type Executor struct {
 	client   *oanda.Client
 	risk     *risk.Manager
 	notify   notify.Notifier
-	onClose  func(tradeID, correlationID string, pl float64)
+	trades   TradeAccounting
 }
 
 func NewExecutor(client *oanda.Client, rm *risk.Manager, n notify.Notifier) *Executor {
 	return &Executor{client: client, risk: rm, notify: n}
 }
 
-func (e *Executor) SetCloseHook(fn func(tradeID, correlationID string, pl float64)) {
-	e.onClose = fn
+func (e *Executor) SetTradeAccounting(t TradeAccounting) {
+	e.trades = t
 }
 
 func (e *Executor) PlaceMarket(ctx context.Context, req risk.EntryRequest, params MarketOrderParams) (oanda.OrderResult, error) {
@@ -55,7 +62,7 @@ func (e *Executor) PlaceMarket(ctx context.Context, req risk.EntryRequest, param
 		return oanda.OrderResult{}, err
 	}
 
-	e.risk.RecordTradeOpened()
+	e.noteOpened(result.TradeID)
 	e.notify.Send(ctx, "fxtrade: order filled",
 		fmt.Sprintf("correlation_id=%s\ntrade_id=%s\nfill_price=%s\nunits=%d\n",
 			req.CorrelationID, result.TradeID, oanda.FormatPrice(result.FillPrice), result.Units))
@@ -98,7 +105,7 @@ func (e *Executor) PlaceLimit(ctx context.Context, req risk.EntryRequest, params
 	}
 
 	if result.TradeID != "" {
-		e.risk.RecordTradeOpened()
+		e.noteOpened(result.TradeID)
 	}
 	slog.Info("limit order placed",
 		"correlation_id", req.CorrelationID,
@@ -121,7 +128,11 @@ func (e *Executor) CancelOrder(ctx context.Context, orderID, correlationID strin
 }
 
 func (e *Executor) CloseTrade(ctx context.Context, tradeID, correlationID string) (float64, error) {
-	resp, err := e.client.CloseTrade(ctx, tradeID, "ALL")
+	return e.CloseTradeUnits(ctx, tradeID, correlationID, "ALL")
+}
+
+func (e *Executor) CloseTradeUnits(ctx context.Context, tradeID, correlationID, units string) (float64, error) {
+	resp, err := e.client.CloseTrade(ctx, tradeID, units)
 	if err != nil {
 		return 0, err
 	}
@@ -131,13 +142,38 @@ func (e *Executor) CloseTrade(ctx context.Context, tradeID, correlationID string
 		slog.Warn("close trade missing P&L", "trade_id", tradeID, "error", err)
 	}
 
-	e.risk.RecordTradeClosed(pl)
-	if e.onClose != nil {
-		e.onClose(tradeID, correlationID, pl)
+	if units == "ALL" {
+		e.noteClosed(tradeID, pl)
+	} else {
+		e.notePartialPL(pl)
 	}
 	e.notify.Send(ctx, "fxtrade: position closed",
-		fmt.Sprintf("correlation_id=%s\ntrade_id=%s\nrealized_pl=%.2f\n", correlationID, tradeID, pl))
-	slog.Info("position closed", "correlation_id", correlationID, "trade_id", tradeID, "pl", pl)
+		fmt.Sprintf("correlation_id=%s\ntrade_id=%s\nunits=%s\nrealized_pl=%.2f\n", correlationID, tradeID, units, pl))
+	slog.Info("position closed", "correlation_id", correlationID, "trade_id", tradeID, "units", units, "pl", pl)
 
 	return pl, nil
+}
+
+func (e *Executor) noteOpened(tradeID string) {
+	if e.trades != nil {
+		e.trades.NoteTradeOpened(tradeID)
+	} else {
+		e.risk.RecordTradeOpened()
+	}
+}
+
+func (e *Executor) noteClosed(tradeID string, pl float64) {
+	if e.trades != nil {
+		e.trades.NoteTradeClosed(tradeID, pl)
+	} else {
+		e.risk.RecordTradeClosed(pl)
+	}
+}
+
+func (e *Executor) notePartialPL(pl float64) {
+	if e.trades != nil {
+		e.trades.RecordPartialPL(pl)
+	} else if pl != 0 {
+		e.risk.RecordTradeClosed(pl)
+	}
 }

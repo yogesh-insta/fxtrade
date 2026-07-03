@@ -36,20 +36,27 @@ func main() {
 	rm := risk.NewManager(cfg.Risk)
 	exec := execution.NewExecutor(client, rm, notifier)
 
-	var cache *sentiment.Cache
+	var sw *sentiment.Worker
 	if cfg.SentimentEnabled() {
-		sw, err := sentiment.NewWorker(cfg, client, notifier)
+		w, err := sentiment.NewWorker(cfg, client, notifier)
 		if err == nil {
-			if _, err := sw.RunOnce(context.Background()); err != nil {
+			if _, err := w.RunOnce(context.Background()); err != nil {
 				slog.Warn("sentiment refresh failed", "error", err)
 			}
-			cache = sw.Cache()
+			sw = w
 		}
 	}
 
-	engine := strategy.NewEngine(cfg, client, exec, rm, notifier, cache)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	engine.RunOnce(ctx)
-	slog.Info("strategy cycle complete", "mode", engine.LastMode())
+
+	for _, inst := range cfg.Instruments {
+		var cache *sentiment.Cache
+		if sw != nil {
+			cache = sw.CacheFor(inst)
+		}
+		engine := strategy.NewEngine(cfg, inst, client, exec, rm, notifier, cache)
+		engine.RunOnce(ctx)
+		slog.Info("strategy cycle complete", "instrument", inst, "mode", engine.LastMode())
+	}
 }

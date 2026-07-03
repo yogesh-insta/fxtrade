@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/ym/fxtrade/internal/config"
@@ -18,37 +19,57 @@ import (
 )
 
 type Engine struct {
-	cfg      *config.Config
-	client   *oanda.Client
-	exec     *execution.Executor
-	risk     *risk.Manager
-	notify   notify.Notifier
-	sentiment *sentiment.Cache
-	journal  *journal.Writer
-	lastMode string
+	cfg        *config.Config
+	instrument string
+	client     *oanda.Client
+	exec       *execution.Executor
+	risk       *risk.Manager
+	notify     notify.Notifier
+	sentiment  *sentiment.Cache
+	journal    *journal.Writer
+	modeMu           sync.RWMutex
+	lastMode         string
 	lastTrendAttempt time.Time
+	cycleSummary     CycleSummary
 }
 
-func NewEngine(cfg *config.Config, client *oanda.Client, exec *execution.Executor, rm *risk.Manager, n notify.Notifier, sc *sentiment.Cache) *Engine {
+func NewEngine(cfg *config.Config, instrument string, client *oanda.Client, exec *execution.Executor, rm *risk.Manager, n notify.Notifier, sc *sentiment.Cache) *Engine {
+	if instrument == "" {
+		instrument = oanda.DefaultInstrument
+	}
 	return &Engine{
-		cfg:       cfg,
-		client:    client,
-		exec:      exec,
-		risk:      rm,
-		notify:    n,
-		sentiment: sc,
-		journal:   journal.New(cfg.Strategy.JournalDir),
+		cfg:        cfg,
+		instrument: instrument,
+		client:     client,
+		exec:       exec,
+		risk:       rm,
+		notify:     n,
+		sentiment:  sc,
+		journal:    journal.New(cfg.Strategy.JournalDir),
 	}
 }
 
-func (e *Engine) Run(ctx context.Context) {
-	interval := time.Duration(e.cfg.Strategy.CycleMinutes) * time.Minute
-	if interval <= 0 {
-		interval = 5 * time.Minute
-	}
-	slog.Info("strategy engine started", "interval", interval, "enabled", e.cfg.Strategy.Enabled)
-	e.runCycle(ctx)
+func (e *Engine) Instrument() string {
+	return e.instrument
+}
 
+// RunAll runs all engines on a shared ticker, cycling them sequentially each
+// tick so account-wide checks (1 open position, correlation guard) cannot race.
+func RunAll(ctx context.Context, engines []*Engine, cfg *config.Config) {
+	if len(engines) == 0 {
+		return
+	}
+	interval := time.Duration(cfg.Strategy.CycleMinutes) * time.Minute
+	if interval <= 0 {
+		interval = 30 * time.Minute
+	}
+	instruments := make([]string, len(engines))
+	for i, e := range engines {
+		instruments[i] = e.instrument
+	}
+	slog.Info("strategy engines started", "interval", interval, "enabled", cfg.Strategy.Enabled, "instruments", instruments)
+
+	runAllOnce(ctx, engines)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -56,8 +77,17 @@ func (e *Engine) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			e.runCycle(ctx)
+			runAllOnce(ctx, engines)
 		}
+	}
+}
+
+func runAllOnce(ctx context.Context, engines []*Engine) {
+	for _, e := range engines {
+		if ctx.Err() != nil {
+			return
+		}
+		e.runCycle(ctx)
 	}
 }
 
@@ -69,108 +99,190 @@ func (e *Engine) runCycle(ctx context.Context) {
 	if !e.cfg.Strategy.Enabled {
 		return
 	}
-	if e.risk.IsHalted() {
-		e.logDecision(ModeStandAside, "no_trade", "kill switch active", nil)
-		return
-	}
 
 	now := time.Now()
-	snap, err := market.LoadSnapshot(ctx, e.client, oanda.DefaultInstrument)
-	if err != nil {
-		slog.Error("strategy snapshot", "error", err)
+	e.cycleSummary = CycleSummary{
+		Instrument:   e.instrument,
+		Mode:         e.LastMode(),
+		Action:       "no_trade",
+		IntervalMins: e.cfg.Strategy.CycleMinutes,
+	}
+	if e.cycleSummary.IntervalMins <= 0 {
+		e.cycleSummary.IntervalMins = 30
+	}
+
+	if e.risk.IsHalted() {
+		e.setMode(ModeStandAside)
+		e.cycleSummary.Mode = ModeStandAside
+		e.cycleSummary.Reason = "kill switch active"
+		e.logDecision(ModeStandAside, "no_trade", e.cycleSummary.Reason, nil)
+		e.sendCycleReport(ctx, market.Snapshot{}, RangeBand{}, sentiment.SentimentSignal{}, false)
 		return
 	}
 
-	sig, hasSig := e.sentiment.Current(now)
-	history := e.sentiment.History()
+	snap, err := market.LoadSnapshot(ctx, e.client, e.instrument)
+	if err != nil {
+		slog.Error("strategy snapshot", "instrument", e.instrument, "error", err)
+		e.abortCycle(ctx, market.Snapshot{}, RangeBand{}, fmt.Sprintf("market data unavailable: %v", err))
+		return
+	}
+
+	sig, hasSig, history := e.currentSentiment(now)
 
 	if ok, reason := CheckMarketConditions(snap, sig, hasSig, e.cfg.Risk, now); !ok {
-		e.logDecision(e.lastMode, "no_trade", reason, nil)
-		e.notify.Send(ctx, "fxtrade: no trade", "reason="+reason+"\n")
+		e.cycleSummary.Mode = e.LastMode()
+		if e.cycleSummary.Mode == "" {
+			e.cycleSummary.Mode = ModeStandAside
+		}
+		e.cycleSummary.Reason = reason
+		e.logDecision(e.cycleSummary.Mode, "no_trade", reason, nil)
+		band := DetectRange(snap, e.cfg.RangeMode)
+		e.sendCycleReport(ctx, snap, band, sig, hasSig)
 		return
 	}
 
 	band := DetectRange(snap, e.cfg.RangeMode)
 	mode := DetectMode(snap, band, e.cfg.TrendMode)
-	if e.lastMode != "" && e.lastMode != mode {
-		e.logDecision(mode, "mode_change", fmt.Sprintf("%s -> %s", e.lastMode, mode), map[string]any{
+	if prev := e.LastMode(); prev != "" && prev != mode {
+		e.cycleSummary.ModeChanged = fmt.Sprintf("%s → %s", prev, mode)
+		e.logDecision(mode, "mode_change", fmt.Sprintf("%s -> %s", prev, mode), map[string]any{
 			"range_valid": band.Valid,
 			"width_pips":  band.WidthPips,
 		})
-		e.notify.Send(ctx, "fxtrade: mode change", fmt.Sprintf("from=%s\nto=%s\n", e.lastMode, mode))
 		if e.cfg.RangeMode.CancelLimitsOnModeChange && mode != ModeRange {
 			e.cancelAllPending(ctx, "mode_change")
 		}
 	}
-	e.lastMode = mode
+	e.setMode(mode)
+	e.cycleSummary.Mode = mode
 
 	openTrades, pending, err := e.fetchState(ctx)
 	if err != nil {
-		slog.Error("strategy state", "error", err)
+		slog.Error("strategy state", "instrument", e.instrument, "error", err)
+		e.abortCycle(ctx, snap, band, fmt.Sprintf("could not read open trades/orders: %v", err))
 		return
 	}
 
-	if len(openTrades) > 0 {
-		e.handleOpenTrade(ctx, snap, band, mode, openTrades, pending)
+	ownTrades, _ := splitTradesByInstrument(openTrades, e.instrument)
+
+	if len(ownTrades) > 0 {
+		e.cycleSummary.Action = "manage_position"
+		e.cycleSummary.Reason = fmt.Sprintf("monitoring %d open position(s)", len(ownTrades))
+		e.handleOpenTrade(ctx, snap, band, mode, ownTrades, pending)
+		e.sendCycleReport(ctx, snap, band, sig, hasSig)
 		return
 	}
 
-	if len(openTrades) >= e.cfg.Risk.MaxOpenPositions {
+	// Account-wide cap: block when another instrument holds a position or pending order.
+	if blocked, reason := accountExposureBlocked(openTrades, pending, e.instrument, e.cfg.Risk.MaxOpenPositions); blocked {
+		e.cancelAllPending(ctx, "account_exposure_cap")
+		e.cycleSummary.Reason = reason
+		e.logDecision(mode, "no_trade", reason, nil)
+		e.sendCycleReport(ctx, snap, band, sig, hasSig)
 		return
 	}
+
+	openCount := len(openTrades)
 
 	switch mode {
 	case ModeStandAside:
 		e.cancelAllPending(ctx, "stand_aside")
-		e.logDecision(mode, "no_trade", "no valid range or trend", map[string]any{"range_valid": band.Valid})
-		e.notify.Send(ctx, "fxtrade: stand aside", "no valid range or trend\n")
+		e.cycleSummary.Reason = "no valid range or trend"
+		e.logDecision(mode, "no_trade", e.cycleSummary.Reason, map[string]any{"range_valid": band.Valid})
 	case ModeRange:
-		e.runRangeMode(ctx, snap, band, sig, hasSig, pending)
+		e.runRangeMode(ctx, snap, band, sig, hasSig, pending, openCount)
 	case ModeTrend:
 		e.cancelAllPending(ctx, "trend_mode")
-		e.runTrendMode(ctx, snap, band, sig, hasSig, history)
+		e.runTrendMode(ctx, snap, band, sig, hasSig, history, openCount)
 	}
+
+	e.sendCycleReport(ctx, snap, band, sig, hasSig)
 }
 
-func (e *Engine) runRangeMode(ctx context.Context, snap market.Snapshot, band RangeBand, sig sentiment.SentimentSignal, hasSig bool, pending []oanda.PendingOrder) {
+func (e *Engine) sendCycleReport(ctx context.Context, snap market.Snapshot, band RangeBand, sig sentiment.SentimentSignal, hasSig bool) {
+	subject := CycleEmailSubject(e.cycleSummary)
+	body := FormatCycleEmail(snap, band, e.cfg, e.cycleSummary, sig, hasSig)
+	e.notify.Send(ctx, subject, body)
+}
+
+func (e *Engine) abortCycle(ctx context.Context, snap market.Snapshot, band RangeBand, reason string) {
+	sig, hasSig, _ := e.currentSentiment(time.Now())
+	e.cycleSummary.Reason = reason
+	if e.cycleSummary.Mode == "" {
+		e.cycleSummary.Mode = e.LastMode()
+	}
+	if e.cycleSummary.Mode == "" {
+		e.cycleSummary.Mode = ModeStandAside
+	}
+	e.sendCycleReport(ctx, snap, band, sig, hasSig)
+}
+
+func (e *Engine) currentSentiment(now time.Time) (sentiment.SentimentSignal, bool, []sentiment.SentimentSignal) {
+	if e.sentiment == nil {
+		return sentiment.SentimentSignal{}, false, nil
+	}
+	sig, hasSig := e.sentiment.Current(now)
+	return sig, hasSig, e.sentiment.History()
+}
+
+func (e *Engine) setMode(mode string) {
+	e.modeMu.Lock()
+	e.lastMode = mode
+	e.modeMu.Unlock()
+}
+
+func (e *Engine) runRangeMode(ctx context.Context, snap market.Snapshot, band RangeBand, sig sentiment.SentimentSignal, hasSig bool, pending []oanda.PendingOrder, openCount int) {
 	if !band.Valid {
 		e.cancelAllPending(ctx, "invalid_range")
-		e.logDecision(ModeRange, "no_trade", "range invalid", nil)
+		e.cycleSummary.Reason = "range invalid"
+		e.logDecision(ModeRange, "no_trade", e.cycleSummary.Reason, nil)
 		return
 	}
 	if !e.cfg.RangeMode.PendingLimitsEnabled {
-		e.logDecision(ModeRange, "no_trade", "pending limits disabled in config", nil)
+		e.cycleSummary.Reason = "pending limits disabled in config"
+		e.logDecision(ModeRange, "no_trade", e.cycleSummary.Reason, nil)
 		return
 	}
 
 	summary, err := e.client.AccountSummary(ctx)
 	if err != nil {
+		e.cycleSummary.Reason = fmt.Sprintf("account summary unavailable: %v", err)
+		e.logDecision(ModeRange, "no_trade", e.cycleSummary.Reason, nil)
 		return
 	}
 	balance, _ := oanda.ParsePrice(summary.Account.Balance)
 	stopDist := snap.ATR14Daily * e.cfg.RangeMode.StopATRBeyondBoundary
 	conf := SentimentConfidence("LONG", sig, hasSig, e.cfg.LLMGate)
-	units := e.risk.SizeUnits(balance, stopDist, conf)
-	if units < 100 {
-		units = 100
+	units, sizeErr := e.entryUnits(balance, stopDist, conf)
+	if sizeErr != nil {
+		e.cycleSummary.Reason = sizeErr.Error()
+		e.logDecision(ModeRange, "no_trade", e.cycleSummary.Reason, nil)
+		return
 	}
 
 	midTP := band.Mid
-	hasBuy, hasSell := classifyPending(pending)
+	hasBuy, hasSell := classifyPending(pending, e.instrument)
 
-	if !hasBuy && !SentimentVetoBuy(sig, hasSig, e.cfg.LLMGate) && snap.Ask > band.BuyLimitPrice {
+	// Correlation guard: block same-direction pending on another USD pair.
+	longElsewhere, shortElsewhere := pendingDirectionsElsewhere(pending, e.instrument)
+
+	if !hasBuy && longElsewhere {
+		e.cycleSummary.Reason = "buy limit skipped — same-direction limit pending on another USD pair (correlation guard)"
+		e.logDecision(ModeRange, "no_trade", e.cycleSummary.Reason, nil)
+	}
+	if !hasBuy && !longElsewhere && !SentimentVetoBuy(sig, hasSig, e.cfg.LLMGate) && snap.Ask > band.BuyLimitPrice {
 		sl := band.Low - stopDist
-		corr := fmt.Sprintf("range-buy-%d", time.Now().UnixNano())
+		corr := fmt.Sprintf("range-buy-%s-%d", e.instrument, time.Now().UnixNano())
 		req := risk.EntryRequest{
 			CorrelationID:  corr,
 			SpreadPips:     snap.SpreadPips,
-			OpenPositions:  0,
+			OpenPositions:  openCount,
 			Confidence:     conf,
 			AccountBalance: balance,
 			StopDistance:   stopDist,
 		}
 		_, err := e.exec.PlaceLimit(ctx, req, execution.LimitOrderParams{
-			Instrument:  oanda.DefaultInstrument,
+			Instrument:  e.instrument,
 			Direction:   execution.DirectionLong,
 			Units:       units,
 			Price:       band.BuyLimitPrice,
@@ -181,25 +293,31 @@ func (e *Engine) runRangeMode(ctx context.Context, snap market.Snapshot, band Ra
 		if err != nil {
 			e.logDecision(ModeRange, "limit_rejected", err.Error(), nil)
 		} else {
+			e.cycleSummary.Action = "place_buy_limit"
+			e.cycleSummary.Reason = fmt.Sprintf("buy limit at support %s", oanda.FormatPrice(band.BuyLimitPrice))
 			e.logDecision(ModeRange, "place_buy_limit", "support limit placed", map[string]any{
 				"price": band.BuyLimitPrice, "units": units,
 			})
 		}
 	}
 
-	if !hasSell && !SentimentVetoSell(sig, hasSig, e.cfg.LLMGate) && snap.Bid < band.SellLimitPrice {
+	if !hasSell && shortElsewhere {
+		e.cycleSummary.Reason = "sell limit skipped — same-direction limit pending on another USD pair (correlation guard)"
+		e.logDecision(ModeRange, "no_trade", e.cycleSummary.Reason, nil)
+	}
+	if !hasSell && !shortElsewhere && !SentimentVetoSell(sig, hasSig, e.cfg.LLMGate) && snap.Bid < band.SellLimitPrice {
 		sl := band.High + stopDist
-		corr := fmt.Sprintf("range-sell-%d", time.Now().UnixNano())
+		corr := fmt.Sprintf("range-sell-%s-%d", e.instrument, time.Now().UnixNano())
 		req := risk.EntryRequest{
 			CorrelationID:  corr,
 			SpreadPips:     snap.SpreadPips,
-			OpenPositions:  0,
+			OpenPositions:  openCount,
 			Confidence:     SentimentConfidence("SHORT", sig, hasSig, e.cfg.LLMGate),
 			AccountBalance: balance,
 			StopDistance:   stopDist,
 		}
 		_, err := e.exec.PlaceLimit(ctx, req, execution.LimitOrderParams{
-			Instrument:  oanda.DefaultInstrument,
+			Instrument:  e.instrument,
 			Direction:   execution.DirectionShort,
 			Units:       units,
 			Price:       band.SellLimitPrice,
@@ -210,6 +328,8 @@ func (e *Engine) runRangeMode(ctx context.Context, snap market.Snapshot, band Ra
 		if err != nil {
 			e.logDecision(ModeRange, "limit_rejected", err.Error(), nil)
 		} else {
+			e.cycleSummary.Action = "place_sell_limit"
+			e.cycleSummary.Reason = fmt.Sprintf("sell limit at resistance %s", oanda.FormatPrice(band.SellLimitPrice))
 			e.logDecision(ModeRange, "place_sell_limit", "resistance limit placed", map[string]any{
 				"price": band.SellLimitPrice, "units": units,
 			})
@@ -217,38 +337,54 @@ func (e *Engine) runRangeMode(ctx context.Context, snap market.Snapshot, band Ra
 	}
 
 	if hasBuy || hasSell {
+		if e.cycleSummary.Action == "no_trade" {
+			e.cycleSummary.Action = "pending_limits"
+			e.cycleSummary.Reason = "range limits already working"
+		}
 		e.logDecision(ModeRange, "pending_limits", "range limits active", map[string]any{
 			"has_buy": hasBuy, "has_sell": hasSell,
 		})
+	} else if e.cycleSummary.Action == "no_trade" {
+		e.cycleSummary.Reason = "RANGE mode — waiting for price at support/resistance before placing limits"
 	}
 }
 
-func (e *Engine) runTrendMode(ctx context.Context, snap market.Snapshot, band RangeBand, sig sentiment.SentimentSignal, hasSig bool, history []sentiment.SentimentSignal) {
+func (e *Engine) runTrendMode(ctx context.Context, snap market.Snapshot, band RangeBand, sig sentiment.SentimentSignal, hasSig bool, history []sentiment.SentimentSignal, openCount int) {
 	if time.Since(e.lastTrendAttempt) < time.Hour {
+		e.cycleSummary.Reason = fmt.Sprintf("trend entry on cooldown (%s until next attempt)", (time.Hour - time.Since(e.lastTrendAttempt)).Round(time.Minute))
 		return
 	}
 	direction, ok, reason := TrendEntry(snap, band, e.cfg.TrendMode)
 	if !ok {
+		e.cycleSummary.Reason = reason
 		e.logDecision(ModeTrend, "no_trade", reason, nil)
-		e.notify.Send(ctx, "fxtrade: no trade (trend)", "reason="+reason+"\n")
 		return
 	}
 	if hasSig && sig.Direction != "FLAT" && sig.Direction != direction {
-		e.logDecision(ModeTrend, "no_trade", "sentiment disagrees with trend direction", map[string]any{"sentiment": sig.Direction})
+		e.cycleSummary.Reason = "sentiment disagrees with trend direction"
+		e.logDecision(ModeTrend, "no_trade", e.cycleSummary.Reason, map[string]any{"sentiment": sig.Direction})
 		return
 	}
 	if okPersist, persistReason := SentimentPersistence(direction, history, e.cfg.LLMGate); !okPersist && hasSig {
+		e.cycleSummary.Reason = persistReason
 		e.logDecision(ModeTrend, "no_trade", persistReason, nil)
 		return
 	}
 
-	summary, _ := e.client.AccountSummary(ctx)
+	summary, err := e.client.AccountSummary(ctx)
+	if err != nil {
+		e.cycleSummary.Reason = fmt.Sprintf("account summary unavailable: %v", err)
+		e.logDecision(ModeTrend, "no_trade", e.cycleSummary.Reason, nil)
+		return
+	}
 	balance, _ := oanda.ParsePrice(summary.Account.Balance)
 	stopDist := snap.ATR14Daily * e.cfg.TrendMode.ATRStopMultiplier
 	conf := SentimentConfidence(direction, sig, hasSig, e.cfg.LLMGate)
-	units := e.risk.SizeUnits(balance, stopDist, conf)
-	if units < 100 {
-		units = 100
+	units, sizeErr := e.entryUnits(balance, stopDist, conf)
+	if sizeErr != nil {
+		e.cycleSummary.Reason = sizeErr.Error()
+		e.logDecision(ModeTrend, "no_trade", e.cycleSummary.Reason, nil)
+		return
 	}
 
 	var entry, sl float64
@@ -261,26 +397,29 @@ func (e *Engine) runTrendMode(ctx context.Context, snap market.Snapshot, band Ra
 		sl = entry + stopDist
 	}
 
-	corr := fmt.Sprintf("trend-%s-%d", direction, time.Now().UnixNano())
+	corr := fmt.Sprintf("trend-%s-%s-%d", e.instrument, direction, time.Now().UnixNano())
 	req := risk.EntryRequest{
 		CorrelationID:  corr,
 		SpreadPips:     snap.SpreadPips,
-		OpenPositions:  0,
+		OpenPositions:  openCount,
 		Confidence:     conf,
 		AccountBalance: balance,
 		StopDistance:   stopDist,
 	}
 	result, err := e.exec.PlaceMarket(ctx, req, execution.MarketOrderParams{
-		Instrument: oanda.DefaultInstrument,
+		Instrument: e.instrument,
 		Direction:  direction,
 		Units:      units,
 		StopLoss:   sl,
 	})
 	if err != nil {
+		e.cycleSummary.Reason = fmt.Sprintf("market order rejected: %v", err)
 		e.logDecision(ModeTrend, "market_rejected", err.Error(), nil)
 		return
 	}
 	e.lastTrendAttempt = time.Now()
+	e.cycleSummary.Action = "market_entry"
+	e.cycleSummary.Reason = fmt.Sprintf("%s market entry, trade %s, %d units", direction, result.TradeID, units)
 	e.logDecision(ModeTrend, "market_entry", "trend entry", map[string]any{
 		"direction": direction, "trade_id": result.TradeID, "units": units,
 	})
@@ -309,12 +448,14 @@ func (e *Engine) handleOpenTrade(ctx context.Context, snap market.Snapshot, band
 			if crossed && absUnits > 100 {
 				half := strconv.FormatInt(absUnits/2, 10)
 				if half != "0" {
-					_, err := e.client.CloseTrade(ctx, t.ID, half)
+					corr := fmt.Sprintf("tp1-%s-%s", e.instrument, t.ID)
+					pl, err := e.exec.CloseTradeUnits(ctx, t.ID, corr, half)
 					if err == nil {
 						e.logDecision(mode, "tp1_partial", "closed 50% at range midpoint", map[string]any{
-							"trade_id": t.ID, "entry": entry, "mid": mid,
+							"trade_id": t.ID, "entry": entry, "mid": mid, "realized_pl": pl,
 						})
-						e.notify.Send(ctx, "fxtrade: TP1 partial close", fmt.Sprintf("trade_id=%s\nmid=%s\n", t.ID, oanda.FormatPrice(mid)))
+						e.notify.Send(ctx, "fxtrade: TP1 partial close",
+							fmt.Sprintf("trade_id=%s\ninstrument=%s\nmid=%s\nrealized_pl=%.2f\n", t.ID, e.instrument, oanda.FormatPrice(mid), pl))
 					}
 				}
 			}
@@ -334,9 +475,9 @@ func (e *Engine) fetchState(ctx context.Context) ([]oanda.Trade, []oanda.Pending
 	return trades.Trades, pending.Orders, nil
 }
 
-func classifyPending(orders []oanda.PendingOrder) (hasBuy, hasSell bool) {
+func classifyPending(orders []oanda.PendingOrder, instrument string) (hasBuy, hasSell bool) {
 	for _, o := range orders {
-		if o.Instrument != oanda.DefaultInstrument {
+		if o.Instrument != instrument {
 			continue
 		}
 		u, _ := strconv.ParseInt(o.Units, 10, 64)
@@ -350,34 +491,81 @@ func classifyPending(orders []oanda.PendingOrder) (hasBuy, hasSell bool) {
 	return hasBuy, hasSell
 }
 
+// pendingDirectionsElsewhere reports pending limit directions on instruments
+// other than the given one (used by the correlation guard).
+func pendingDirectionsElsewhere(orders []oanda.PendingOrder, instrument string) (hasLong, hasShort bool) {
+	for _, o := range orders {
+		if o.Instrument == instrument {
+			continue
+		}
+		u, _ := strconv.ParseInt(o.Units, 10, 64)
+		if u > 0 {
+			hasLong = true
+		}
+		if u < 0 {
+			hasShort = true
+		}
+	}
+	return hasLong, hasShort
+}
+
+func splitTradesByInstrument(trades []oanda.Trade, instrument string) (own, other []oanda.Trade) {
+	for _, t := range trades {
+		if t.Instrument == instrument {
+			own = append(own, t)
+		} else {
+			other = append(other, t)
+		}
+	}
+	return own, other
+}
+
+func (e *Engine) CancelAllPendingNow(ctx context.Context, reason string) {
+	e.cancelAllPending(ctx, reason)
+}
+
+func (e *Engine) entryUnits(balance, stopDist, conf float64) (int64, error) {
+	if stopDist < oanda.MinStopDistance() {
+		return 0, fmt.Errorf("stop distance %.5f below minimum %d pips", stopDist, oanda.MinStopPips)
+	}
+	units := e.risk.SizeUnits(balance, stopDist, conf)
+	if units <= 0 {
+		return 0, fmt.Errorf("position size zero — stop too wide or balance too low for risk settings")
+	}
+	return units, nil
+}
+
 func (e *Engine) cancelAllPending(ctx context.Context, reason string) {
 	pending, err := e.client.PendingOrders(ctx)
 	if err != nil {
 		return
 	}
 	for _, o := range pending.Orders {
-		if o.Instrument != oanda.DefaultInstrument {
+		if o.Instrument != e.instrument {
 			continue
 		}
 		corr := fmt.Sprintf("cancel-%s", o.ID)
 		if err := e.exec.CancelOrder(ctx, o.ID, corr); err != nil {
-			slog.Warn("cancel pending", "order_id", o.ID, "error", err)
+			slog.Warn("cancel pending", "instrument", e.instrument, "order_id", o.ID, "error", err)
 			continue
 		}
-		e.logDecision(e.lastMode, "cancel_limit", reason, map[string]any{"order_id": o.ID})
+		e.logDecision(e.LastMode(), "cancel_limit", reason, map[string]any{"order_id": o.ID})
 	}
 }
 
 func (e *Engine) logDecision(mode, action, reason string, details map[string]any) {
-	slog.Info("strategy decision", "mode", mode, "action", action, "reason", reason)
+	slog.Info("strategy decision", "instrument", e.instrument, "mode", mode, "action", action, "reason", reason)
 	_ = e.journal.Append(journal.Entry{
-		Mode:    mode,
-		Action:  action,
-		Reason:  reason,
-		Details: details,
+		Instrument: e.instrument,
+		Mode:       mode,
+		Action:     action,
+		Reason:     reason,
+		Details:    details,
 	})
 }
 
 func (e *Engine) LastMode() string {
+	e.modeMu.RLock()
+	defer e.modeMu.RUnlock()
 	return e.lastMode
 }

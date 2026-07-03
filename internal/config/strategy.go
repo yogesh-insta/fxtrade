@@ -44,7 +44,7 @@ type LLMGateConfig struct {
 func DefaultStrategyConfig() StrategyConfig {
 	return StrategyConfig{
 		Enabled:      false,
-		CycleMinutes: 5,
+		CycleMinutes: 30,
 		JournalDir:   "logs/trades",
 	}
 }

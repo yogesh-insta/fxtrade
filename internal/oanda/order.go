@@ -113,3 +113,26 @@ func RealizedPL(resp *CloseTradeResponse) (float64, error) {
 	}
 	return total, nil
 }
+
+// ClosedTradePL sums realized P&L from recent transactions for a closed trade.
+func ClosedTradePL(transactions []Transaction, tradeID string) (float64, bool) {
+	var total float64
+	found := false
+	for _, tx := range transactions {
+		for _, tc := range tx.TradesClosed {
+			if tc.TradeID != tradeID {
+				continue
+			}
+			if tc.RealizedPL == "" {
+				continue
+			}
+			p, err := ParsePrice(tc.RealizedPL)
+			if err != nil {
+				continue
+			}
+			total += p
+			found = true
+		}
+	}
+	return total, found
+}

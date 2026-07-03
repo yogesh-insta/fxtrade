@@ -8,23 +8,36 @@ import (
 	"github.com/ym/fxtrade/internal/sentiment"
 )
 
-func BuildSnapshot(rm *risk.Manager, cache *sentiment.Cache, lastTrade *LastTrade) Snapshot {
+func BuildSnapshot(rm *risk.Manager, caches map[string]*sentiment.Cache, lastTrade *LastTrade) Snapshot {
 	snap := Snapshot{
-		Risk:     rm.ExportState(),
+		Risk:      rm.ExportState(),
 		LastTrade: lastTrade,
 	}
-	if cache != nil {
-		snap.SentimentHistory = cache.History()
+	if len(caches) > 0 {
+		snap.SentimentHistories = make(map[string][]sentiment.SentimentSignal, len(caches))
+		for inst, cache := range caches {
+			if cache != nil {
+				snap.SentimentHistories[inst] = cache.History()
+			}
+		}
 	}
 	return snap
 }
 
-func ApplySnapshot(snap Snapshot, rm *risk.Manager, cache *sentiment.Cache) {
-	if snap.Risk.MonthKey != "" || snap.Risk.TradesThisMonth > 0 {
+func ApplySnapshot(snap Snapshot, rm *risk.Manager, caches map[string]*sentiment.Cache, primaryInstrument string) {
+	if !snap.SavedAt.IsZero() {
 		rm.RestoreState(snap.Risk)
 	}
-	if cache != nil && len(snap.SentimentHistory) > 0 {
-		cache.Restore(snap.SentimentHistory)
+	for inst, history := range snap.SentimentHistories {
+		if cache := caches[inst]; cache != nil && len(history) > 0 {
+			cache.Restore(history)
+		}
+	}
+	// Legacy single-instrument state files restore into the primary instrument.
+	if len(snap.SentimentHistories) == 0 && len(snap.SentimentHistory) > 0 {
+		if cache := caches[primaryInstrument]; cache != nil {
+			cache.Restore(snap.SentimentHistory)
+		}
 	}
 }
 
@@ -38,7 +51,7 @@ func NewTradeRecorder(store *Store, j *journal.Writer) *TradeRecorder {
 	return &TradeRecorder{store: store, journal: j}
 }
 
-func (t *TradeRecorder) OnClose(tradeID, correlationID string, pl float64, rm *risk.Manager, cache *sentiment.Cache) {
+func (t *TradeRecorder) OnClose(tradeID, correlationID string, pl float64, rm *risk.Manager, caches map[string]*sentiment.Cache) {
 	t.lastTrade = &LastTrade{
 		TradeID:       tradeID,
 		CorrelationID: correlationID,
@@ -54,7 +67,7 @@ func (t *TradeRecorder) OnClose(tradeID, correlationID string, pl float64, rm *r
 		})
 	}
 	if t.store != nil {
-		_ = t.store.Save(BuildSnapshot(rm, cache, t.lastTrade))
+		_ = t.store.Save(BuildSnapshot(rm, caches, t.lastTrade))
 	}
 }
 

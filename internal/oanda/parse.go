@@ -6,7 +6,15 @@ import (
 	"time"
 )
 
-const PipSize = 0.0001
+const (
+	PipSize     = 0.0001
+	MinStopPips = 10 // minimum stop distance for entries (10 pips)
+)
+
+// MinStopDistance returns the smallest allowed stop-loss distance in price units.
+func MinStopDistance() float64 {
+	return MinStopPips * PipSize
+}
 
 func FormatPrice(p float64) string {
 	return strconv.FormatFloat(p, 'f', 5, 64)

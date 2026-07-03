@@ -197,3 +197,7 @@ type CancelOrderResponse struct {
 	OrderCancelTransaction *Transaction `json:"orderCancelTransaction"`
 	LastTransactionID      string       `json:"lastTransactionID"`
 }
+
+type TransactionsResponse struct {
+	Transactions []Transaction `json:"transactions"`
+}

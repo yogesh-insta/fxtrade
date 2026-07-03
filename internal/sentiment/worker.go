@@ -14,30 +14,50 @@ import (
 )
 
 type Worker struct {
-	cfg      config.SentimentConfig
-	fetcher  *Fetcher
-	llm      *LLMClient
-	oanda    *oanda.Client
-	cache    *Cache
-	notifier notify.Notifier
+	cfg         config.SentimentConfig
+	instruments []string
+	fetcher     *Fetcher
+	llm         *LLMClient
+	oanda       *oanda.Client
+	caches      map[string]*Cache
+	notifier    notify.Notifier
 }
 
 func NewWorker(cfg *config.Config, oandaClient *oanda.Client, notifier notify.Notifier) (*Worker, error) {
 	if !cfg.SentimentEnabled() {
 		return nil, fmt.Errorf("sentiment pipeline requires finnhub.api_key and llm.api_key in .credentials")
 	}
+	instruments := cfg.Instruments
+	if len(instruments) == 0 {
+		instruments = []string{oanda.DefaultInstrument}
+	}
+	caches := make(map[string]*Cache, len(instruments))
+	for _, inst := range instruments {
+		caches[inst] = NewCache()
+	}
 	return &Worker{
-		cfg:      cfg.Sentiment,
-		fetcher:  NewFetcher(cfg.Finnhub),
-		llm:      NewLLMClient(cfg.LLM),
-		oanda:    oandaClient,
-		cache:    NewCache(),
-		notifier: notifier,
+		cfg:         cfg.Sentiment,
+		instruments: instruments,
+		fetcher:     NewFetcher(cfg.Finnhub),
+		llm:         NewLLMClient(cfg.LLM),
+		oanda:       oandaClient,
+		caches:      caches,
+		notifier:    notifier,
 	}, nil
 }
 
+// Cache returns the cache for the first (primary) instrument.
 func (w *Worker) Cache() *Cache {
-	return w.cache
+	return w.caches[w.instruments[0]]
+}
+
+// CacheFor returns the cache for a specific instrument (nil if not configured).
+func (w *Worker) CacheFor(instrument string) *Cache {
+	return w.caches[instrument]
+}
+
+func (w *Worker) Instruments() []string {
+	return w.instruments
 }
 
 func (w *Worker) Run(ctx context.Context) {
@@ -46,7 +66,7 @@ func (w *Worker) Run(ctx context.Context) {
 		interval = 30 * time.Minute
 	}
 
-	slog.Info("sentiment worker started", "interval", interval)
+	slog.Info("sentiment worker started", "interval", interval, "instruments", w.instruments)
 	w.runOnce(ctx)
 
 	ticker := time.NewTicker(interval)
@@ -62,18 +82,20 @@ func (w *Worker) Run(ctx context.Context) {
 	}
 }
 
+// RunOnce runs one full cycle over all instruments and returns the primary
+// instrument's signal (for test harnesses).
 func (w *Worker) RunOnce(ctx context.Context) (SentimentSignal, error) {
 	return w.runOnce(ctx)
 }
 
 func (w *Worker) runOnce(ctx context.Context) (SentimentSignal, error) {
 	start := time.Now()
-	slog.Info("sentiment cycle starting")
+	slog.Info("sentiment cycle starting", "instruments", w.instruments)
 
 	maxAge := time.Duration(w.cfg.HeadlineMaxAgeHours) * time.Hour
 	raw, err := w.fetcher.FetchAll(ctx, maxAge)
 	if err != nil {
-		w.auditError(start, err)
+		w.auditError(start, "", err)
 		return SentimentSignal{}, err
 	}
 
@@ -84,47 +106,78 @@ func (w *Worker) runOnce(ctx context.Context) (SentimentSignal, error) {
 		"high_event_risk", norm.HighEventRisk,
 	)
 
-	price, err := market.BuildPriceContext(ctx, w.oanda, oanda.DefaultInstrument, start)
+	var primary SentimentSignal
+	var firstErr error
+	for i, instrument := range w.instruments {
+		signal, err := w.analyzeInstrument(ctx, instrument, norm, start)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if i == 0 {
+			primary = signal
+		}
+	}
+	if firstErr != nil && primary.Direction == "" {
+		return SentimentSignal{}, firstErr
+	}
+	return primary, nil
+}
+
+func (w *Worker) analyzeInstrument(ctx context.Context, instrument string, norm Normalized, start time.Time) (SentimentSignal, error) {
+	price, err := market.BuildPriceContext(ctx, w.oanda, instrument, start)
 	if err != nil {
-		w.auditError(start, err)
+		w.auditError(start, instrument, err)
 		return SentimentSignal{}, err
 	}
 
-	payload := BuildPayload(norm, price, start)
+	payload := BuildPayload(instrument, norm, price, start)
 	payloadJSON, err := payload.JSON()
 	if err != nil {
-		w.auditError(start, err)
+		w.auditError(start, instrument, err)
 		return SentimentSignal{}, err
 	}
 
-	signal, err := w.llm.Analyze(ctx, payloadJSON)
+	signal, err := w.llm.Analyze(ctx, SystemPromptFor(instrument), payloadJSON)
 	if err != nil {
-		w.auditError(start, err)
+		w.auditError(start, instrument, err)
 		return SentimentSignal{}, err
 	}
+	signal.Instrument = instrument
 
-	w.cache.Set(signal)
+	if cache := w.caches[instrument]; cache != nil {
+		cache.Set(signal)
+	}
 	_ = AppendAudit(w.cfg.AuditDir, AuditRecord{
-		At:       start.UTC(),
-		Payload:  payload,
-		Response: signal,
+		At:         start.UTC(),
+		Instrument: instrument,
+		Payload:    payload,
+		Response:   signal,
 	})
 
 	signalJSON, _ := json.Marshal(signal)
-	slog.Info("sentiment signal", "json", string(signalJSON))
+	slog.Info("sentiment signal", "instrument", instrument, "json", string(signalJSON))
 
-	subject := fmt.Sprintf("fxtrade: sentiment %s conf=%.2f", signal.Direction, signal.Confidence)
-	body := fmt.Sprintf("direction=%s\nconfidence=%.2f\naud_bias=%s\nevent_risk=%s\ndrivers=%v\nrisks=%v\n",
-		signal.Direction, signal.Confidence, signal.AUDBias, signal.EventRisk, signal.Drivers, signal.Risks)
+	subject := fmt.Sprintf("fxtrade: %s sentiment %s (%.0f%%)", instrument, signal.Direction, signal.Confidence*100)
+	body := FormatEmailBody(signal, w.cfg.IntervalMinutes)
 	w.notifier.Send(ctx, subject, body)
 
 	return signal, nil
 }
 
-func (w *Worker) auditError(at time.Time, err error) {
-	slog.Error("sentiment cycle failed", "error", err)
+func (w *Worker) auditError(at time.Time, instrument string, err error) {
+	slog.Error("sentiment cycle failed", "instrument", instrument, "error", err)
 	_ = AppendAudit(w.cfg.AuditDir, AuditRecord{
-		At:    at.UTC(),
-		Error: err.Error(),
+		At:         at.UTC(),
+		Instrument: instrument,
+		Error:      err.Error(),
 	})
+	label := instrument
+	if label == "" {
+		label = "all instruments"
+	}
+	w.notifier.Send(context.Background(), "fxtrade: sentiment failed",
+		fmt.Sprintf("Sentiment cycle failed for %s at %s\n\nError: %v\n\nThe daemon will retry on the next scheduled cycle.\n", label, at.Format(time.RFC3339), err))
 }

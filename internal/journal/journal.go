@@ -9,11 +9,12 @@ import (
 )
 
 type Entry struct {
-	At      time.Time      `json:"at"`
-	Mode    string         `json:"mode"`
-	Action  string         `json:"action"`
-	Reason  string         `json:"reason,omitempty"`
-	Details map[string]any `json:"details,omitempty"`
+	At         time.Time      `json:"at"`
+	Instrument string         `json:"instrument,omitempty"`
+	Mode       string         `json:"mode"`
+	Action     string         `json:"action"`
+	Reason     string         `json:"reason,omitempty"`
+	Details    map[string]any `json:"details,omitempty"`
 }
 
 type Writer struct {
