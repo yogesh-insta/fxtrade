@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 INSTALL_ROOT="${FXTRADE_HOME:-/opt/fxtrade}"
 BINARY_SRC=""
+NIFTY_PULSE_SRC=""
 CREDENTIALS_SRC=""
 ENABLE_ALL=false
 ENABLE_BOT=""
@@ -17,6 +18,7 @@ Usage: sudo ./deploy/gcp/install.sh [options]
 
 Options:
   --binary PATH         Linux amd64 fxtrade binary (default: build on VM or copy separately)
+  --nifty-pulse PATH    Linux amd64 nifty-pulse binary (default: deploy via CI or build manually)
   --credentials PATH    Local .credentials to install (default: skip; use fetch-credentials.sh)
   --enable-all          Enable fxtrade.service (all bots from .credentials)
   --enable-bot ID       Enable fxtrade@ID.service (e.g. universe_scanner, range_trend)
@@ -32,6 +34,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --binary) BINARY_SRC="$2"; shift 2 ;;
+    --nifty-pulse) NIFTY_PULSE_SRC="$2"; shift 2 ;;
     --credentials) CREDENTIALS_SRC="$2"; shift 2 ;;
     --enable-all) ENABLE_ALL=true; shift ;;
     --enable-bot) ENABLE_BOT="$2"; shift 2 ;;
@@ -54,6 +57,7 @@ mkdir -p "$INSTALL_ROOT"/{bin,data,logs,deploy/gcp}
 mkdir -p /etc/fxtrade
 
 cp -f "$ROOT/deploy/gcp/"*.service /etc/systemd/system/
+cp -f "$ROOT/deploy/gcp/"*.timer /etc/systemd/system/ 2>/dev/null || true
 cp -f "$ROOT/deploy/gcp/fxtrade.env.example" /etc/fxtrade/fxtrade.env
 sed -i "s|FXTRADE_HOME=.*|FXTRADE_HOME=$INSTALL_ROOT|" /etc/fxtrade/fxtrade.env
 sed -i "s|FXTRADE_CREDENTIALS=.*|FXTRADE_CREDENTIALS=$INSTALL_ROOT/.credentials|" /etc/fxtrade/fxtrade.env
@@ -75,6 +79,20 @@ elif [[ ! -x "$INSTALL_ROOT/bin/fxtrade" ]]; then
   echo "  scp fxtrade user@vm:/tmp/fxtrade && sudo install -m 755 /tmp/fxtrade $INSTALL_ROOT/bin/fxtrade"
 fi
 
+if [[ -n "$NIFTY_PULSE_SRC" ]]; then
+  install -m 755 "$NIFTY_PULSE_SRC" "$INSTALL_ROOT/bin/nifty-pulse"
+elif [[ ! -x "$INSTALL_ROOT/bin/nifty-pulse" ]]; then
+  echo "note: no binary at $INSTALL_ROOT/bin/nifty-pulse yet — deploy via GitHub Actions or:"
+  echo "  GOOS=linux GOARCH=amd64 go build -o nifty-pulse ./cmd/nifty-pulse"
+  echo "  scp nifty-pulse user@vm:/tmp/nifty-pulse && sudo install -m 755 /tmp/nifty-pulse $INSTALL_ROOT/bin/nifty-pulse"
+fi
+
+if [[ -f "$ROOT/watchlist.txt" ]]; then
+  install -o fxtrade -g fxtrade -m 644 "$ROOT/watchlist.txt" "$INSTALL_ROOT/watchlist.txt"
+elif [[ ! -f "$INSTALL_ROOT/watchlist.txt" ]]; then
+  echo "note: no watchlist at $INSTALL_ROOT/watchlist.txt — copy watchlist.txt from repo root"
+fi
+
 cp -f "$ROOT/deploy/gcp/fetch-credentials.sh" "$INSTALL_ROOT/deploy/gcp/"
 chmod 755 "$INSTALL_ROOT/deploy/gcp/fetch-credentials.sh"
 
@@ -87,6 +105,9 @@ chmod 750 "$INSTALL_ROOT"
 chmod 755 "$INSTALL_ROOT"/{bin,logs,data} 2>/dev/null || true
 
 systemctl daemon-reload
+
+systemctl enable --now nifty-pulse.timer
+echo "Enabled nifty-pulse.timer (18:00 Australia/Sydney, Sun–Fri)"
 
 if $ENABLE_ALL; then
   systemctl enable --now fxtrade.service

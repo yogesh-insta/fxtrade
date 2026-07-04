@@ -1,0 +1,11 @@
+[Unit]
+Description=NiftyPulse daily timer (18:00 Australia/Sydney, Sun–Fri)
+
+[Timer]
+OnCalendar=Sun..Fri *-*-* 18:00:00
+Timezone=Australia/Sydney
+Persistent=true
+Unit=nifty-pulse.service
+
+[Install]
+WantedBy=timers.target

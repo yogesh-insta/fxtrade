@@ -4,6 +4,8 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/ym/fxtrade/internal/config"
 )
 
 func TestSMA(t *testing.T) {
@@ -162,18 +164,35 @@ func TestLevels(t *testing.T) {
 }
 
 func TestFormatAlertEmail(t *testing.T) {
+	cfg := config.StockScanConfig{SMAPeriod: 50, RSIMin: 30, RSIMax: 45}
+	candidate := Candidate{Symbol: "TATAMOTORS", Close: 910, SMA: 880, RSI: 32.1}
+	reasons := BuildReasons(candidate, cfg, "Positive Sentiment (confidence 82%) — strong outlook")
+	contenders := []Contender{
+		{Rank: 1, Candidate: candidate, OneLiner: BuildOneLiner(candidate, cfg), Selected: true},
+		{Rank: 2, Candidate: Candidate{Symbol: "RELIANCE", Close: 2500, SMA: 2450, RSI: 38.5}, OneLiner: BuildOneLiner(Candidate{Symbol: "RELIANCE", Close: 2500, SMA: 2450, RSI: 38.5}, cfg)},
+	}
 	body := FormatAlertEmail(Pick{
-		Candidate: Candidate{Symbol: "TATAMOTORS"},
+		Candidate: candidate,
 		Entry:     910,
 		StopLoss:  896.35,
 		Target:    937.30,
-	})
+		Reasons:   reasons,
+	}, contenders, 2)
 	want := []string{
 		"Instrument: TATAMOTORS (Cash Equity Stock)",
 		"Action: BUY",
 		"Limit Price: ₹910.00",
 		"Stop Loss: ₹896.35 (Strict 1.5% protection)",
 		"Target: ₹937.30 (Strict 3% profit goal)",
+		"Why this pick:",
+		"above SMA(50)",
+		"pullback zone [30–45]",
+		"Sentiment: Positive Sentiment (confidence 82%) — strong outlook",
+		"Top contenders (2 passed filters):",
+		"1. TATAMOTORS",
+		"★ selected",
+		"2. RELIANCE",
+		"Only 2 symbol(s) passed today's SMA/RSI filters.",
 		"GTT OCO",
 		"NiftyPulse does NOT place orders automatically",
 	}
@@ -184,6 +203,36 @@ func TestFormatAlertEmail(t *testing.T) {
 	}
 	if strings.Contains(body, "This bot") {
 		t.Fatal("footer should say NiftyPulse, not This bot")
+	}
+}
+
+func TestBuildReasons(t *testing.T) {
+	cfg := config.StockScanConfig{SMAPeriod: 50, RSIMin: 30, RSIMax: 45}
+	c := Candidate{Symbol: "INFY", Close: 1500, SMA: 1450, RSI: 35, H1Trend: "bullish"}
+	reasons := BuildReasons(c, cfg, "")
+	if len(reasons) != 3 {
+		t.Fatalf("len(reasons) = %d, want 3", len(reasons))
+	}
+	if !strings.Contains(reasons[0], "3.4%") {
+		t.Fatalf("expected pct above SMA in reason[0]: %q", reasons[0])
+	}
+	if !strings.Contains(reasons[1], "pullback zone") {
+		t.Fatalf("expected pullback zone in reason[1]: %q", reasons[1])
+	}
+	if !strings.Contains(reasons[2], "H1 trend: bullish") {
+		t.Fatalf("expected H1 trend in reason[2]: %q", reasons[2])
+	}
+}
+
+func TestBuildContendersMarksSelected(t *testing.T) {
+	cfg := config.StockScanConfig{SMAPeriod: 50, RSIMin: 30, RSIMax: 45}
+	ranked := []Candidate{
+		{Symbol: "A", Close: 100, SMA: 90, RSI: 32},
+		{Symbol: "B", Close: 200, SMA: 190, RSI: 35},
+	}
+	got := BuildContenders(ranked, cfg, "B")
+	if !got[1].Selected || got[0].Selected {
+		t.Fatalf("unexpected selected flags: %+v", got)
 	}
 }
 

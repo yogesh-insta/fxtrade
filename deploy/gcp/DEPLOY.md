@@ -73,13 +73,17 @@ This creates:
 
 | Path | Purpose |
 |------|---------|
-| `/opt/fxtrade/bin/fxtrade` | Binary (deployed by CI or manual `scp`) |
+| `/opt/fxtrade/bin/fxtrade` | FX daemon binary (deployed by CI or manual `scp`) |
+| `/opt/fxtrade/bin/nifty-pulse` | NiftyPulse daily NSE scanner |
+| `/opt/fxtrade/watchlist.txt` | NSE symbol watchlist for NiftyPulse |
 | `/opt/fxtrade/.credentials` | Secrets JSON (600, owner `fxtrade`) |
 | `/opt/fxtrade/data/` | Bot state files |
 | `/opt/fxtrade/logs/` | Daemon stdout/stderr |
 | `/etc/fxtrade/fxtrade.env` | Health addr, dry-run flag |
 | `/etc/systemd/system/fxtrade.service` | All enabled bots |
 | `/etc/systemd/system/fxtrade@.service` | One bot per unit (`--bot`) |
+| `/etc/systemd/system/nifty-pulse.service` | NiftyPulse oneshot scan |
+| `/etc/systemd/system/nifty-pulse.timer` | Daily 18:00 Australia/Sydney (Sun–Fri) |
 
 ### Systemd modes
 
@@ -147,19 +151,82 @@ sudo systemctl restart fxtrade.service
 # or per-bot: sudo systemctl restart fxtrade@universe_scanner.service
 ```
 
-## 4. Deploy the Linux binary
+## 4. Deploy the Linux binaries
 
 **From your laptop:**
 
 ```bash
 GOOS=linux GOARCH=amd64 go build -o fxtrade ./cmd/fxtrade
-scp fxtrade user@VM_IP:/tmp/fxtrade
-ssh user@VM_IP 'sudo install -m 755 /tmp/fxtrade /opt/fxtrade/bin/fxtrade && sudo systemctl restart fxtrade.service'
+GOOS=linux GOARCH=amd64 go build -o nifty-pulse ./cmd/nifty-pulse
+scp fxtrade nifty-pulse watchlist.txt user@VM_IP:/tmp/
+ssh user@VM_IP 'sudo install -m 755 /tmp/fxtrade /opt/fxtrade/bin/fxtrade && \
+  sudo install -m 755 /tmp/nifty-pulse /opt/fxtrade/bin/nifty-pulse && \
+  sudo install -o fxtrade -g fxtrade -m 644 /tmp/watchlist.txt /opt/fxtrade/watchlist.txt && \
+  sudo systemctl restart fxtrade.service'
 ```
 
-**Via GitHub Actions:** push to `main` (see `.github/workflows/deploy.yml`) after configuring secrets below. The workflow restarts every enabled `fxtrade.service` and `fxtrade@*.service` unit after updating the binary.
+**Via GitHub Actions:** push to `main` (see `.github/workflows/deploy.yml`) after configuring secrets below. The workflow deploys `fxtrade`, `nifty-pulse`, and `watchlist.txt`, then restarts every enabled `fxtrade.service` and `fxtrade@*.service` unit.
 
-## 5. Firewall (optional health check from outside)
+## 5. NiftyPulse (NSE daily scanner)
+
+NiftyPulse scans the NSE watchlist after market close and emails a single swing-trade pick (if any symbol passes filters + sentiment gate). It does **not** place orders.
+
+### Schedule
+
+`install.sh` enables `nifty-pulse.timer`, which fires **Sun–Fri at 18:00 Australia/Sydney** (`OnCalendar=Sun..Fri *-*-* 18:00:00` with `Timezone=Australia/Sydney`). Systemd applies **AEST/AEDT automatically** — no manual UTC offset or cron DST hacks. Sunday evening prep covers Monday’s trading week; Saturday is excluded.
+
+That is roughly **13:30 IST** (standard time) / **12:30 IST** (daylight), i.e. shortly after the NSE cash session close.
+
+```bash
+sudo systemctl status nifty-pulse.timer
+sudo systemctl list-timers nifty-pulse.timer
+journalctl -u nifty-pulse.service -n 50
+tail -f /opt/fxtrade/logs/nifty-pulse.log
+```
+
+### On-demand runs
+
+**On the VM** (sends a real email if a pick is found — same as the scheduled run):
+
+```bash
+sudo systemctl start nifty-pulse.service
+```
+
+**Safe test on the VM** (scan only, no email):
+
+```bash
+sudo -u fxtrade /opt/fxtrade/bin/nifty-pulse \
+  -credentials /opt/fxtrade/.credentials \
+  -watchlist /opt/fxtrade/watchlist.txt \
+  -dry-run
+```
+
+**Locally** (from repo root):
+
+```bash
+chmod +x scripts/nifty-pulse-run.sh
+./scripts/nifty-pulse-run.sh --dry-run    # safe: logs pick, no email
+./scripts/nifty-pulse-run.sh              # sends email if configured in .credentials
+```
+
+Or build and run directly:
+
+```bash
+go build -o bin/nifty-pulse ./cmd/nifty-pulse
+./bin/nifty-pulse -credentials .credentials -watchlist watchlist.txt -dry-run
+```
+
+**Email on real runs:** any on-demand run **without** `-dry-run` uses the SMTP settings in `.credentials` (`email.alert_to`) and sends the same Zerodha-style alert as the timer. Use `-dry-run` when testing credentials, watchlist, or scanner changes.
+
+Re-install or update systemd units after pulling deploy changes:
+
+```bash
+sudo cp deploy/gcp/nifty-pulse.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now nifty-pulse.timer
+```
+
+## 6. Firewall (optional health check from outside)
 
 Health listens on `:8080` by default (localhost-only is fine for SSH tunneling).
 
@@ -186,7 +253,7 @@ ssh -L 8080:127.0.0.1:8080 user@VM_IP
 curl http://localhost:8080/health
 ```
 
-## 6. Operations
+## 7. Operations
 
 ```bash
 sudo systemctl status fxtrade.service

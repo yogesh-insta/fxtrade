@@ -41,6 +41,28 @@ func (s StockSentimentSignal) IsNegative() bool {
 	return strings.EqualFold(strings.TrimSpace(s.Direction), "Negative Sentiment")
 }
 
+// FormatSentimentNote renders a concise sentiment summary for alert emails.
+func FormatSentimentNote(s StockSentimentSignal) string {
+	note := strings.TrimSpace(s.Direction)
+	if note == "" {
+		note = "Neutral Sentiment"
+	}
+	if s.Confidence > 0 {
+		note += fmt.Sprintf(" (confidence %.0f%%)", s.Confidence*100)
+	}
+	if len(s.Drivers) > 0 {
+		note += " — " + strings.TrimSpace(s.Drivers[0])
+	}
+	return note
+}
+
+// SentimentPick is the chosen candidate plus optional LLM sentiment context.
+type SentimentPick struct {
+	Candidate     Candidate
+	Signal        StockSentimentSignal
+	SentimentUsed bool
+}
+
 // SentimentChecker validates ranked picks against market RSS headlines.
 type SentimentChecker struct {
 	llm      *sentiment.LLMClient
@@ -94,7 +116,7 @@ func (c *SentimentChecker) Available() bool {
 
 // PickWithSentiment walks ranked candidates and returns the first non-negative pick.
 // Falls back to the top ranked candidate when LLM or RSS is unavailable.
-func (c *SentimentChecker) PickWithSentiment(ctx context.Context, ranked []Candidate, topN int) (*Candidate, error) {
+func (c *SentimentChecker) PickWithSentiment(ctx context.Context, ranked []Candidate, topN int) (*SentimentPick, error) {
 	if len(ranked) == 0 {
 		return nil, nil
 	}
@@ -103,14 +125,14 @@ func (c *SentimentChecker) PickWithSentiment(ctx context.Context, ranked []Candi
 	if !c.Available() {
 		slog.Warn("sentiment check skipped: llm.api_key not configured; using top ranked pick")
 		pick := candidates[0]
-		return &pick, nil
+		return &SentimentPick{Candidate: pick}, nil
 	}
 
 	headlines, err := c.fetchHeadlines(ctx)
 	if err != nil {
 		slog.Warn("sentiment RSS fetch failed; proceeding with top ranked pick", "error", err)
 		pick := candidates[0]
-		return &pick, nil
+		return &SentimentPick{Candidate: pick}, nil
 	}
 
 	for _, cand := range candidates {
@@ -120,8 +142,7 @@ func (c *SentimentChecker) PickWithSentiment(ctx context.Context, ranked []Candi
 				"symbol", cand.Symbol,
 				"error", err,
 			)
-			pick := cand
-			return &pick, nil
+			return &SentimentPick{Candidate: cand}, nil
 		}
 		slog.Info("stock sentiment",
 			"symbol", cand.Symbol,
@@ -132,8 +153,11 @@ func (c *SentimentChecker) PickWithSentiment(ctx context.Context, ranked []Candi
 			slog.Info("skipping negative sentiment candidate", "symbol", cand.Symbol)
 			continue
 		}
-		pick := cand
-		return &pick, nil
+		return &SentimentPick{
+			Candidate:     cand,
+			Signal:        signal,
+			SentimentUsed: true,
+		}, nil
 	}
 
 	slog.Warn("all top candidates flagged negative sentiment; no pick")
