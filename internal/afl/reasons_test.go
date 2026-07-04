@@ -81,7 +81,7 @@ func TestFormatRoundReportEmailIncludesReasons(t *testing.T) {
 		TotalsLine: &TotalsOdds{Line: 168.5, Bookmaker: "sportsbet"},
 	}
 	body := FormatRoundReportEmail([]MatchReport{report}, nil)
-	if !strings.Contains(body, "Why this prediction:") {
+	if !strings.Contains(body, "WHY\n") {
 		t.Fatalf("missing reasoning section:\n%s", body)
 	}
 }
