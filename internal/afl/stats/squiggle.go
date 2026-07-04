@@ -30,15 +30,28 @@ type SquiggleClient struct {
 }
 
 type squiggleGame struct {
-	HTeam    string `json:"hteam"`
-	ATeam    string `json:"ateam"`
-	HScore   int    `json:"hscore"`
-	AScore   int    `json:"ascore"`
-	Winner   string `json:"winner"`
-	Complete int    `json:"complete"`
-	Round    int    `json:"round"`
-	Date     string `json:"date"`
-	Venue    string `json:"venue"`
+	ID        int    `json:"id"`
+	HTeam     string `json:"hteam"`
+	ATeam     string `json:"ateam"`
+	HScore    int    `json:"hscore"`
+	AScore    int    `json:"ascore"`
+	Winner    string `json:"winner"`
+	Complete  int    `json:"complete"`
+	Round     int    `json:"round"`
+	Date      string `json:"date"`
+	Venue     string `json:"venue"`
+	Localtime string `json:"localtime"`
+	Unixtime  int64  `json:"unixtime"`
+}
+
+// UpcomingGame is a scheduled Squiggle fixture with a parsed kickoff time.
+type UpcomingGame struct {
+	ID       int
+	HomeTeam string
+	AwayTeam string
+	Kickoff  time.Time
+	Round    int
+	Venue    string
 }
 
 // HistoricalGame is a completed Squiggle fixture used for training.
@@ -179,6 +192,80 @@ func (r *Repository) HeadToHead(home, away afl.TeamID) (wins, games int) {
 		return 0, 0
 	}
 	return v[0], v[1]
+}
+
+// FetchUpcomingGames returns incomplete Squiggle fixtures for a season year.
+func (c *SquiggleClient) FetchUpcomingGames(ctx context.Context, year int) ([]UpcomingGame, error) {
+	games, err := c.fetchGames(ctx, year)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]UpcomingGame, 0)
+	for _, g := range games {
+		if g.Complete >= 100 {
+			continue
+		}
+		if g.HTeam == "" || g.ATeam == "" || strings.EqualFold(g.HTeam, "none") || strings.EqualFold(g.ATeam, "none") {
+			continue
+		}
+		kickoff, ok := parseSquiggleKickoff(g)
+		if !ok {
+			continue
+		}
+		out = append(out, UpcomingGame{
+			ID:       g.ID,
+			HomeTeam: g.HTeam,
+			AwayTeam: g.ATeam,
+			Kickoff:  kickoff,
+			Round:    g.Round,
+			Venue:    g.Venue,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Kickoff.Equal(out[j].Kickoff) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].Kickoff.Before(out[j].Kickoff)
+	})
+	return out, nil
+}
+
+// GamesInPregameWindow filters upcoming games whose kickoff is lead..lead+window before now.
+func GamesInPregameWindow(games []UpcomingGame, now time.Time, lead, window time.Duration) []UpcomingGame {
+	if window <= 0 {
+		window = lead
+	}
+	out := make([]UpcomingGame, 0)
+	for _, g := range games {
+		until := g.Kickoff.Sub(now)
+		if until >= lead && until < lead+window {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+func parseSquiggleKickoff(g squiggleGame) (time.Time, bool) {
+	if g.Unixtime > 0 {
+		return time.Unix(g.Unixtime, 0).UTC(), true
+	}
+	raw := strings.TrimSpace(g.Localtime)
+	if raw == "" {
+		raw = strings.TrimSpace(g.Date)
+	}
+	if raw == "" {
+		return time.Time{}, false
+	}
+	loc, err := time.LoadLocation("Australia/Melbourne")
+	if err != nil {
+		loc = time.UTC
+	}
+	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02 15:04", "2006-01-02"} {
+		if t, err := time.ParseInLocation(layout, raw, loc); err == nil {
+			return t.UTC(), true
+		}
+	}
+	return time.Time{}, false
 }
 
 func (c *SquiggleClient) fetchGames(ctx context.Context, year int) ([]squiggleGame, error) {
