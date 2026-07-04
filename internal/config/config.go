@@ -28,6 +28,7 @@ type Config struct {
 	TrendMode TrendModeConfig `json:"trend_mode"`
 	LLMGate    LLMGateConfig    `json:"llm_gate"`
 	StockScan  StockScanConfig  `json:"stock_scan"`
+	AFL        AFLConfig        `json:"afl"`
 	State      StateConfig      `json:"state"`
 }
 
@@ -249,6 +250,7 @@ func (c *Config) applyDefaults() {
 
 	defStockScan := DefaultStockScanConfig()
 	applyStockScanDefaults(&c.StockScan, defStockScan)
+	applyAFLDefaults(&c.AFL)
 
 	applyStrategyDefaults(c)
 	applyScannerDefaults(c)

@@ -1,0 +1,64 @@
+{
+  "venues": [
+    {
+      "id": "MCG",
+      "name": "Melbourne Cricket Ground",
+      "dimension": "wide",
+      "latitude": -37.8199,
+      "longitude": 144.9834,
+      "interstate": false,
+      "primary_home_team": "MEL",
+      "home_win_rates": {"MEL": 0.62, "RICH": 0.55, "HAW": 0.52}
+    },
+    {
+      "id": "GMHBA",
+      "name": "GMHBA Stadium",
+      "dimension": "narrow",
+      "latitude": -38.1579,
+      "longitude": 144.3547,
+      "interstate": false,
+      "primary_home_team": "GEE",
+      "home_win_rates": {"GEE": 0.68}
+    },
+    {
+      "id": "OPTUS",
+      "name": "Optus Stadium",
+      "dimension": "wide",
+      "latitude": -31.9505,
+      "longitude": 115.8605,
+      "interstate": true,
+      "primary_home_team": "WCE",
+      "home_win_rates": {"WCE": 0.65, "FRE": 0.58}
+    },
+    {
+      "id": "ADELAIDE",
+      "name": "Adelaide Oval",
+      "dimension": "standard",
+      "latitude": -34.9155,
+      "longitude": 138.5961,
+      "interstate": true,
+      "primary_home_team": "ADE",
+      "home_win_rates": {"ADE": 0.64, "PORT": 0.60}
+    },
+    {
+      "id": "SCG",
+      "name": "Sydney Cricket Ground",
+      "dimension": "narrow",
+      "latitude": -33.8915,
+      "longitude": 151.2247,
+      "interstate": true,
+      "primary_home_team": "SYD",
+      "home_win_rates": {"SYD": 0.61, "GWS": 0.48}
+    },
+    {
+      "id": "GABBA",
+      "name": "The Gabba",
+      "dimension": "standard",
+      "latitude": -27.4858,
+      "longitude": 153.0381,
+      "interstate": true,
+      "primary_home_team": "BRI",
+      "home_win_rates": {"BRI": 0.63}
+    }
+  ]
+}

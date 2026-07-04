@@ -197,7 +197,9 @@ fxtrade/
 ├── cmd/fxtrade/          # main daemon
 ├── cmd/sentiment-test/   # test sentiment
 ├── cmd/strategy-test/    # test strategy
-├── cmd/order-test/       # test orders
+├── cmd/nifty-pulse/      # NSE swing scanner (NiftyPulse)
+├── cmd/afl-pulse/        # AFL value betting scanner (AFLPulse)
+├── data/afl/             # AFL seed stats, model coefficients, aliases
 ├── cmd/backtest/         # historical gate replay
 ├── cmd/expectancy/       # performance report
 ├── deploy/               # macOS launchd + GCP systemd (deploy/gcp/)
@@ -228,7 +230,27 @@ watch -n 10 'curl -s http://localhost:8080/health | python3 -m json.tool'
 
 ## Security
 
-- **Private repository** — clone with SSH (`git@github.com:yogesh-insta/fxtrade.git`) or `gh repo clone yogesh-insta/fxtrade` after you have access.
 - Never commit `.credentials` — it is gitignored.
 - Use OANDA **practice** until expectancy is proven.
 - Revoke API tokens if they are ever exposed.
+
+---
+
+## AFLPulse (AFL value betting scanner)
+
+On-demand AFL scanner: fetches AU bookmaker odds via [The Odds API](https://the-odds-api.com), builds match context (form, venue, weather, travel, player availability), runs a matrix/ONNX-ready model, and emails value bets when `(model_prob × decimal_odds) - 1 > min_ev_threshold`.
+
+**Prerequisites:** `afl.odds_api_key` in `.credentials` (free tier at the-odds-api.com). OANDA keys are still required for `config.Load` when using the shared credentials file.
+
+```bash
+# Safe test — log value bets, no email
+go run ./cmd/afl-pulse -credentials .credentials -dry-run
+
+# Live run — email if EV > threshold
+go run ./cmd/afl-pulse -credentials .credentials
+
+# Optional match-day injuries override
+go run ./cmd/afl-pulse -credentials .credentials -injuries data/afl/injuries.example.json -dry-run
+```
+
+Seed stats live in `data/afl/` (`venues.json`, `teams.json`, `team_aliases.json`, `model_coefficients.json`). Refresh these periodically; odds are live from the API.

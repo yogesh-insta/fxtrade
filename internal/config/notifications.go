@@ -6,6 +6,7 @@ type NotificationsConfig struct {
 	Enabled               bool   `json:"enabled"`
 	Prefix                string `json:"prefix"` // legacy FX alias; prefer fx_prefix
 	NSEPrefix             string `json:"nse_prefix"`
+	AFLPrefix             string `json:"afl_prefix"`
 	FXPrefix              string `json:"fx_prefix"`
 	OnTradeEntry          bool   `json:"on_trade_entry"`
 	OnTradeExit           bool   `json:"on_trade_exit"`
@@ -19,6 +20,7 @@ func DefaultNotificationsConfig() NotificationsConfig {
 		Enabled:               true,
 		Prefix:                "[FXPulse]",
 		NSEPrefix:             "[NiftyPulse]",
+		AFLPrefix:             "[AFLPulse]",
 		FXPrefix:              "[FXPulse]",
 		OnTradeEntry:          true,
 		OnTradeExit:           true,
@@ -34,6 +36,14 @@ func (n NotificationsConfig) EffectiveNSEPrefix() string {
 		return p
 	}
 	return "[NiftyPulse]"
+}
+
+// EffectiveAFLPrefix returns the email subject prefix for AFLPulse alerts.
+func (n NotificationsConfig) EffectiveAFLPrefix() string {
+	if p := trimPrefix(n.AFLPrefix); p != "" {
+		return p
+	}
+	return "[AFLPulse]"
 }
 
 // EffectiveFXPrefix returns the email subject prefix for OANDA (FXPulse) alerts.
@@ -70,6 +80,9 @@ func applyNotificationsDefaults(c *Config) {
 	}
 	if c.Notifications.NSEPrefix == "" {
 		c.Notifications.NSEPrefix = def.NSEPrefix
+	}
+	if c.Notifications.AFLPrefix == "" {
+		c.Notifications.AFLPrefix = def.AFLPrefix
 	}
 	if c.Notifications.Prefix == "" {
 		c.Notifications.Prefix = c.Notifications.FXPrefix
