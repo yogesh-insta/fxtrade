@@ -24,8 +24,9 @@ type SquiggleFixture struct {
 
 // PregameState tracks pre-game emails sent by Squiggle game ID.
 type PregameState struct {
-	Sent    map[string]time.Time `json:"sent"`
-	SavedAt time.Time          `json:"saved_at"`
+	Sent         map[string]time.Time `json:"sent"`
+	LLMAttempted map[string]time.Time `json:"llm_attempted,omitempty"`
+	SavedAt      time.Time            `json:"saved_at"`
 }
 
 // LoadPregameState reads dedup state from disk. Missing files start empty.
@@ -33,7 +34,10 @@ func LoadPregameState(path string) (*PregameState, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &PregameState{Sent: make(map[string]time.Time)}, nil
+			return &PregameState{
+				Sent:         make(map[string]time.Time),
+				LLMAttempted: make(map[string]time.Time),
+			}, nil
 		}
 		return nil, err
 	}
@@ -44,6 +48,9 @@ func LoadPregameState(path string) (*PregameState, error) {
 	if st.Sent == nil {
 		st.Sent = make(map[string]time.Time)
 	}
+	if st.LLMAttempted == nil {
+		st.LLMAttempted = make(map[string]time.Time)
+	}
 	return &st, nil
 }
 
@@ -51,6 +58,9 @@ func LoadPregameState(path string) (*PregameState, error) {
 func (s *PregameState) Save(path string) error {
 	if s.Sent == nil {
 		s.Sent = make(map[string]time.Time)
+	}
+	if s.LLMAttempted == nil {
+		s.LLMAttempted = make(map[string]time.Time)
 	}
 	s.SavedAt = time.Now().UTC()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -84,14 +94,41 @@ func (s *PregameState) MarkSent(id int) {
 	s.Sent[strconv.Itoa(id)] = time.Now().UTC()
 }
 
+// WasLLMAttempted reports whether Gemini was already invoked for this fixture
+// (success or failure). Prevents the 5-minute poll timer from hammering the LLM.
+func (s *PregameState) WasLLMAttempted(id int) bool {
+	if s == nil || s.LLMAttempted == nil {
+		return false
+	}
+	_, ok := s.LLMAttempted[strconv.Itoa(id)]
+	return ok
+}
+
+// MarkLLMAttempted records that the LLM was called for this fixture once.
+func (s *PregameState) MarkLLMAttempted(id int) {
+	if s.LLMAttempted == nil {
+		s.LLMAttempted = make(map[string]time.Time)
+	}
+	s.LLMAttempted[strconv.Itoa(id)] = time.Now().UTC()
+}
+
 // Prune removes entries older than cutoff to keep the state file small.
 func (s *PregameState) Prune(cutoff time.Time) {
-	if s == nil || s.Sent == nil {
+	if s == nil {
 		return
 	}
-	for id, sentAt := range s.Sent {
-		if sentAt.Before(cutoff) {
-			delete(s.Sent, id)
+	if s.Sent != nil {
+		for id, sentAt := range s.Sent {
+			if sentAt.Before(cutoff) {
+				delete(s.Sent, id)
+			}
+		}
+	}
+	if s.LLMAttempted != nil {
+		for id, at := range s.LLMAttempted {
+			if at.Before(cutoff) {
+				delete(s.LLMAttempted, id)
+			}
 		}
 	}
 }

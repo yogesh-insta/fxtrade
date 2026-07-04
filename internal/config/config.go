@@ -113,6 +113,9 @@ func DefaultLLMConfig() LLMConfig {
 	}
 }
 
+// MinSentimentIntervalMinutes is the floor for Groq/LLM sentiment cycles.
+const MinSentimentIntervalMinutes = 30
+
 func DefaultSentimentConfig() SentimentConfig {
 	return SentimentConfig{
 		IntervalMinutes:     30,
@@ -237,6 +240,9 @@ func (c *Config) applyDefaults() {
 	defSent := DefaultSentimentConfig()
 	if c.Sentiment.IntervalMinutes == 0 {
 		c.Sentiment.IntervalMinutes = defSent.IntervalMinutes
+	}
+	if c.Sentiment.IntervalMinutes < MinSentimentIntervalMinutes {
+		c.Sentiment.IntervalMinutes = MinSentimentIntervalMinutes
 	}
 	if c.Sentiment.MaxHeadlines == 0 {
 		c.Sentiment.MaxHeadlines = defSent.MaxHeadlines
