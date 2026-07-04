@@ -35,6 +35,34 @@ func TestProjectTotalFromScoringRates(t *testing.T) {
 	}
 }
 
+func TestProjectTotalClosedVenueIgnoresWeather(t *testing.T) {
+	wet := MatchDayContext{
+		HomeTeam: "ESS", AwayTeam: "STK",
+		Venue: VenueProfile{
+			ID: "DOCKLANDS", Name: "Marvel Stadium", Dimension: VenueClosed,
+			AvgTotalScore: 179,
+		},
+		HomeStats: TeamStats{PointsForPerGame: 82, PointsAgainstPerGame: 88},
+		AwayStats: TeamStats{PointsForPerGame: 86, PointsAgainstPerGame: 84},
+		Weather:   WeatherMetrics{RainMM: 8, WindKPH: 30, TotalPointsFactor: 0.94},
+	}
+	openWet := wet
+	openWet.Venue.Dimension = VenueWide
+
+	closed := ProjectTotal(wet)
+	open := ProjectTotal(openWet)
+	if closed.WeatherFactor != 1.0 {
+		t.Fatalf("closed venue weather factor = %.2f, want 1.0", closed.WeatherFactor)
+	}
+	if open.WeatherFactor >= 1.0 {
+		t.Fatalf("open wet venue should reduce total, factor=%.2f", open.WeatherFactor)
+	}
+	if closed.AdjustedTotal <= open.AdjustedTotal {
+		t.Fatalf("closed should score higher than open-wet: closed=%.0f open=%.0f",
+			closed.AdjustedTotal, open.AdjustedTotal)
+	}
+}
+
 func TestProjectTotalWeatherLowers(t *testing.T) {
 	base := MatchDayContext{
 		HomeTeam: "BRI", AwayTeam: "COLL",

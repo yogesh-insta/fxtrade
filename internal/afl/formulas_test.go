@@ -52,6 +52,39 @@ func TestAwayTravelKMInterstate(t *testing.T) {
 	}
 }
 
+func TestMatchWeatherClosedVenueNeutralizesImpact(t *testing.T) {
+	outdoor := WeatherMetrics{RainMM: 8, WindKPH: 30, ContestFavorability: 0.7, TotalPointsFactor: 0.82}
+	closed := VenueProfile{ID: "DOCKLANDS", Dimension: VenueClosed}
+	got := MatchWeather(closed, outdoor)
+	if got.TotalPointsFactor != 1.0 {
+		t.Fatalf("closed venue total factor = %.2f, want 1.0", got.TotalPointsFactor)
+	}
+	if got.ContestFavorability != 0.2 {
+		t.Fatalf("closed venue contest favorability = %.2f, want 0.2", got.ContestFavorability)
+	}
+	if got.RainMM != outdoor.RainMM || got.WindKPH != outdoor.WindKPH {
+		t.Fatal("raw rain/wind should be preserved for display")
+	}
+	open := VenueProfile{ID: "MCG", Dimension: VenueWide}
+	if MatchWeather(open, outdoor) != outdoor {
+		t.Fatal("open venue should pass weather through unchanged")
+	}
+}
+
+func TestVenueStyleFitClosedUsesBalancedProfile(t *testing.T) {
+	team := TeamStats{
+		Inside50Efficiency:      0.50,
+		ClearanceRate:           0.40,
+		ContestedPossessionRate: 0.60,
+		DisposalRate:            0.90,
+	}
+	wide := VenueStyleFit(team, VenueProfile{Dimension: VenueWide})
+	closed := VenueStyleFit(team, VenueProfile{Dimension: VenueClosed})
+	if closed >= wide {
+		t.Fatalf("closed fit %.3f should be below wide disposal-heavy fit %.3f", closed, wide)
+	}
+}
+
 func TestCrowdBiasHomeVenue(t *testing.T) {
 	venue := VenueProfile{
 		PrimaryHomeTeam: "GEE",

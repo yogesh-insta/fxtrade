@@ -147,6 +147,10 @@ func venueReason(ctx MatchDayContext) string {
 }
 
 func weatherReason(ctx MatchDayContext) string {
+	if VenueIsClosed(ctx.Venue) {
+		return fmt.Sprintf("Weather: rain %.1f mm, wind %.0f km/h outdoors — closed roof, no scoring impact",
+			ctx.Weather.RainMM, ctx.Weather.WindKPH)
+	}
 	w := ctx.Weather
 	if w.RainMM < 1 && w.WindKPH < 20 {
 		return fmt.Sprintf("Weather mild: rain %.1f mm, wind %.0f km/h — limited scoring impact", w.RainMM, w.WindKPH)

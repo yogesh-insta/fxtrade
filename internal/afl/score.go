@@ -227,8 +227,9 @@ func teamPointsAgainst(stats TeamStats) float64 {
 }
 
 func matchWeatherFactor(ctx MatchDayContext) float64 {
-	homeWeather := WeatherProfileAdjust(ctx.Weather, ctx.HomeStats)
-	awayWeather := WeatherProfileAdjust(ctx.Weather, ctx.AwayStats)
+	weather := MatchWeather(ctx.Venue, ctx.Weather)
+	homeWeather := WeatherProfileAdjust(weather, ctx.HomeStats)
+	awayWeather := WeatherProfileAdjust(weather, ctx.AwayStats)
 	factor := (homeWeather.TotalPointsFactor + awayWeather.TotalPointsFactor) / 2.0
 	if factor <= 0 {
 		factor = 1.0

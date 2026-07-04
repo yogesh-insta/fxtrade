@@ -110,6 +110,35 @@ func TestFormatFixtureHeaderLinesESSSTK(t *testing.T) {
 	}
 }
 
+func TestFormatRoundReportEmailESSSTKDocklandsClosed(t *testing.T) {
+	ctx := MatchDayContext{
+		HomeTeam: "ESS",
+		AwayTeam: "STK",
+		Venue: VenueProfile{
+			Name: "Marvel Stadium", Dimension: VenueClosed, AvgTotalScore: 179,
+		},
+		Weather: WeatherMetrics{RainMM: 6, WindKPH: 28, TotalPointsFactor: 0.94},
+		HomeStats: TeamStats{
+			PointsForPerGame: 75, PointsAgainstPerGame: 86,
+		},
+		AwayStats: TeamStats{
+			PointsForPerGame: 84, PointsAgainstPerGame: 90,
+		},
+	}
+	score := ProjectScore(ctx, 0.48)
+	report := MatchReport{Context: ctx, Score: score, HomeWinProb: 0.48}
+	body := FormatRoundReportEmail([]MatchReport{report}, nil)
+	for _, want := range []string{
+		"Venue: Docklands (closed) · avg total 179",
+		"venue avg 179",
+		"× weather 1.00",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in body:\n%s", want, body)
+		}
+	}
+}
+
 func TestFormatFixtureHeaderLinesFallbackWhenVeryLong(t *testing.T) {
 	if melbourneLoc == nil {
 		t.Skip("Australia/Melbourne timezone unavailable")
