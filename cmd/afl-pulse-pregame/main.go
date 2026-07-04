@@ -20,7 +20,8 @@ import (
 
 // AFLPulse pregame — T-30 fixture alerts with Gemini + Google Search.
 //
-// Scheduled on GCP via afl-pulse-pregame.timer (every 5 min).
+// Scheduled on GCP via afl-pulse-pregame.timer (every 15 min).
+// LLM (Gemini) runs at most once per fixture; see PregameState.LLMAttempted.
 // Safe test: go run ./cmd/afl-pulse-pregame -credentials .credentials -dry-run
 func main() {
 	credentialsPath := flag.String("credentials", ".credentials", "path to credentials JSON")
@@ -152,6 +153,7 @@ func main() {
 	}
 
 	sentAny := false
+	attemptedAny := false
 	for _, game := range pending {
 		sfix := squiggleFixtureFrom(game)
 		fixture, h2h, totals, ok := afl.MatchSquiggleToOdds(sfix, fetched.H2H, fetched.Totals, repo.ResolveTeam)
@@ -176,26 +178,35 @@ func main() {
 
 		var llmResp afl.PregameLLMResponse
 		if cfg.AFL.GeminiAPIKey != "" {
-			var llmErr error
-			llmResp, llmErr = afl.RunPregameLLM(ctx, cfg.AFL, sfix, report)
-			if llmErr != nil {
-				slog.Error("pregame gemini failed",
+			if state.WasLLMAttempted(game.ID) {
+				slog.Info("pregame LLM already attempted; model-only email",
 					"squiggle_id", game.ID,
 					"match", fmt.Sprintf("%s vs %s", fixture.HomeTeam, fixture.AwayTeam),
-					"error", llmErr,
 				)
-				if cfg.AFL.PregameLLMRequiredEnabled() {
-					if !*dryRun {
-						alertBody := afl.FormatPregameFailureAlert(
-							sfix, fixture.HomeTeam, fixture.AwayTeam, game.Venue, llmErr, *logPath,
-						)
-						afl.SendPregameFailureAlert(notifier, ctx, cfg.Notifications, fixture.HomeTeam, fixture.AwayTeam, alertBody)
+			} else {
+				state.MarkLLMAttempted(game.ID)
+				attemptedAny = true
+				var llmErr error
+				llmResp, llmErr = afl.RunPregameLLM(ctx, cfg.AFL, sfix, report)
+				if llmErr != nil {
+					slog.Error("pregame gemini failed",
+						"squiggle_id", game.ID,
+						"match", fmt.Sprintf("%s vs %s", fixture.HomeTeam, fixture.AwayTeam),
+						"error", llmErr,
+					)
+					if cfg.AFL.PregameLLMRequiredEnabled() {
+						if !*dryRun {
+							alertBody := afl.FormatPregameFailureAlert(
+								sfix, fixture.HomeTeam, fixture.AwayTeam, game.Venue, llmErr, *logPath,
+							)
+							afl.SendPregameFailureAlert(notifier, ctx, cfg.Notifications, fixture.HomeTeam, fixture.AwayTeam, alertBody)
+						}
+						continue
 					}
-					continue
+					slog.Warn("pregame gemini optional; sending model-only email",
+						"squiggle_id", game.ID,
+					)
 				}
-				slog.Warn("pregame gemini optional; sending model-only email",
-					"squiggle_id", game.ID,
-				)
 			}
 		} else {
 			slog.Info("pregame_llm_required false and no gemini key; model-only email",
@@ -219,7 +230,7 @@ func main() {
 		slog.Info("pregame email sent", "squiggle_id", game.ID)
 	}
 
-	if sentAny && !*dryRun {
+	if (sentAny || attemptedAny) && !*dryRun {
 		if err := state.Save(statePath); err != nil {
 			slog.Error("save pregame state", "path", statePath, "error", err)
 			os.Exit(1)
