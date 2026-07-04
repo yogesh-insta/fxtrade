@@ -1,0 +1,66 @@
+name: Deploy to GCP VM
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-gcp-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - name: Build linux/amd64 binary
+        run: GOOS=linux GOARCH=amd64 go build -o fxtrade ./cmd/fxtrade
+
+      - name: Configure SSH
+        env:
+          GCP_VM_HOST: ${{ secrets.GCP_VM_HOST }}
+          GCP_SSH_KEY: ${{ secrets.GCP_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$GCP_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$GCP_VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Deploy binary and restart service
+        env:
+          GCP_VM_HOST: ${{ secrets.GCP_VM_HOST }}
+          GCP_VM_USER: ${{ secrets.GCP_VM_USER }}
+          GCP_VM_PATH: ${{ secrets.GCP_VM_PATH }}
+        run: |
+          VM_PATH="${GCP_VM_PATH:-/opt/fxtrade/bin/fxtrade}"
+          REMOTE="${GCP_VM_USER}@${GCP_VM_HOST}"
+
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes fxtrade "${REMOTE}:/tmp/fxtrade.new"
+
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$REMOTE" bash -s <<EOF
+          set -euo pipefail
+          sudo install -m 755 /tmp/fxtrade.new "${VM_PATH}"
+          rm -f /tmp/fxtrade.new
+          restarted=0
+          if systemctl is-enabled fxtrade.service &>/dev/null; then
+            sudo systemctl restart fxtrade.service
+            restarted=1
+          fi
+          while IFS= read -r unit; do
+            [[ -z "\$unit" ]] && continue
+            sudo systemctl restart "\$unit"
+            restarted=1
+          done < <(systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '\$1 ~ /^fxtrade@.+\\.service\$/ && \$2 == "enabled" {print \$1}')
+          if [[ \$restarted -eq 0 ]]; then
+            echo "No enabled fxtrade units — binary updated at ${VM_PATH}"
+            echo "Enable with: sudo systemctl enable --now fxtrade.service"
+            echo "  or: sudo ./deploy/gcp/install.sh --enable-bot BOT_ID"
+          fi
+          EOF

@@ -13,10 +13,13 @@ const (
 )
 
 type Config struct {
-	OANDA       OANDAConfig     `json:"oanda"`
-	Instruments []string        `json:"instruments"`
-	Email       EmailConfig     `json:"email"`
-	Risk      RiskConfig      `json:"risk"`
+	OANDA         OANDAConfig           `json:"oanda"`
+	Instruments   []string              `json:"instruments"`
+	Email         EmailConfig           `json:"email"`
+	Notifications NotificationsConfig   `json:"notifications"`
+	Scanner       ScannerConfig         `json:"scanner"`
+	Bots          BotsConfig            `json:"bots"`
+	Risk          RiskConfig            `json:"risk"`
 	Finnhub   FinnhubConfig   `json:"finnhub"`
 	LLM       LLMConfig       `json:"llm"`
 	Sentiment SentimentConfig `json:"sentiment"`
@@ -144,7 +147,7 @@ func (c *Config) applyDefaults() {
 	if c.OANDA.Environment == "" {
 		c.OANDA.Environment = EnvPractice
 	}
-	if len(c.Instruments) == 0 {
+	if len(c.Instruments) == 0 && !c.ScannerEnabled() {
 		c.Instruments = []string{"AUD_USD"}
 	}
 	if c.Email.SMTPPort == 0 && c.Email.SMTPHost != "" {
@@ -213,7 +216,17 @@ func (c *Config) applyDefaults() {
 	}
 
 	applyStrategyDefaults(c)
+	applyScannerDefaults(c)
+	applyNotificationsDefaults(c)
 	applyStateDefaults(c)
+
+	// Legacy single-mode shortcut: when only universe_scanner is active via strategy.mode.
+	if c.ScannerEnabled() && len(c.Bots.Enabled) == 0 {
+		c.Strategy.Enabled = true
+		if len(c.Scanner.Watchlist) > 0 {
+			c.Instruments = append([]string(nil), c.Scanner.Watchlist...)
+		}
+	}
 }
 
 func applyStateDefaults(c *Config) {
@@ -232,12 +245,14 @@ func (c *Config) Validate() error {
 	if c.OANDA.Environment != EnvPractice && c.OANDA.Environment != EnvLive {
 		return fmt.Errorf("oanda.environment must be %q or %q", EnvPractice, EnvLive)
 	}
-	for _, inst := range c.Instruments {
-		if inst == "" {
-			return fmt.Errorf("instruments must not contain empty strings")
+	if !c.ScannerEnabled() {
+		for _, inst := range c.Instruments {
+			if inst == "" {
+				return fmt.Errorf("instruments must not contain empty strings")
+			}
 		}
 	}
-	return nil
+	return c.ValidateBots()
 }
 
 func (o OANDAConfig) RESTBaseURL() string {

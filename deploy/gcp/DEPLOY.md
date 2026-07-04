@@ -1,0 +1,219 @@
+# Deploy fxtrade on GCP (e2-micro)
+
+Bare-metal deploy on a single **e2-micro** VM (Ubuntu 22.04/24.04). Target: **$0/month** with GCP free tier (`us-east1` recommended). No Cloud Run or container registry required.
+
+## What you provide from GCP
+
+| Item | Example | Used for |
+|------|---------|----------|
+| **Project ID** | `my-fxtrade-prod` | `gcloud`, Secret Manager, firewall rules |
+| **Region / zone** | `us-east1-b` | VM placement (free-tier eligible) |
+| **VM external IP or hostname** | `34.x.x.x` | SSH, GitHub Actions `GCP_VM_HOST` |
+| **SSH user** | `your_gcp_username` | GitHub Actions `GCP_VM_USER` |
+| **SSH private key** | ed25519 key pair | GitHub secret `GCP_SSH_KEY` |
+| **Optional: Secret Manager secret** | `fxtrade-credentials` | VM pulls `.credentials` at boot |
+| **Optional: service account** | VM attached SA with `secretmanager.secretAccessor` | `fetch-credentials.sh` without user login |
+
+## 1. Create the VM
+
+```bash
+export PROJECT_ID="your-gcp-project"
+export ZONE="us-east1-b"
+
+gcloud config set project "$PROJECT_ID"
+
+gcloud compute instances create fxtrade-vm \
+  --zone="$ZONE" \
+  --machine-type=e2-micro \
+  --image-family=ubuntu-2204-lts \
+  --image-project=ubuntu-os-cloud \
+  --boot-disk-size=10GB \
+  --tags=fxtrade
+```
+
+Add your SSH public key at create time, or via OS Login / metadata:
+
+```bash
+gcloud compute os-login ssh-keys add --key-file=~/.ssh/id_ed25519.pub
+```
+
+Connect:
+
+```bash
+gcloud compute ssh fxtrade-vm --zone="$ZONE"
+```
+
+## 2. Clone repo and run install script
+
+On the VM:
+
+```bash
+sudo apt-get update && sudo apt-get install -y git
+git clone https://github.com/YOUR_ORG/fxtrade.git
+cd fxtrade
+chmod +x deploy/gcp/install.sh deploy/gcp/fetch-credentials.sh
+sudo ./deploy/gcp/install.sh --enable-all
+```
+
+This creates:
+
+| Path | Purpose |
+|------|---------|
+| `/opt/fxtrade/bin/fxtrade` | Binary (deployed by CI or manual `scp`) |
+| `/opt/fxtrade/.credentials` | Secrets JSON (600, owner `fxtrade`) |
+| `/opt/fxtrade/data/` | Bot state files |
+| `/opt/fxtrade/logs/` | Daemon stdout/stderr |
+| `/etc/fxtrade/fxtrade.env` | Health addr, dry-run flag |
+| `/etc/systemd/system/fxtrade.service` | All enabled bots |
+| `/etc/systemd/system/fxtrade@.service` | One bot per unit (`--bot`) |
+
+### Systemd modes
+
+**All enabled bots** (recommended on one VM — single health endpoint):
+
+```bash
+sudo systemctl enable --now fxtrade.service
+```
+
+Runs `fxtrade` with no `--bot` flag; bots come from `"bots": { "enabled": [...] }` in `.credentials`.
+
+**One bot per unit** (process isolation; assign unique health ports):
+
+```bash
+sudo ./deploy/gcp/install.sh --enable-bot universe_scanner
+sudo ./deploy/gcp/install.sh --enable-bot range_trend
+```
+
+Or manually:
+
+```bash
+sudo systemctl enable --now fxtrade@universe_scanner.service
+```
+
+Per-bot health ports (set by `install.sh --enable-bot`):
+
+| Bot | Health port |
+|-----|-------------|
+| `universe_scanner` | `:8081` |
+| `range_trend` | `:8082` |
+| `fxtrade.service` (all) | `:8080` |
+
+## 3. Place `.credentials`
+
+**Option A — copy from laptop (simplest):**
+
+```bash
+scp -i ~/.ssh/your_key .credentials user@VM_IP:/tmp/.credentials
+ssh user@VM_IP 'sudo install -o fxtrade -g fxtrade -m 600 /tmp/.credentials /opt/fxtrade/.credentials && rm /tmp/.credentials'
+```
+
+**Option B — GCP Secret Manager:**
+
+```bash
+# Once, from your laptop (JSON file must not be committed):
+gcloud secrets create fxtrade-credentials --replication-policy=automatic
+gcloud secrets versions add fxtrade-credentials --data-file=.credentials
+
+# On VM (service account needs secretmanager.secretAccessor):
+sudo /opt/fxtrade/deploy/gcp/fetch-credentials.sh fxtrade-credentials
+```
+
+Grant the VM's service account:
+
+```bash
+gcloud secrets add-iam-policy-binding fxtrade-credentials \
+  --member="serviceAccount:VM_SERVICE_ACCOUNT@PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+Restart after credentials are in place:
+
+```bash
+sudo systemctl restart fxtrade.service
+# or per-bot: sudo systemctl restart fxtrade@universe_scanner.service
+```
+
+## 4. Deploy the Linux binary
+
+**From your laptop:**
+
+```bash
+GOOS=linux GOARCH=amd64 go build -o fxtrade ./cmd/fxtrade
+scp fxtrade user@VM_IP:/tmp/fxtrade
+ssh user@VM_IP 'sudo install -m 755 /tmp/fxtrade /opt/fxtrade/bin/fxtrade && sudo systemctl restart fxtrade.service'
+```
+
+**Via GitHub Actions:** push to `main` (see `.github/workflows/deploy.yml`) after configuring secrets below. The workflow restarts every enabled `fxtrade.service` and `fxtrade@*.service` unit after updating the binary.
+
+## 5. Firewall (optional health check from outside)
+
+Health listens on `:8080` by default (localhost-only is fine for SSH tunneling).
+
+Allow inbound 8080 only if you need external monitoring:
+
+```bash
+gcloud compute firewall-rules create fxtrade-health \
+  --allow=tcp:8080 \
+  --target-tags=fxtrade \
+  --source-ranges=YOUR_IP/32 \
+  --description="fxtrade health endpoint"
+```
+
+Verify on VM:
+
+```bash
+curl -s http://127.0.0.1:8080/health | python3 -m json.tool
+```
+
+SSH tunnel from laptop:
+
+```bash
+ssh -L 8080:127.0.0.1:8080 user@VM_IP
+curl http://localhost:8080/health
+```
+
+## 6. Operations
+
+```bash
+sudo systemctl status fxtrade.service
+sudo journalctl -u fxtrade.service -f
+tail -f /opt/fxtrade/logs/daemon.stdout.log
+
+# Emergency halt (same as POST /kill)
+sudo -u fxtrade touch /opt/fxtrade/.halt
+sudo systemctl restart fxtrade.service
+
+# Dry-run mode (no OANDA orders)
+echo 'FXTRADE_DRY_RUN=--dry-run' | sudo tee -a /etc/fxtrade/fxtrade.env
+sudo systemctl restart fxtrade.service
+```
+
+## GitHub Actions secrets
+
+Configure in **Settings → Secrets and variables → Actions**:
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `GCP_VM_HOST` | Yes | VM external IP or hostname |
+| `GCP_VM_USER` | Yes | SSH username on the VM |
+| `GCP_SSH_KEY` | Yes | Private key (full PEM/OpenSSH text) |
+| `GCP_VM_PATH` | No | Binary path (default `/opt/fxtrade/bin/fxtrade`) |
+
+Deploy workflow: `.github/workflows/deploy.yml` — runs on push to `main` or manual **workflow_dispatch**.
+
+CI workflow: `.github/workflows/ci.yml` — `go test ./...` and build on every push/PR.
+
+## Cost notes (e2-micro free tier)
+
+- **e2-micro** in `us-east1`, `us-west1`, or `us-central1`: 1 instance free per month (subject to GCP free tier terms).
+- 10 GB standard persistent disk included in free tier allowance.
+- Egress to OANDA/Finnhub/Groq is minimal; stay on practice account until validated.
+
+## Troubleshooting
+
+| Symptom | Check |
+|---------|--------|
+| Service exits immediately | `journalctl -u fxtrade -n 50`; missing `.credentials` or invalid JSON |
+| `address already in use` | Two bot units on same health port — use `install.sh --enable-bot` or edit drop-in |
+| SSH deploy fails | `GCP_SSH_KEY` format, `known_hosts`, firewall allows TCP 22 |
+| No trades | `"strategy": { "enabled": true }`, not in dry-run, OANDA practice funded |
