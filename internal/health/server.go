@@ -130,11 +130,22 @@ func (s *Server) handleKill(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	st := s.buildStatus()
+	ok, _ := Evaluate(st, time.Now(), DefaultStaleTickAge)
+	st.OK = ok
+
+	w.Header().Set("Content-Type", "application/json")
+	if !ok {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}
+	_ = json.NewEncoder(w).Encode(st)
+}
+
+func (s *Server) buildStatus() Status {
 	last, _ := s.lastTick.Load().(time.Time)
 	inst, _ := s.lastInst.Load().(string)
 
 	st := Status{
-		OK:              true,
 		StartedAt:       s.startedAt,
 		LastTickAt:      last,
 		LastTickInst:    inst,
@@ -163,8 +174,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if s.botStatusFn != nil {
 		st.Bots = s.botStatusFn()
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(st)
+	return st
 }
 
 func (s *Server) handleBots(w http.ResponseWriter, r *http.Request) {
