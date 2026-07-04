@@ -19,14 +19,14 @@ func TestBuildHomeFeatureVectorLength(t *testing.T) {
 		t.Fatalf("expected %d features, got %d", FeatureCount, len(fv.Values))
 	}
 	for i, v := range fv.Values {
-		if v < 0 || v > 1.5 {
+		if v < -1.1 || v > 1.5 {
 			t.Fatalf("feature %d out of expected range: %.3f", i, v)
 		}
 	}
 }
 
 func TestFeatureCountStable(t *testing.T) {
-	if FeatureCount != 20 {
+	if FeatureCount != 26 {
 		t.Fatalf("FeatureCount changed — update model export and tests; got %d", FeatureCount)
 	}
 }

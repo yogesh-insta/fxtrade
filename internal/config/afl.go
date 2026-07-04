@@ -9,6 +9,7 @@ type AFLConfig struct {
 	Concurrency          int     `json:"concurrency"`
 	MaxOddsAgeMinutes    int     `json:"max_odds_age_minutes"`
 	ModelPath            string  `json:"model_path"`
+	TotalsModelPath      string  `json:"totals_model_path"`
 	StatsDir             string  `json:"stats_dir"`
 	InjuriesFile         string  `json:"injuries_file"`
 	AlertTopN            int     `json:"alert_top_n"`
@@ -19,6 +20,9 @@ type AFLConfig struct {
 	OddsMarkets          string  `json:"odds_markets"`
 	PredictorType        string  `json:"predictor_type"` // "matrix" or "onnx"
 	ONNXModelPath        string  `json:"onnx_model_path"`
+	StatsRefreshOnRun    *bool   `json:"stats_refresh_on_run"`
+	SquiggleUserAgent    string  `json:"squiggle_user_agent"`
+	StatsSeasonYear      int     `json:"stats_season_year"`
 }
 
 func DefaultAFLConfig() AFLConfig {
@@ -27,7 +31,9 @@ func DefaultAFLConfig() AFLConfig {
 		Concurrency:       4,
 		MaxOddsAgeMinutes: 30,
 		ModelPath:         "data/afl/model_coefficients.json",
+		TotalsModelPath:   "data/afl/totals_coefficients.json",
 		StatsDir:          "data/afl",
+		InjuriesFile:      "data/afl/injuries.json",
 		AlertTopN:         5,
 		OverallTimeoutMin: 5,
 		OddsAPIBaseURL:    "https://api.the-odds-api.com/v4",
@@ -35,7 +41,13 @@ func DefaultAFLConfig() AFLConfig {
 		OddsRegions:       "au",
 		OddsMarkets:       "h2h,totals",
 		PredictorType:     "matrix",
+		StatsRefreshOnRun: defaultStatsRefreshOnRun(),
 	}
+}
+
+func defaultStatsRefreshOnRun() *bool {
+	v := true
+	return &v
 }
 
 func applyAFLDefaults(a *AFLConfig) {
@@ -52,8 +64,14 @@ func applyAFLDefaults(a *AFLConfig) {
 	if a.ModelPath == "" {
 		a.ModelPath = def.ModelPath
 	}
+	if a.TotalsModelPath == "" {
+		a.TotalsModelPath = def.TotalsModelPath
+	}
 	if a.StatsDir == "" {
 		a.StatsDir = def.StatsDir
+	}
+	if a.InjuriesFile == "" {
+		a.InjuriesFile = def.InjuriesFile
 	}
 	if a.AlertTopN == 0 {
 		a.AlertTopN = def.AlertTopN
@@ -76,6 +94,20 @@ func applyAFLDefaults(a *AFLConfig) {
 	if a.PredictorType == "" {
 		a.PredictorType = def.PredictorType
 	}
+	if a.SquiggleUserAgent == "" {
+		a.SquiggleUserAgent = "AFLPulse/1.0 fxtrade"
+	}
+	if a.StatsRefreshOnRun == nil {
+		a.StatsRefreshOnRun = def.StatsRefreshOnRun
+	}
+}
+
+// StatsRefreshEnabled reports whether live stats should be fetched before each run.
+func (a AFLConfig) StatsRefreshEnabled() bool {
+	if a.StatsRefreshOnRun == nil {
+		return true
+	}
+	return *a.StatsRefreshOnRun
 }
 
 func (a AFLConfig) Enabled() bool {

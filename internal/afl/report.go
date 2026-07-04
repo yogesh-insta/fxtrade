@@ -29,6 +29,21 @@ type MatchReport struct {
 	Score       ScoreProjection
 	ValueBets   []ValueBet
 	TotalsLine  *TotalsOdds
+	Provenance  DataProvenance
+}
+
+// DataProvenance records which data sources fed this prediction.
+type DataProvenance struct {
+	StatsSource     string
+	StatsDetail     string
+	StatsAsOf       time.Time
+	OddsSource      string
+	OddsUpdatedAt   time.Time
+	WeatherSource   string
+	PredictorType   string
+	InjuriesFile    string
+	InjuriesApplied bool
+	InjuriesCount   int
 }
 
 // Fixture is a deduplicated upcoming match from odds events.
@@ -134,6 +149,7 @@ func (e *Evaluator) BuildRoundReports(ctx context.Context, fixtures []Fixture, h
 				HomeWinProb: homeProb,
 				Score:       score,
 				ValueBets:   append([]ValueBet(nil), byEvent[fix.EventID]...),
+				Provenance:  buildReportProvenance(e.reportMeta, fix, h2h),
 			}
 			if t, ok := totalsByEvent[fix.EventID]; ok {
 				tcopy := t
@@ -168,6 +184,25 @@ func (e *Evaluator) BuildRoundReports(ctx context.Context, fixtures []Fixture, h
 	return reports, valueBets, buildErr
 }
 
+func buildReportProvenance(base DataProvenance, fix Fixture, h2h []MarketOdds) DataProvenance {
+	p := base
+	if p.OddsSource == "" {
+		p.OddsSource = "The Odds API"
+	}
+	if p.WeatherSource == "" {
+		p.WeatherSource = "Open-Meteo"
+	}
+	for _, mo := range h2h {
+		if mo.EventID != fix.EventID {
+			continue
+		}
+		if !mo.UpdatedAt.IsZero() && (p.OddsUpdatedAt.IsZero() || mo.UpdatedAt.After(p.OddsUpdatedAt)) {
+			p.OddsUpdatedAt = mo.UpdatedAt
+		}
+	}
+	return p
+}
+
 // FormatRoundReportSummary returns a log-friendly one-liner.
 func FormatRoundReportSummary(reports []MatchReport, valueBets []ValueBet) string {
 	if len(reports) == 0 {
@@ -197,13 +232,17 @@ func FormatMatchPredictions(r MatchReport) string {
 
 // FormatFixturePredictionBlock returns a log-friendly fixture header plus labeled predictions.
 func FormatFixturePredictionBlock(r MatchReport) string {
-	ctx := r.Context
 	var b strings.Builder
-	fmt.Fprintf(&b, "▸ %s vs %s", ctx.HomeTeam, ctx.AwayTeam)
-	if !ctx.Kickoff.IsZero() {
-		fmt.Fprintf(&b, " · %s", ctx.Kickoff.Format(time.RFC1123))
+	fmt.Fprintf(&b, "▸ %s vs %s", r.Context.HomeTeam, r.Context.AwayTeam)
+	if !r.Context.Kickoff.IsZero() {
+		fmt.Fprintf(&b, " · %s", r.Context.Kickoff.Format(time.RFC1123))
 	}
 	b.WriteString("\n")
 	b.WriteString(FormatMatchPredictions(r))
+	b.WriteString("\n")
+	writeScoreBreakdown(&b, r.Score, r.Context)
+	writeTeamFormLine(&b, r.Context)
+	writeLastFiveScores(&b, r.Context)
+	writePredictionReasons(&b, r)
 	return b.String()
 }
