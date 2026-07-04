@@ -1,0 +1,96 @@
+package config
+
+import "fmt"
+
+// AFLConfig holds AFLPulse value-betting scanner settings.
+type AFLConfig struct {
+	OddsAPIKey           string  `json:"odds_api_key"`
+	MinEVThreshold       float64 `json:"min_ev_threshold"`
+	Concurrency          int     `json:"concurrency"`
+	MaxOddsAgeMinutes    int     `json:"max_odds_age_minutes"`
+	ModelPath            string  `json:"model_path"`
+	StatsDir             string  `json:"stats_dir"`
+	InjuriesFile         string  `json:"injuries_file"`
+	AlertTopN            int     `json:"alert_top_n"`
+	OverallTimeoutMin    int     `json:"overall_timeout_minutes"`
+	OddsAPIBaseURL       string  `json:"odds_api_base_url"`
+	OddsSportKey         string  `json:"odds_sport_key"`
+	OddsRegions          string  `json:"odds_regions"`
+	OddsMarkets          string  `json:"odds_markets"`
+	PredictorType        string  `json:"predictor_type"` // "matrix" or "onnx"
+	ONNXModelPath        string  `json:"onnx_model_path"`
+}
+
+func DefaultAFLConfig() AFLConfig {
+	return AFLConfig{
+		MinEVThreshold:    0.05,
+		Concurrency:       4,
+		MaxOddsAgeMinutes: 30,
+		ModelPath:         "data/afl/model_coefficients.json",
+		StatsDir:          "data/afl",
+		AlertTopN:         5,
+		OverallTimeoutMin: 5,
+		OddsAPIBaseURL:    "https://api.the-odds-api.com/v4",
+		OddsSportKey:      "aussierules_afl",
+		OddsRegions:       "au",
+		OddsMarkets:       "h2h",
+		PredictorType:     "matrix",
+	}
+}
+
+func applyAFLDefaults(a *AFLConfig) {
+	def := DefaultAFLConfig()
+	if a.MinEVThreshold == 0 {
+		a.MinEVThreshold = def.MinEVThreshold
+	}
+	if a.Concurrency == 0 {
+		a.Concurrency = def.Concurrency
+	}
+	if a.MaxOddsAgeMinutes == 0 {
+		a.MaxOddsAgeMinutes = def.MaxOddsAgeMinutes
+	}
+	if a.ModelPath == "" {
+		a.ModelPath = def.ModelPath
+	}
+	if a.StatsDir == "" {
+		a.StatsDir = def.StatsDir
+	}
+	if a.AlertTopN == 0 {
+		a.AlertTopN = def.AlertTopN
+	}
+	if a.OverallTimeoutMin == 0 {
+		a.OverallTimeoutMin = def.OverallTimeoutMin
+	}
+	if a.OddsAPIBaseURL == "" {
+		a.OddsAPIBaseURL = def.OddsAPIBaseURL
+	}
+	if a.OddsSportKey == "" {
+		a.OddsSportKey = def.OddsSportKey
+	}
+	if a.OddsRegions == "" {
+		a.OddsRegions = def.OddsRegions
+	}
+	if a.OddsMarkets == "" {
+		a.OddsMarkets = def.OddsMarkets
+	}
+	if a.PredictorType == "" {
+		a.PredictorType = def.PredictorType
+	}
+}
+
+func (a AFLConfig) Enabled() bool {
+	return a.OddsAPIKey != ""
+}
+
+func (a AFLConfig) Validate() error {
+	if a.OddsAPIKey == "" {
+		return fmt.Errorf("afl.odds_api_key is required for AFLPulse")
+	}
+	if a.MinEVThreshold < 0 {
+		return fmt.Errorf("afl.min_ev_threshold must be >= 0")
+	}
+	if a.Concurrency < 1 {
+		return fmt.Errorf("afl.concurrency must be >= 1")
+	}
+	return nil
+}

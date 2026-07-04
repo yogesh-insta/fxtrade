@@ -1,0 +1,12 @@
+{
+  "players": [
+    {"player_id": "coll_neale", "team_id": "COLL", "role": "midfielder", "impact_score": 0.85},
+    {"player_id": "coll_darcy", "team_id": "COLL", "role": "key_forward", "impact_score": 0.80},
+    {"player_id": "bri_neale", "team_id": "BRI", "role": "midfielder", "impact_score": 0.82},
+    {"player_id": "bri_daniher", "team_id": "BRI", "role": "key_forward", "impact_score": 0.78},
+    {"player_id": "mel_petty", "team_id": "MEL", "role": "key_defender", "impact_score": 0.75},
+    {"player_id": "gee_danger", "team_id": "GEE", "role": "midfielder", "impact_score": 0.80},
+    {"player_id": "wce_kelly", "team_id": "WCE", "role": "midfielder", "impact_score": 0.77},
+    {"player_id": "syd_papley", "team_id": "SYD", "role": "key_forward", "impact_score": 0.76}
+  ]
+}
