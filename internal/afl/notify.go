@@ -143,13 +143,6 @@ func writeMatchReport(b *strings.Builder, r MatchReport) {
 	writeBookmakerSection(b, r)
 	b.WriteString("\n\n")
 
-	if r.Editorial != nil {
-		writeSmartPickSection(b, r)
-		b.WriteString("\n\n")
-		writePlayerPropSection(b, r)
-		b.WriteString("\n\n")
-	}
-
 	writeWhySection(b, r)
 	b.WriteString("\n\n")
 
@@ -163,6 +156,11 @@ func writeMatchReport(b *strings.Builder, r MatchReport) {
 	if len(r.ValueBets) > 0 {
 		b.WriteString("\n\n")
 		writeFixtureValueBet(b, r.ValueBets[0])
+	}
+
+	if hc := BuildHighConfidenceBets(r); len(hc.MatchBets) > 0 || len(hc.PlayerProps) > 0 {
+		b.WriteString("\n\n")
+		writeHighConfidenceSection(b, hc)
 	}
 }
 
@@ -318,37 +316,29 @@ func writeWhySection(b *strings.Builder, r MatchReport) {
 	}
 }
 
-func writeSmartPickSection(b *strings.Builder, r MatchReport) {
-	ed := r.Editorial
-	if ed == nil || len(ed.SmartPicks) == 0 {
-		return
-	}
-	b.WriteString("SMART PICK\n")
-	for i, pick := range ed.SmartPicks {
-		prefix := "  "
-		if i == 0 {
-			prefix = "  ★ "
-		}
-		fmt.Fprintf(b, "%s%s\n", prefix, pick.FormatSmartPickLine())
-	}
-}
-
-func writePlayerPropSection(b *strings.Builder, r MatchReport) {
-	ed := r.Editorial
-	if ed == nil || len(ed.PlayerProps) == 0 {
-		return
-	}
-	b.WriteString("PLAYER PROP (Same Game Multi)\n")
-	for _, prop := range ed.PlayerProps {
-		line := fmt.Sprintf("%s %s", prop.Player, prop.Market)
-		if prop.Team != "" {
-			line += fmt.Sprintf(" (%s)", prop.Team)
-		}
-		b.WriteString(wrapIndented("  • ", line, emailLineWidth, bulletContIndent))
-		b.WriteString("\n")
-		if prop.Why != "" {
-			b.WriteString(wrapIndented("    ", prop.Why, emailLineWidth, "      "))
+func writeHighConfidenceSection(b *strings.Builder, hc HighConfidenceBundle) {
+	b.WriteString("HIGH CONFIDENCE BETS\n")
+	b.WriteString("  (additional to model prediction above — does not replace it)\n")
+	if len(hc.MatchBets) > 0 {
+		b.WriteString("\n  Match bets\n")
+		for _, bet := range hc.MatchBets {
+			b.WriteString(wrapIndented("  • ", bet.formatLine(), emailLineWidth, bulletContIndent))
 			b.WriteString("\n")
+			if bet.Why != "" {
+				b.WriteString(wrapIndented("    ", bet.Why, emailLineWidth, "      "))
+				b.WriteString("\n")
+			}
+		}
+	}
+	if len(hc.PlayerProps) > 0 {
+		b.WriteString("\n  Player props (Same Game Multi)\n")
+		for _, bet := range hc.PlayerProps {
+			b.WriteString(wrapIndented("  • ", bet.Label+" [curated]", emailLineWidth, bulletContIndent))
+			b.WriteString("\n")
+			if bet.Why != "" {
+				b.WriteString(wrapIndented("    ", bet.Why, emailLineWidth, "      "))
+				b.WriteString("\n")
+			}
 		}
 	}
 }

@@ -7,12 +7,13 @@ import (
 	"strings"
 )
 
-// EditorialPick is a curated betting selection for a fixture.
+// EditorialPick is a curated high-confidence betting selection for a fixture.
 type EditorialPick struct {
-	Type      string   `json:"type"` // h2h, margin
+	Type      string   `json:"type"` // h2h, margin, totals
 	Selection string   `json:"selection"`
 	Odds      *float64 `json:"odds,omitempty"`
 	Label     string   `json:"label"`
+	Why       string   `json:"why,omitempty"`
 }
 
 // PlayerPropPick is a curated player-prop consideration (Same Game Multi).

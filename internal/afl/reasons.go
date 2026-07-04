@@ -99,14 +99,6 @@ func BuildMatchPredictionReasons(r MatchReport) []string {
 		}
 	}
 
-	if r.Editorial != nil {
-		for _, note := range r.Editorial.Notes {
-			if note = strings.TrimSpace(note); note != "" {
-				reasons = append(reasons, note)
-			}
-		}
-	}
-
 	return reasons
 }
 

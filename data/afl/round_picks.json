@@ -10,12 +10,14 @@
           "type": "h2h",
           "selection": "STK",
           "odds": 1.20,
-          "label": "St Kilda Head-to-Head"
+          "label": "St Kilda Head-to-Head",
+          "why": "Saints are pushing for a wildcard finals spot; Essendon are on a devastating 10-game losing streak."
         },
         {
           "type": "margin",
           "selection": "STK 1-39",
-          "label": "St Kilda 1-39 Margin"
+          "label": "St Kilda 1-39 Margin",
+          "why": "Should win comfortably, but the ~49% fatigue factor and Jack Sinclair (injured) may limit stamina to cover a massive -29.5 line — 1-39 covers that risk."
         }
       ],
       "player_props": [
@@ -25,11 +27,6 @@
           "market": "25+ Disposals",
           "why": "Coming off a 44-disposal game; Essendon allowed North Melbourne's half-backs to run riot last week — prime matchup for outside midfielders and defenders."
         }
-      ],
-      "notes": [
-        "St Kilda are pushing hard for a wildcard finals spot.",
-        "Fatigue factor ~49% and Jack Sinclair (injured) may limit 4-quarter stamina to cover a massive -29.5 line.",
-        "Essendon are on a 10-game losing streak — Saints should win comfortably, but 1-39 margin covers fatigue risk."
       ]
     }
   ]
