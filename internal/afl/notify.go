@@ -60,14 +60,8 @@ func writeMatchReport(b *strings.Builder, r MatchReport) {
 	}
 	b.WriteString("\n")
 
-	winnerSide := "home"
-	if r.Score.PredictedWinner == ctx.AwayTeam {
-		winnerSide = "away"
-	}
-	fmt.Fprintf(b, "  Winner: %s (%s) · %.0f%% home win prob\n",
-		r.Score.PredictedWinner, winnerSide, r.HomeWinProb*100)
-	fmt.Fprintf(b, "  Predicted score: %s %d – %d %s (total %d, margin %d)\n",
-		ctx.HomeTeam, r.Score.HomeScore, r.Score.AwayScore, ctx.AwayTeam, r.Score.TotalScore, r.Score.Margin)
+	b.WriteString(FormatMatchPredictions(r))
+	b.WriteString("\n")
 
 	if r.TotalsLine != nil {
 		diff := float64(r.Score.TotalScore) - r.TotalsLine.Line

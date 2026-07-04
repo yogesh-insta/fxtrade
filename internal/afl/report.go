@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -173,4 +174,36 @@ func FormatRoundReportSummary(reports []MatchReport, valueBets []ValueBet) strin
 		return "no upcoming fixtures"
 	}
 	return fmt.Sprintf("%d fixture(s), %d value bet(s)", len(reports), len(valueBets))
+}
+
+// WinnerWinProbability returns the model probability for the predicted winner.
+func (r MatchReport) WinnerWinProbability() float64 {
+	if r.Score.PredictedWinner == r.Context.HomeTeam {
+		return r.HomeWinProb
+	}
+	return 1 - r.HomeWinProb
+}
+
+// FormatMatchPredictions returns four labeled prediction lines for one fixture.
+func FormatMatchPredictions(r MatchReport) string {
+	ctx := r.Context
+	var b strings.Builder
+	fmt.Fprintf(&b, "  Winner: %s (%.0f%% probability)\n", r.Score.PredictedWinner, r.WinnerWinProbability()*100)
+	fmt.Fprintf(&b, "  Total score: %d points\n", r.Score.TotalScore)
+	fmt.Fprintf(&b, "  Team scores: %s %d – %s %d\n", ctx.HomeTeam, r.Score.HomeScore, ctx.AwayTeam, r.Score.AwayScore)
+	fmt.Fprintf(&b, "  Winning margin: %d points (%s)", r.Score.Margin, r.Score.PredictedWinner)
+	return b.String()
+}
+
+// FormatFixturePredictionBlock returns a log-friendly fixture header plus labeled predictions.
+func FormatFixturePredictionBlock(r MatchReport) string {
+	ctx := r.Context
+	var b strings.Builder
+	fmt.Fprintf(&b, "▸ %s vs %s", ctx.HomeTeam, ctx.AwayTeam)
+	if !ctx.Kickoff.IsZero() {
+		fmt.Fprintf(&b, " · %s", ctx.Kickoff.Format(time.RFC1123))
+	}
+	b.WriteString("\n")
+	b.WriteString(FormatMatchPredictions(r))
+	return b.String()
 }
