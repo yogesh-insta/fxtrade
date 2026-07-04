@@ -48,6 +48,9 @@ func TestFormatRoundReportEmailRichCarl(t *testing.T) {
 			PredictedWinner: "RICH", HomeWinProb: 0.58,
 		},
 		TotalsLine: &TotalsOdds{Line: 168.5, Bookmaker: "sportsbet"},
+		MarketOdds: map[TeamID]MarketOdds{
+			"RICH": {Team: "RICH", DecimalOdds: 1.55, Bookmaker: "sportsbet"},
+		},
 		ValueBets: []ValueBet{{
 			HomeTeam: "RICH", AwayTeam: "CARL", Team: "RICH",
 			Bookmaker: "sportsbet", DecimalOdds: 1.95, EV: 0.08, IsHomePick: true,
@@ -55,13 +58,16 @@ func TestFormatRoundReportEmailRichCarl(t *testing.T) {
 	}
 	body := FormatRoundReportEmail([]MatchReport{report}, report.ValueBets)
 	for _, want := range []string{
+		"AFLPulse Round Scan",
 		"RICH vs CARL",
-		"Winner: RICH (58% probability)",
-		"Total score: 170 points",
-		"Team scores: RICH 92 – CARL 78",
-		"Winning margin: 14 points (RICH)",
-		"Book total line: 168.5",
-		"★ VALUE: RICH",
+		"PREDICTION",
+		"Winner:     Richmond (58%)",
+		"Score:      Richmond 92 – Carlton 78  (margin 14)",
+		"Total:      170 points",
+		"VS BOOKMAKER",
+		"Total line: 168.5",
+		"★ VALUE BET: Richmond",
+		"VALUE BETS (1)",
 		"Manual execution required",
 	} {
 		if !strings.Contains(body, want) {
@@ -89,5 +95,16 @@ func TestMatrixPredictor(t *testing.T) {
 	}
 	if prob <= 0 || prob >= 1 {
 		t.Fatalf("expected probability in (0,1), got %.4f", prob)
+	}
+}
+
+func TestFormatKickoffMelbourne(t *testing.T) {
+	if melbourneLoc == nil {
+		t.Skip("Australia/Melbourne timezone unavailable")
+	}
+	kick := time.Date(2025, 7, 5, 5, 15, 0, 0, time.UTC)
+	got := formatKickoffMelbourne(kick)
+	if !strings.Contains(got, "Jul") || !strings.Contains(got, "3:15 PM") {
+		t.Fatalf("unexpected kickoff format: %q", got)
 	}
 }

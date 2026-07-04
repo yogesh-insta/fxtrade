@@ -29,6 +29,7 @@ type MatchReport struct {
 	Score       ScoreProjection
 	ValueBets   []ValueBet
 	TotalsLine  *TotalsOdds
+	MarketOdds  map[TeamID]MarketOdds // best h2h price per team (display only)
 	Provenance  DataProvenance
 }
 
@@ -155,6 +156,7 @@ func (e *Evaluator) BuildRoundReports(ctx context.Context, fixtures []Fixture, h
 				tcopy := t
 				report.TotalsLine = &tcopy
 			}
+			report.MarketOdds = BestMarketOddsByTeam(h2h, fix.EventID)
 
 			mu.Lock()
 			reports = append(reports, report)
@@ -219,30 +221,31 @@ func (r MatchReport) WinnerWinProbability() float64 {
 	return 1 - r.HomeWinProb
 }
 
-// FormatMatchPredictions returns four labeled prediction lines for one fixture.
+// BestMarketOddsByTeam picks the best available h2h decimal price per team for one event.
+func BestMarketOddsByTeam(h2h []MarketOdds, eventID string) map[TeamID]MarketOdds {
+	best := make(map[TeamID]MarketOdds)
+	for _, mo := range h2h {
+		if mo.EventID != eventID {
+			continue
+		}
+		cur, ok := best[mo.Team]
+		if !ok || mo.DecimalOdds > cur.DecimalOdds {
+			best[mo.Team] = mo
+		}
+	}
+	return best
+}
+
+// FormatMatchPredictions returns labeled prediction lines for one fixture.
 func FormatMatchPredictions(r MatchReport) string {
-	ctx := r.Context
 	var b strings.Builder
-	fmt.Fprintf(&b, "  Winner: %s (%.0f%% probability)\n", r.Score.PredictedWinner, r.WinnerWinProbability()*100)
-	fmt.Fprintf(&b, "  Total score: %d points\n", r.Score.TotalScore)
-	fmt.Fprintf(&b, "  Team scores: %s %d – %s %d\n", ctx.HomeTeam, r.Score.HomeScore, ctx.AwayTeam, r.Score.AwayScore)
-	fmt.Fprintf(&b, "  Winning margin: %d points (%s)", r.Score.Margin, r.Score.PredictedWinner)
+	writePredictionSection(&b, r)
 	return b.String()
 }
 
-// FormatFixturePredictionBlock returns a log-friendly fixture header plus labeled predictions.
+// FormatFixturePredictionBlock returns the same fixture block used in weekly emails.
 func FormatFixturePredictionBlock(r MatchReport) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "▸ %s vs %s", r.Context.HomeTeam, r.Context.AwayTeam)
-	if !r.Context.Kickoff.IsZero() {
-		fmt.Fprintf(&b, " · %s", r.Context.Kickoff.Format(time.RFC1123))
-	}
-	b.WriteString("\n")
-	b.WriteString(FormatMatchPredictions(r))
-	b.WriteString("\n")
-	writeScoreBreakdown(&b, r.Score, r.Context)
-	writeTeamFormLine(&b, r.Context)
-	writeLastFiveScores(&b, r.Context)
-	writePredictionReasons(&b, r)
+	writeMatchReport(&b, r)
 	return b.String()
 }
