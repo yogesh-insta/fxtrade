@@ -154,6 +154,24 @@ func writeMatchReport(b *strings.Builder, r MatchReport) {
 		b.WriteString("\n\n")
 		writeFixtureValueBet(b, r.ValueBets[0])
 	}
+
+	if strings.TrimSpace(r.LLMAnalytics) != "" {
+		b.WriteString("\n\n")
+		writeLLMAnalyticsSection(b, r)
+	}
+}
+
+func writeLLMAnalyticsSection(b *strings.Builder, r MatchReport) {
+	b.WriteString(fixtureRule)
+	b.WriteString("\n")
+	b.WriteString("LIVE ANALYTICS (Gemini + Google Search)\n")
+	b.WriteString("  Supplementary high-confidence selections — model prediction above unchanged.\n")
+	b.WriteString(fixtureRule)
+	b.WriteString("\n\n")
+	for _, line := range strings.Split(strings.TrimSpace(r.LLMAnalytics), "\n") {
+		b.WriteString(wrapIndented("", line, emailLineWidth, "  "))
+		b.WriteString("\n")
+	}
 }
 
 func writePredictionSection(b *strings.Builder, r MatchReport) {
