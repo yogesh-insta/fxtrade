@@ -2,6 +2,20 @@
 
 Bare-metal deploy on a single **e2-micro** VM (Ubuntu 22.04/24.04). Target: **$0/month** with GCP free tier (`us-east1` recommended). No Cloud Run or container registry required.
 
+## Infrastructure (Terraform)
+
+**Preferred:** provision the VM, service account, Secret Manager secret, IAM, and firewall with Terraform.
+
+```bash
+cd deploy/gcp/terraform
+cp terraform.tfvars.example terraform.tfvars   # edit admin_cidr, ssh_public_keys
+terraform init && terraform plan && terraform apply
+```
+
+Full instructions (import existing VM, upload secrets, GitHub Actions wiring): **[terraform/README.md](terraform/README.md)**.
+
+The sections below describe **legacy manual `gcloud` steps** — use them only if you are not using Terraform.
+
 ## What you provide from GCP
 
 | Item | Example | Used for |

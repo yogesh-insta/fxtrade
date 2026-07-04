@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars (gitignored). Do NOT commit real values or .credentials.
+
+project_id = "fxtrade-prod-12345"
+zone       = "us-east1-b"
+
+# Restrict SSH to your public IP in production:
+# admin_cidr = "203.0.113.10/32"
+
+# SSH public key for GitHub Actions / admin access (user:ssh-ed25519 AAAA... comment)
+# ssh_public_keys = "deploy:ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... deploy@laptop"
+
+# Optional: upload secret via Terraform (prefer gcloud secrets versions add instead)
+# credentials_secret_data = file("../../.credentials")
+
+# Optional external health monitoring:
+# enable_health_firewall = true
+# health_port            = 8081
+# health_source_cidr     = "203.0.113.10/32"

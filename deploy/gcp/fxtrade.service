@@ -10,10 +10,7 @@ User=fxtrade
 Group=fxtrade
 WorkingDirectory=/opt/fxtrade
 EnvironmentFile=-/etc/fxtrade/fxtrade.env
-ExecStart=/opt/fxtrade/bin/fxtrade \
-  -credentials ${FXTRADE_CREDENTIALS} \
-  -health-addr ${FXTRADE_HEALTH_ADDR} \
-  ${FXTRADE_DRY_RUN}
+ExecStart=/bin/sh -c 'exec /opt/fxtrade/bin/fxtrade -credentials "$FXTRADE_CREDENTIALS" -health-addr "${FXTRADE_HEALTH_ADDR:-:8080}" $FXTRADE_DRY_RUN'
 Restart=on-failure
 RestartSec=10
 LimitNOFILE=65536

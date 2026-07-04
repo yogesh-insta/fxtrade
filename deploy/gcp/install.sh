@@ -59,7 +59,7 @@ sed -i "s|FXTRADE_HOME=.*|FXTRADE_HOME=$INSTALL_ROOT|" /etc/fxtrade/fxtrade.env
 sed -i "s|FXTRADE_CREDENTIALS=.*|FXTRADE_CREDENTIALS=$INSTALL_ROOT/.credentials|" /etc/fxtrade/fxtrade.env
 
 if $DRY_RUN; then
-  sed -i 's|^# FXTRADE_DRY_RUN=|-- FXTRADE_DRY_RUN=|' /etc/fxtrade/fxtrade.env || true
+  sed -i 's|^# FXTRADE_DRY_RUN=|FXTRADE_DRY_RUN=|' /etc/fxtrade/fxtrade.env || true
   if grep -q '^FXTRADE_DRY_RUN=' /etc/fxtrade/fxtrade.env; then
     sed -i 's|^FXTRADE_DRY_RUN=.*|FXTRADE_DRY_RUN=--dry-run|' /etc/fxtrade/fxtrade.env
   else
@@ -93,16 +93,13 @@ if $ENABLE_ALL; then
   echo "Enabled fxtrade.service (all bots from .credentials)"
 elif [[ -n "$ENABLE_BOT" ]]; then
   # Per-bot units need unique health ports if more than one runs at once.
-  dropin="/etc/systemd/system/fxtrade@${ENABLE_BOT}.service.d"
-  mkdir -p "$dropin"
   case "$ENABLE_BOT" in
     universe_scanner) port=":8081" ;;
     range_trend) port=":8082" ;;
     *) port=":8080" ;;
   esac
-  cat >"$dropin/health.conf" <<EOF
-[Service]
-Environment=FXTRADE_HEALTH_ADDR=$port
+  cat >"/etc/fxtrade/fxtrade@${ENABLE_BOT}.env" <<EOF
+FXTRADE_HEALTH_ADDR=$port
 EOF
   systemctl daemon-reload
   systemctl enable --now "fxtrade@${ENABLE_BOT}.service"
