@@ -228,6 +228,7 @@ watch -n 10 'curl -s http://localhost:8080/health | python3 -m json.tool'
 
 ## Security
 
+- **Private repository** — clone with SSH (`git@github.com:yogesh-insta/fxtrade.git`) or `gh repo clone yogesh-insta/fxtrade` after you have access.
 - Never commit `.credentials` — it is gitignored.
 - Use OANDA **practice** until expectancy is proven.
 - Revoke API tokens if they are ever exposed.

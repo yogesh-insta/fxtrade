@@ -63,7 +63,9 @@ On the VM:
 
 ```bash
 sudo apt-get update && sudo apt-get install -y git
-git clone https://github.com/YOUR_ORG/fxtrade.git
+# Private repo: use SSH deploy key on the VM, or clone from a machine with access:
+git clone git@github.com:yogesh-insta/fxtrade.git
+# Or: gh repo clone yogesh-insta/fxtrade  (after gh auth login)
 cd fxtrade
 chmod +x deploy/gcp/install.sh deploy/gcp/fetch-credentials.sh
 sudo ./deploy/gcp/install.sh --enable-all
