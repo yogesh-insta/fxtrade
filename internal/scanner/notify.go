@@ -31,12 +31,12 @@ func NewNotifier(cfg *config.Config, n notify.Notifier, dryRun bool) *Notifier {
 	}
 }
 
+func (n *Notifier) fxPrefix() string {
+	return n.cfg.EffectiveFXPrefix(n.dryRun)
+}
+
 func (n *Notifier) prefixSubject(subject string) string {
-	p := strings.TrimSpace(n.cfg.Prefix)
-	if p == "" {
-		return subject
-	}
-	return p + " " + subject
+	return n.fxPrefix() + " " + subject
 }
 
 func (n *Notifier) send(ctx context.Context, subject, body string) {
@@ -68,9 +68,9 @@ func (n *Notifier) TradeEntry(ctx context.Context, setup Setup, runnersUp []Setu
 			fmt.Fprintf(&b, "  %d) %s score=%.2f range=%.1f pips spread=%.2f\n", i+2, r.Instrument, r.Score, r.Range.RangePips, r.SpreadPips)
 		}
 	}
-	subject := fmt.Sprintf("ENTRY %s %s", setup.Instrument, setup.BreakoutDirection)
+	subject := fmt.Sprintf("ORB %s %s", setup.BreakoutDirection, setup.Instrument)
 	if n.dryRun {
-		subject = "[DRY RUN] " + subject
+		subject = "[PAPER] " + subject
 	}
 	n.send(ctx, subject, b.String())
 }
@@ -99,7 +99,7 @@ func (n *Notifier) WeeklyTargetReached(ctx context.Context, weeklyPnL, targetPct
 }
 
 func (n *Notifier) DaemonStarted(ctx context.Context, universe []string, pollSeconds int) {
-	body := fmt.Sprintf("Universe scanner running.\nEnvironment: %s\nInstruments: %d\nPoll: %ds\nSymbols: %s\n",
+	body := fmt.Sprintf("FXPulse ORB Scanner running.\nEnvironment: %s\nInstruments: %d\nPoll: %ds\nSymbols: %s\n",
 		n.envLabel, len(universe), pollSeconds, strings.Join(universe, ", "))
 	n.send(ctx, "daemon started", body)
 }
