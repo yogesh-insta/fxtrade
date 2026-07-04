@@ -10,7 +10,12 @@ import (
 	"github.com/ym/fxtrade/internal/notify"
 )
 
-const fixtureRule = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+const (
+	fixtureRule      = "────────────────"
+	emailLineWidth   = 62
+	bulletPrefix     = "  • "
+	bulletContIndent = "    "
+)
 
 var melbourneLoc *time.Location
 
@@ -115,11 +120,11 @@ func writeMatchReport(b *strings.Builder, r MatchReport) {
 	ctx := r.Context
 	b.WriteString(fixtureRule)
 	b.WriteString("\n")
-	fmt.Fprintf(b, "%s vs %s", ctx.HomeTeam, ctx.AwayTeam)
-	if kick := formatKickoffMelbourne(ctx.Kickoff); kick != "" {
-		fmt.Fprintf(b, "  ·  %s", kick)
+	fmt.Fprintf(b, "%s vs %s\n", ctx.HomeTeam, ctx.AwayTeam)
+	if meta := formatFixtureMetaLine(ctx); meta != "" {
+		b.WriteString(meta)
+		b.WriteString("\n")
 	}
-	b.WriteString("\n")
 	b.WriteString(fixtureRule)
 	b.WriteString("\n\n")
 
@@ -161,28 +166,59 @@ func writePredictionSection(b *strings.Builder, r MatchReport) {
 
 func writeLastFiveSection(b *strings.Builder, ctx MatchDayContext) {
 	b.WriteString("LAST 5 GAMES\n")
-	if line := formatTeamLast5Line(ctx.HomeTeam, ctx.HomeStats.Last5Scores); line != "" {
-		b.WriteString(line)
-		b.WriteString("\n")
+	hasAny := writeTeamLast5Block(b, ctx.HomeTeam, ctx.HomeStats.Last5Scores)
+	if writeTeamLast5Block(b, ctx.AwayTeam, ctx.AwayStats.Last5Scores) {
+		hasAny = true
 	}
-	if line := formatTeamLast5Line(ctx.AwayTeam, ctx.AwayStats.Last5Scores); line != "" {
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
-	if len(ctx.HomeStats.Last5Scores) == 0 && len(ctx.AwayStats.Last5Scores) == 0 {
+	if !hasAny {
 		b.WriteString("  (no recent results on file)\n")
+		return
 	}
+
+	homeAtVenue := filterScoresAtVenue(ctx.HomeStats.Last5Scores, ctx.Venue)
+	awayAtVenue := filterScoresAtVenue(ctx.AwayStats.Last5Scores, ctx.Venue)
+	if len(homeAtVenue) == 0 && len(awayAtVenue) == 0 {
+		return
+	}
+	b.WriteString("\nAt this venue\n")
+	writeTeamLast5Block(b, ctx.HomeTeam, homeAtVenue)
+	writeTeamLast5Block(b, ctx.AwayTeam, awayAtVenue)
 }
 
-func formatTeamLast5Line(team TeamID, scores []RecentMatchScore) string {
+func writeTeamLast5Block(b *strings.Builder, team TeamID, scores []RecentMatchScore) bool {
 	if len(scores) == 0 {
-		return ""
+		return false
 	}
-	parts := make([]string, len(scores))
-	for i, m := range scores {
-		parts[i] = formatRecentMatchCompact(m)
+	fmt.Fprintf(b, "  — %s\n", team)
+	for _, m := range scores {
+		fmt.Fprintf(b, "    %s\n", formatRecentMatchCompact(m))
 	}
-	return fmt.Sprintf("  %s:  %s", team, strings.Join(parts, " | "))
+	return true
+}
+
+func filterScoresAtVenue(scores []RecentMatchScore, venue VenueProfile) []RecentMatchScore {
+	if venue.Name == "" && venue.ID == "" {
+		return nil
+	}
+	var out []RecentMatchScore
+	for _, m := range scores {
+		if scoreAtVenue(m, venue) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func scoreAtVenue(m RecentMatchScore, venue VenueProfile) bool {
+	if m.Venue == "" {
+		return false
+	}
+	shortMatch := ShortVenueName(m.Venue)
+	shortUpcoming := shortVenueLabel(venue.Name)
+	if shortMatch != "" && shortUpcoming != "" {
+		return strings.EqualFold(shortMatch, shortUpcoming)
+	}
+	return strings.EqualFold(strings.TrimSpace(m.Venue), strings.TrimSpace(venue.Name))
 }
 
 func formatRecentMatchCompact(m RecentMatchScore) string {
@@ -201,18 +237,20 @@ func formatRecentMatchCompact(m RecentMatchScore) string {
 	if venue == "" {
 		venue = "unknown venue"
 	}
-	return fmt.Sprintf("%d-%d vs %s @ %s (%d, %s)", m.For, m.Against, m.Opponent, venue, total, tag)
+	return fmt.Sprintf("%d-%d vs %s @ %s · total %d · %s", m.For, m.Against, m.Opponent, venue, total, tag)
 }
 
 func writeBookmakerSection(b *strings.Builder, r MatchReport) {
 	b.WriteString("VS BOOKMAKER\n")
 	winner := r.Score.PredictedWinner
 	if mo, ok := r.MarketOdds[winner]; ok && mo.DecimalOdds > 1 {
-		fmt.Fprintf(b, "  H2H:        %s $%.2f (market ~%.0f%%) — %s\n",
-			winner, mo.DecimalOdds, mo.ImpliedProb()*100, h2hModelNote(r, mo))
+		fmt.Fprintf(b, "  H2H: %s $%.2f (~%.0f%% market)\n",
+			winner, mo.DecimalOdds, mo.ImpliedProb()*100)
+		fmt.Fprintf(b, "  Model: %s\n", h2hModelNote(r, mo))
 	} else if vb := valueBetForTeam(r.ValueBets, winner); vb != nil {
-		fmt.Fprintf(b, "  H2H:        %s $%.2f (market ~%.0f%%) — %s\n",
-			winner, vb.DecimalOdds, vb.ImpliedProb*100, h2hModelNoteFromVB(r, *vb))
+		fmt.Fprintf(b, "  H2H: %s $%.2f (~%.0f%% market)\n",
+			winner, vb.DecimalOdds, vb.ImpliedProb*100)
+		fmt.Fprintf(b, "  Model: %s\n", h2hModelNoteFromVB(r, *vb))
 	}
 
 	if r.TotalsLine != nil {
@@ -223,8 +261,9 @@ func writeBookmakerSection(b *strings.Builder, r MatchReport) {
 		} else if diff < -3 {
 			lean = "UNDER"
 		}
-		fmt.Fprintf(b, "  Total line: %.1f @ %s — model %d (lean %s, Δ %+.1f)\n",
-			r.TotalsLine.Line, r.TotalsLine.Bookmaker, r.Score.TotalScore, lean, diff)
+		fmt.Fprintf(b, "  Total: line %.1f · model %d\n",
+			r.TotalsLine.Line, r.Score.TotalScore)
+		fmt.Fprintf(b, "  Lean: %s (Δ %+.1f)\n", lean, diff)
 	}
 }
 
@@ -242,12 +281,12 @@ func h2hModelNote(r MatchReport, mo MarketOdds) string {
 	marketProb := mo.ImpliedProb()
 	diff := modelProb - marketProb
 	if diff > 0.05 {
-		return "model more bullish than market"
+		return "more bullish than market"
 	}
 	if diff < -0.05 {
-		return "model less bullish on blowout"
+		return "less bullish than market"
 	}
-	return "model aligned with market"
+	return "aligned with market"
 }
 
 func h2hModelNoteFromVB(r MatchReport, vb ValueBet) string {
@@ -261,7 +300,8 @@ func writeWhySection(b *strings.Builder, r MatchReport) {
 	}
 	b.WriteString("WHY\n")
 	for _, reason := range reasons {
-		fmt.Fprintf(b, "  • %s\n", reason)
+		b.WriteString(wrapIndented(bulletPrefix, reason, emailLineWidth, bulletContIndent))
+		b.WriteString("\n")
 	}
 }
 
@@ -298,7 +338,8 @@ func writeFixtureValueBet(b *strings.Builder, vb ValueBet) {
 	if len(vb.Reasons) > 0 {
 		b.WriteString("\n")
 		for _, reason := range vb.Reasons {
-			fmt.Fprintf(b, "  • %s\n", reason)
+			b.WriteString(wrapIndented(bulletPrefix, reason, emailLineWidth, bulletContIndent))
+			b.WriteString("\n")
 		}
 	}
 }
@@ -312,7 +353,8 @@ func writeValueBetsSummary(b *strings.Builder, allValueBets []ValueBet) {
 		fmt.Fprintf(b, "%d. %s vs %s — %s @ $%.2f (%s) EV +%.1f%%\n",
 			i+1, vb.HomeTeam, vb.AwayTeam, TeamDisplayName(vb.Team), vb.DecimalOdds, vb.Bookmaker, vb.EV*100)
 		for _, reason := range vb.Reasons {
-			fmt.Fprintf(b, "   • %s\n", reason)
+			b.WriteString(wrapIndented("   • ", reason, emailLineWidth, "      "))
+			b.WriteString("\n")
 		}
 		if i < len(allValueBets)-1 {
 			b.WriteString("\n")
@@ -334,6 +376,77 @@ func formatKickoffMelbourne(t time.Time) string {
 		return t.In(melbourneLoc).Format("Mon 2 Jan 3:04 PM MST")
 	}
 	return t.UTC().Format("Mon 2 Jan 3:04 PM UTC")
+}
+
+func formatFixtureMetaLine(ctx MatchDayContext) string {
+	var parts []string
+	if kick := formatKickoffMelbourneShort(ctx.Kickoff); kick != "" {
+		parts = append(parts, kick)
+	}
+	if venue := shortVenueLabel(ctx.Venue.Name); venue != "" {
+		parts = append(parts, venue)
+	}
+	return strings.Join(parts, " · ")
+}
+
+func formatKickoffMelbourneShort(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	loc := melbourneLoc
+	if loc == nil {
+		loc = time.UTC
+	}
+	local := t.In(loc)
+	return local.Format("Mon 2 Jan · 3:04 PM MST")
+}
+
+// wrapIndented breaks text at word boundaries; first line uses prefix, continuations use indent.
+func wrapIndented(prefix, text string, width int, indent string) string {
+	if text == "" {
+		return prefix
+	}
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return prefix
+	}
+
+	var lines []string
+	linePrefix := prefix
+	maxContent := width - len(linePrefix)
+	if maxContent < 8 {
+		maxContent = width / 2
+	}
+
+	var cur strings.Builder
+	flush := func() {
+		if cur.Len() == 0 {
+			return
+		}
+		lines = append(lines, linePrefix+cur.String())
+		cur.Reset()
+		linePrefix = indent
+		maxContent = width - len(indent)
+		if maxContent < 8 {
+			maxContent = width / 2
+		}
+	}
+
+	for _, word := range words {
+		addLen := len(word)
+		if cur.Len() > 0 {
+			addLen++
+		}
+		if cur.Len() > 0 && cur.Len()+addLen > maxContent {
+			flush()
+		}
+		if cur.Len() > 0 {
+			cur.WriteByte(' ')
+		}
+		cur.WriteString(word)
+	}
+	flush()
+	return strings.Join(lines, "\n")
 }
 
 func hasScoreBreakdown(score ScoreProjection) bool {

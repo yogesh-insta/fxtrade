@@ -33,7 +33,7 @@ func TestFormatMatchPredictionsRichCarl(t *testing.T) {
 	}
 
 	block := FormatFixturePredictionBlock(report)
-	for _, want := range []string{"RICH vs CARL", "PREDICTION", "CONTEXT"} {
+	for _, want := range []string{"RICH vs CARL", "PREDICTION", "CONTEXT", "────────────────"} {
 		if !strings.Contains(block, want) {
 			t.Fatalf("missing %q in block:\n%s", want, block)
 		}
