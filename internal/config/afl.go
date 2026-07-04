@@ -33,7 +33,7 @@ func DefaultAFLConfig() AFLConfig {
 		OddsAPIBaseURL:    "https://api.the-odds-api.com/v4",
 		OddsSportKey:      "aussierules_afl",
 		OddsRegions:       "au",
-		OddsMarkets:       "h2h",
+		OddsMarkets:       "h2h,totals",
 		PredictorType:     "matrix",
 	}
 }
