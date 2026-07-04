@@ -18,8 +18,8 @@ import (
 
 var Meta = bot.Meta{
 	ID:          config.BotUniverseScanner,
-	Name:        "OANDA Universe Scanner",
-	Description: "19-symbol opening-range breakout scanner; one trade at a time",
+	Name:        "FXPulse ORB Scanner",
+	Description: "OANDA opening-range breakout scanner; ranks universe daily, one trade at a time",
 }
 
 type Bot struct {

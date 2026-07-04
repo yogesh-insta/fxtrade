@@ -26,8 +26,9 @@ type Config struct {
 	Strategy  StrategyConfig  `json:"strategy"`
 	RangeMode RangeModeConfig `json:"range_mode"`
 	TrendMode TrendModeConfig `json:"trend_mode"`
-	LLMGate   LLMGateConfig   `json:"llm_gate"`
-	State     StateConfig     `json:"state"`
+	LLMGate    LLMGateConfig    `json:"llm_gate"`
+	StockScan  StockScanConfig  `json:"stock_scan"`
+	State      StateConfig      `json:"state"`
 }
 
 type OANDAConfig struct {
@@ -117,6 +118,37 @@ func DefaultSentimentConfig() SentimentConfig {
 		MaxHeadlines:        25,
 		HeadlineMaxAgeHours: 48,
 		AuditDir:            "logs/sentiment",
+	}
+}
+
+type StockScanConfig struct {
+	Concurrency         int      `json:"concurrency"`
+	RequestTimeoutSec   int      `json:"request_timeout_seconds"`
+	RateLimitMS         int      `json:"rate_limit_ms"`
+	OverallTimeoutMin   int      `json:"overall_timeout_minutes"`
+	SMAPeriod           int      `json:"sma_period"`
+	RSIPeriod           int      `json:"rsi_period"`
+	RSIMin              float64  `json:"rsi_min"`
+	RSIMax              float64  `json:"rsi_max"`
+	StopLossPct         float64  `json:"stop_loss_pct"`
+	TargetPct           float64  `json:"target_pct"`
+	SentimentCandidates int      `json:"sentiment_candidates"`
+	RSSFeeds            []string `json:"rss_feeds"`
+}
+
+func DefaultStockScanConfig() StockScanConfig {
+	return StockScanConfig{
+		Concurrency:         4,
+		RequestTimeoutSec:   15,
+		RateLimitMS:         300,
+		OverallTimeoutMin:   10,
+		SMAPeriod:           50,
+		RSIPeriod:           14,
+		RSIMin:              30,
+		RSIMax:              45,
+		StopLossPct:         0.015,
+		TargetPct:           0.03,
+		SentimentCandidates: 3,
 	}
 }
 
@@ -215,6 +247,9 @@ func (c *Config) applyDefaults() {
 		c.Sentiment.AuditDir = defSent.AuditDir
 	}
 
+	defStockScan := DefaultStockScanConfig()
+	applyStockScanDefaults(&c.StockScan, defStockScan)
+
 	applyStrategyDefaults(c)
 	applyScannerDefaults(c)
 	applyNotificationsDefaults(c)
@@ -232,6 +267,42 @@ func (c *Config) applyDefaults() {
 func applyStateDefaults(c *Config) {
 	if c.State.File == "" {
 		c.State.File = "data/state.json"
+	}
+}
+
+func applyStockScanDefaults(s *StockScanConfig, def StockScanConfig) {
+	if s.Concurrency == 0 {
+		s.Concurrency = def.Concurrency
+	}
+	if s.RequestTimeoutSec == 0 {
+		s.RequestTimeoutSec = def.RequestTimeoutSec
+	}
+	if s.RateLimitMS == 0 {
+		s.RateLimitMS = def.RateLimitMS
+	}
+	if s.OverallTimeoutMin == 0 {
+		s.OverallTimeoutMin = def.OverallTimeoutMin
+	}
+	if s.SMAPeriod == 0 {
+		s.SMAPeriod = def.SMAPeriod
+	}
+	if s.RSIPeriod == 0 {
+		s.RSIPeriod = def.RSIPeriod
+	}
+	if s.RSIMin == 0 {
+		s.RSIMin = def.RSIMin
+	}
+	if s.RSIMax == 0 {
+		s.RSIMax = def.RSIMax
+	}
+	if s.StopLossPct == 0 {
+		s.StopLossPct = def.StopLossPct
+	}
+	if s.TargetPct == 0 {
+		s.TargetPct = def.TargetPct
+	}
+	if s.SentimentCandidates == 0 {
+		s.SentimentCandidates = def.SentimentCandidates
 	}
 }
 
