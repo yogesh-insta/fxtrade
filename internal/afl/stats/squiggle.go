@@ -73,6 +73,7 @@ func (c *SquiggleClient) FetchHistoricalGames(ctx context.Context, year int) ([]
 
 type squiggleStanding struct {
 	Name       string  `json:"name"`
+	Rank       int     `json:"rank"`
 	Percentage float64 `json:"percentage"`
 	For        int     `json:"for"`
 	Against    int     `json:"against"`
@@ -128,6 +129,7 @@ func (r *Repository) RefreshLiveStats(ctx context.Context, year int, client *Squ
 		base.DisposalRate = live.DisposalRate
 		base.PointsForPerGame = live.PointsForPerGame
 		base.PointsAgainstPerGame = live.PointsAgainstPerGame
+		base.LadderPosition = live.LadderPosition
 		r.teams[id] = base
 	}
 	rolling := rollingScoringFromGames(games, r.ResolveTeam)
@@ -234,10 +236,14 @@ func buildLiveStats(games []squiggleGame, standings []squiggleStanding, resolve 
 	venueAvgs := venueAvgTotalsFromGames(games, resolveVenue)
 
 	out := make(map[afl.TeamID]afl.TeamStats)
-	for _, s := range standings {
+	for i, s := range standings {
 		id, err := resolve(s.Name)
 		if err != nil {
 			continue
+		}
+		rank := s.Rank
+		if rank <= 0 {
+			rank = i + 1
 		}
 		metrics := efficiencyFromLadder(s.Percentage, s.For, s.Against, s.Played)
 		rec := form[id]
@@ -256,6 +262,7 @@ func buildLiveStats(games []squiggleGame, standings []squiggleStanding, resolve 
 			DisposalRate:            metrics[3],
 			PointsForPerGame:        pf,
 			PointsAgainstPerGame:    pa,
+			LadderPosition:          rank,
 		}
 	}
 	if len(out) == 0 {

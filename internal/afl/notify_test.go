@@ -41,6 +41,8 @@ func TestFormatRoundReportEmailRichCarl(t *testing.T) {
 			Venue:    VenueProfile{Name: "Melbourne Cricket Ground", Dimension: VenueWide},
 			Weather:  WeatherMetrics{RainMM: 0, WindKPH: 12},
 			Kickoff:  time.Date(2025, 4, 17, 19, 30, 0, 0, time.UTC),
+			HomeStats: TeamStats{LadderPosition: 3},
+			AwayStats: TeamStats{LadderPosition: 12},
 		},
 		HomeWinProb: 0.58,
 		Score: ScoreProjection{
@@ -60,8 +62,9 @@ func TestFormatRoundReportEmailRichCarl(t *testing.T) {
 	for _, want := range []string{
 		"AFLPulse Round Scan",
 		"RICH vs CARL",
-		"Fri 18 Apr ·",
-		"MCG",
+		"Fri 18 Apr",
+		"MCG (Melbourne Cricket Ground)",
+		"Ladder: RICH 3rd · CARL 12th",
 		"PREDICTION",
 		"Winner:     Richmond (58%)",
 		"Score:      Richmond 92 – Carlton 78  (margin 14)",
@@ -77,6 +80,83 @@ func TestFormatRoundReportEmailRichCarl(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in body:\n%s", want, body)
 		}
+	}
+}
+
+func TestFormatFixtureHeaderLinesESSSTK(t *testing.T) {
+	if melbourneLoc == nil {
+		t.Skip("Australia/Melbourne timezone unavailable")
+	}
+	kick := time.Date(2026, 7, 5, 5, 15, 0, 0, time.UTC) // Sun 5 Jul 3:15 PM AEST
+	ctx := MatchDayContext{
+		HomeTeam: "ESS",
+		AwayTeam: "STK",
+		Venue:    VenueProfile{Name: "Melbourne Cricket Ground"},
+		Kickoff:  kick,
+	}
+	lines := FormatFixtureHeaderLines(ctx)
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 header lines, got %d: %v", len(lines), lines)
+	}
+	if lines[0] != "ESS vs STK" {
+		t.Fatalf("line 0 = %q, want teams only", lines[0])
+	}
+	wantMeta := "Sun 5 Jul 3:15 PM · MCG (Melbourne Cricket Ground)"
+	if lines[1] != wantMeta {
+		t.Fatalf("line 1 = %q, want %q", lines[1], wantMeta)
+	}
+	if len(lines[1]) > emailLineWidth {
+		t.Fatalf("meta line too long for mobile: len=%d %q", len(lines[1]), lines[1])
+	}
+}
+
+func TestFormatFixtureHeaderLinesFallbackWhenVeryLong(t *testing.T) {
+	if melbourneLoc == nil {
+		t.Skip("Australia/Melbourne timezone unavailable")
+	}
+	kick := time.Date(2026, 7, 5, 5, 15, 0, 0, time.UTC)
+	longVenue := "Regional Community Football Centre With A Very Long Official Title"
+	ctx := MatchDayContext{
+		HomeTeam: "ESS",
+		AwayTeam: "STK",
+		Venue:    VenueProfile{Name: longVenue},
+		Kickoff:  kick,
+	}
+	lines := FormatFixtureHeaderLines(ctx)
+	if len(lines) != 2 {
+		t.Fatalf("expected 2-line fallback layout, got %d: %v", len(lines), lines)
+	}
+	if lines[0] != "ESS vs STK" {
+		t.Fatalf("line 0 = %q, want teams only", lines[0])
+	}
+	if !strings.Contains(lines[1], longVenue) || !strings.Contains(lines[1], "Sun 5 Jul") {
+		t.Fatalf("line 1 = %q, want date/time and full venue", lines[1])
+	}
+}
+
+func TestFormatLadderOrdinal(t *testing.T) {
+	cases := map[int]string{
+		0: "", 1: "1st", 2: "2nd", 3: "3rd", 4: "4th",
+		11: "11th", 12: "12th", 13: "13th", 21: "21st", 22: "22nd", 23: "23rd",
+	}
+	for pos, want := range cases {
+		if got := FormatLadderOrdinal(pos); got != want {
+			t.Fatalf("FormatLadderOrdinal(%d) = %q, want %q", pos, got, want)
+		}
+	}
+}
+
+func TestFormatFixtureLadderLine(t *testing.T) {
+	line := FormatFixtureLadderLine(MatchDayContext{
+		HomeTeam: "ESS", AwayTeam: "STK",
+		HomeStats: TeamStats{LadderPosition: 15},
+		AwayStats: TeamStats{LadderPosition: 8},
+	})
+	if line != "Ladder: ESS 15th · STK 8th" {
+		t.Fatalf("unexpected ladder line: %q", line)
+	}
+	if got := FormatFixtureLadderLine(MatchDayContext{HomeTeam: "ESS", AwayTeam: "STK"}); got != "" {
+		t.Fatalf("expected empty line without ladder data, got %q", got)
 	}
 }
 

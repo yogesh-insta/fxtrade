@@ -69,6 +69,7 @@ type TeamStats struct {
 	RecentPointsAgainstPerGame float64 // rolling last-N games points conceded
 	ScoringTrendFor         float64 // recent for minus season for (pts/game)
 	ScoringTrendAgainst     float64 // recent against minus season against
+	LadderPosition          int     // AFL ladder rank (1 = top); 0 = unknown
 	Last5Scores             []RecentMatchScore
 }
 

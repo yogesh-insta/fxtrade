@@ -56,9 +56,11 @@ func BuildValueBetReasons(ctx MatchDayContext, bet ValueBet) []string {
 			bet.ModelProb*100, bet.ImpliedProb*100, bet.EdgePct*100),
 		fmt.Sprintf("Decimal odds %.2f at %s", bet.DecimalOdds, bet.Bookmaker),
 	}
-	travel := TravelFatigue(ctx.AwayTeam, ctx.Venue, ctx.TravelKM)
-	if travel > 0.15 {
-		reasons = append(reasons, fmt.Sprintf("Away travel fatigue %.0f%% (%.0f km)", travel*100, ctx.TravelKM))
+	if MeaningfulTravel(ctx.TravelKM) {
+		travel := TravelFatigue(ctx.AwayTeam, ctx.Venue, ctx.TravelKM)
+		if travel > 0.15 {
+			reasons = append(reasons, fmt.Sprintf("Away travel fatigue %.0f%% (%.0f km)", travel*100, ctx.TravelKM))
+		}
 	}
 	crowd := CrowdBias(ctx.HomeTeam, ctx.AwayTeam, ctx.Venue)
 	if crowd > 1.05 {

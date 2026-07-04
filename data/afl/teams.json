@@ -11,10 +11,10 @@
     {"id": "GWS", "form_wins_last_10": 5, "form_losses_last_10": 5, "inside50_efficiency": 0.51, "clearance_rate": 0.52, "contested_possession_rate": 0.50, "disposal_rate": 0.54, "default_venue": "SCG"},
     {"id": "HAW", "form_wins_last_10": 5, "form_losses_last_10": 5, "inside50_efficiency": 0.53, "clearance_rate": 0.51, "contested_possession_rate": 0.52, "disposal_rate": 0.52, "default_venue": "MCG"},
     {"id": "MEL", "form_wins_last_10": 6, "form_losses_last_10": 4, "inside50_efficiency": 0.55, "clearance_rate": 0.58, "contested_possession_rate": 0.53, "disposal_rate": 0.57, "default_venue": "MCG"},
-    {"id": "NMFC", "form_wins_last_10": 4, "form_losses_last_10": 6, "inside50_efficiency": 0.47, "clearance_rate": 0.49, "contested_possession_rate": 0.50, "disposal_rate": 0.48, "default_venue": "MCG"},
+    {"id": "NMFC", "form_wins_last_10": 4, "form_losses_last_10": 6, "inside50_efficiency": 0.47, "clearance_rate": 0.49, "contested_possession_rate": 0.50, "disposal_rate": 0.48, "default_venue": "DOCKLANDS"},
     {"id": "PORT", "form_wins_last_10": 5, "form_losses_last_10": 5, "inside50_efficiency": 0.52, "clearance_rate": 0.54, "contested_possession_rate": 0.56, "disposal_rate": 0.51, "default_venue": "ADELAIDE"},
     {"id": "RICH", "form_wins_last_10": 7, "form_losses_last_10": 3, "inside50_efficiency": 0.59, "clearance_rate": 0.55, "contested_possession_rate": 0.54, "disposal_rate": 0.56, "default_venue": "MCG"},
-    {"id": "STK", "form_wins_last_10": 6, "form_losses_last_10": 4, "inside50_efficiency": 0.54, "clearance_rate": 0.53, "contested_possession_rate": 0.51, "disposal_rate": 0.55, "default_venue": "MCG"},
+    {"id": "STK", "form_wins_last_10": 6, "form_losses_last_10": 4, "inside50_efficiency": 0.54, "clearance_rate": 0.53, "contested_possession_rate": 0.51, "disposal_rate": 0.55, "default_venue": "DOCKLANDS"},
     {"id": "SYD", "form_wins_last_10": 7, "form_losses_last_10": 3, "inside50_efficiency": 0.56, "clearance_rate": 0.57, "contested_possession_rate": 0.54, "disposal_rate": 0.56, "default_venue": "SCG"},
     {"id": "WCE", "form_wins_last_10": 6, "form_losses_last_10": 4, "inside50_efficiency": 0.55, "clearance_rate": 0.56, "contested_possession_rate": 0.57, "disposal_rate": 0.54, "default_venue": "OPTUS"},
     {"id": "WB", "form_wins_last_10": 8, "form_losses_last_10": 2, "inside50_efficiency": 0.58, "clearance_rate": 0.59, "contested_possession_rate": 0.56, "disposal_rate": 0.57, "default_venue": "GMHBA"}

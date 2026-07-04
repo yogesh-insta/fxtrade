@@ -56,7 +56,8 @@ func (b *RepositoryContextBuilder) Build(ctx context.Context, odds MarketOdds) (
 		venue = v
 	}
 
-	travelKM := estimateTravelKM(odds.HomeTeam, odds.AwayTeam, venue)
+	awayBase := b.Repo.DefaultVenueForTeam(odds.AwayTeam)
+	travelKM := AwayTravelKM(awayBase, venue)
 	if b.TravelKMTable != nil {
 		key := string(odds.HomeTeam) + "-" + string(odds.AwayTeam)
 		if km, ok := b.TravelKMTable[key]; ok {
@@ -85,16 +86,6 @@ func (b *RepositoryContextBuilder) Build(ctx context.Context, odds MarketOdds) (
 		HomeStats:     homeStats,
 		AwayStats:     awayStats,
 	}, nil
-}
-
-func estimateTravelKM(home, away TeamID, venue VenueProfile) float64 {
-	if venue.Interstate {
-		return 2500
-	}
-	if home != away {
-		return 800
-	}
-	return 0
 }
 
 // Evaluator processes market odds concurrently and finds value bets.

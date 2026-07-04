@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/ym/fxtrade/internal/afl"
@@ -46,6 +47,33 @@ func TestH2HFromGames(t *testing.T) {
 	key := h2hKey("RICH", "CARL")
 	if h2h[key] != [2]int{1, 1} {
 		t.Fatalf("expected 1-1 h2h at home, got %+v", h2h[key])
+	}
+}
+
+func TestBuildLiveStatsLadderPosition(t *testing.T) {
+	standings := []squiggleStanding{
+		{Name: "Essendon", Rank: 15, Percentage: 85, For: 1200, Against: 1400, Played: 14},
+		{Name: "St Kilda", Rank: 8, Percentage: 105, For: 1300, Against: 1250, Played: 14},
+	}
+	resolve := func(name string) (afl.TeamID, error) {
+		switch name {
+		case "Essendon":
+			return "ESS", nil
+		case "St Kilda":
+			return "STK", nil
+		default:
+			return "", fmt.Errorf("unknown")
+		}
+	}
+	stats, _, _, err := buildLiveStats(nil, standings, resolve, func(string) (afl.VenueID, bool) { return "", false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats["ESS"].LadderPosition != 15 {
+		t.Fatalf("ESS ladder = %d, want 15", stats["ESS"].LadderPosition)
+	}
+	if stats["STK"].LadderPosition != 8 {
+		t.Fatalf("STK ladder = %d, want 8", stats["STK"].LadderPosition)
 	}
 }
 
