@@ -47,6 +47,10 @@ func main() {
 	if timeoutMin <= 0 {
 		timeoutMin = 5
 	}
+	if cfg.AFL.AnalyticsEnabled() && timeoutMin < 15 {
+		// Grounded search per fixture can take 30–90s; allow headroom beyond the default 5 min.
+		timeoutMin = 15
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutMin)*time.Minute)
@@ -139,6 +143,20 @@ func main() {
 	if err != nil {
 		slog.Warn("round report completed with errors", "error", err)
 	}
+
+	round := 0
+	if live, ok := repo.LiveStatsMeta(); ok && live.Round > 0 {
+		round = live.Round
+	}
+	if cfg.AFL.AnalyticsEnabled() {
+		slog.Info("gemini analytics starting",
+			"model", cfg.AFL.ResolvedGeminiModel(),
+			"fixtures", len(reports),
+			"round", round,
+		)
+		afl.EnrichReportsWithLLMAnalytics(ctx, cfg.AFL, round, reports)
+	}
+
 	slog.Info("round report complete", "summary", afl.FormatRoundReportSummary(reports, valueBets))
 
 	for i, r := range reports {
@@ -150,6 +168,9 @@ func main() {
 			fmt.Println(block)
 			if len(r.ValueBets) > 0 {
 				fmt.Printf("  Value bets: %d\n", len(r.ValueBets))
+			}
+			if r.LLMAnalytics != "" {
+				fmt.Printf("  Gemini analytics: %d chars\n", len(r.LLMAnalytics))
 			}
 		} else {
 			slog.Info("fixture prediction", "block", block, "value_bets", len(r.ValueBets))

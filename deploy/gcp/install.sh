@@ -8,6 +8,7 @@ INSTALL_ROOT="${FXTRADE_HOME:-/opt/fxtrade}"
 BINARY_SRC=""
 NIFTY_PULSE_SRC=""
 AFL_PULSE_SRC=""
+AFL_PULSE_PREGAME_SRC=""
 CREDENTIALS_SRC=""
 ENABLE_ALL=false
 ENABLE_BOT=""
@@ -21,6 +22,7 @@ Options:
   --binary PATH         Linux amd64 fxtrade binary (default: build on VM or copy separately)
   --nifty-pulse PATH    Linux amd64 nifty-pulse binary (default: deploy via CI or build manually)
   --afl-pulse PATH      Linux amd64 afl-pulse binary (default: deploy via CI or build manually)
+  --afl-pulse-pregame PATH  Linux amd64 afl-pulse-pregame binary
   --credentials PATH    Local .credentials to install (default: skip; use fetch-credentials.sh)
   --enable-all          Enable fxtrade.service (all bots from .credentials)
   --enable-bot ID       Enable fxtrade@ID.service (e.g. universe_scanner, range_trend)
@@ -38,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --binary) BINARY_SRC="$2"; shift 2 ;;
     --nifty-pulse) NIFTY_PULSE_SRC="$2"; shift 2 ;;
     --afl-pulse) AFL_PULSE_SRC="$2"; shift 2 ;;
+    --afl-pulse-pregame) AFL_PULSE_PREGAME_SRC="$2"; shift 2 ;;
     --credentials) CREDENTIALS_SRC="$2"; shift 2 ;;
     --enable-all) ENABLE_ALL=true; shift ;;
     --enable-bot) ENABLE_BOT="$2"; shift 2 ;;
@@ -98,6 +101,14 @@ elif [[ ! -x "$INSTALL_ROOT/bin/afl-pulse" ]]; then
   echo "  scp afl-pulse user@vm:/tmp/afl-pulse && sudo install -m 755 /tmp/afl-pulse $INSTALL_ROOT/bin/afl-pulse"
 fi
 
+if [[ -n "$AFL_PULSE_PREGAME_SRC" ]]; then
+  install -m 755 "$AFL_PULSE_PREGAME_SRC" "$INSTALL_ROOT/bin/afl-pulse-pregame"
+elif [[ ! -x "$INSTALL_ROOT/bin/afl-pulse-pregame" ]]; then
+  echo "note: no binary at $INSTALL_ROOT/bin/afl-pulse-pregame yet — build manually:"
+  echo "  GOOS=linux GOARCH=amd64 go build -o afl-pulse-pregame ./cmd/afl-pulse-pregame"
+  echo "  scp afl-pulse-pregame user@vm:/tmp/ && sudo install -m 755 /tmp/afl-pulse-pregame $INSTALL_ROOT/bin/afl-pulse-pregame"
+fi
+
 if [[ -d "$ROOT/data/afl" ]]; then
   mkdir -p "$INSTALL_ROOT/data/afl"
   cp -f "$ROOT/data/afl/"*.json "$INSTALL_ROOT/data/afl/"
@@ -128,6 +139,9 @@ echo "Enabled nifty-pulse.timer (18:00 Australia/Sydney, Sun–Fri)"
 
 systemctl enable --now afl-pulse.timer
 echo "Enabled afl-pulse.timer (18:00 Australia/Melbourne, Thursday)"
+
+systemctl enable --now afl-pulse-pregame.timer
+echo "Enabled afl-pulse-pregame.timer (every 5 minutes, T-30 pregame)"
 
 if $ENABLE_ALL; then
   systemctl enable --now fxtrade.service
