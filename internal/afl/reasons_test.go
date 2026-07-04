@@ -6,16 +6,17 @@ import (
 	"time"
 )
 
-func TestBuildMatchPredictionReasons(t *testing.T) {
+func TestBuildMatchPredictionReasonsNoTravelForIntraMelbourne(t *testing.T) {
 	r := MatchReport{
 		Context: MatchDayContext{
 			HomeTeam: "ESS",
 			AwayTeam: "STK",
 			Venue: VenueProfile{
 				Name: "Melbourne Cricket Ground", Dimension: VenueWide,
+				Latitude: -37.8199, Longitude: 144.9834,
 				AvgTotalScore: 168, PrimaryHomeTeam: "MEL",
 			},
-			TravelKM: 50,
+			TravelKM: 3,
 			Weather:  WeatherMetrics{RainMM: 0.5, WindKPH: 15, TotalPointsFactor: 0.95},
 			HomeStats: TeamStats{
 				FormWinsLast10: 0, FormLossesLast10: 10,
@@ -49,6 +50,9 @@ func TestBuildMatchPredictionReasons(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %q in:\n%s", want, joined)
 		}
+	}
+	if strings.Contains(joined, "Away travel") {
+		t.Fatalf("intra-Melbourne fixture should not mention travel:\n%s", joined)
 	}
 }
 

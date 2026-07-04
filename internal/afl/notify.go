@@ -120,9 +120,12 @@ func writeMatchReport(b *strings.Builder, r MatchReport) {
 	ctx := r.Context
 	b.WriteString(fixtureRule)
 	b.WriteString("\n")
-	fmt.Fprintf(b, "%s vs %s\n", ctx.HomeTeam, ctx.AwayTeam)
-	if meta := formatFixtureMetaLine(ctx); meta != "" {
-		b.WriteString(meta)
+	for _, line := range FormatFixtureHeaderLines(ctx) {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	if ladder := FormatFixtureLadderLine(ctx); ladder != "" {
+		b.WriteString(ladder)
 		b.WriteString("\n")
 	}
 	b.WriteString(fixtureRule)
@@ -378,15 +381,130 @@ func formatKickoffMelbourne(t time.Time) string {
 	return t.UTC().Format("Mon 2 Jan 3:04 PM UTC")
 }
 
-func formatFixtureMetaLine(ctx MatchDayContext) string {
-	var parts []string
-	if kick := formatKickoffMelbourneShort(ctx.Kickoff); kick != "" {
-		parts = append(parts, kick)
+// FormatFixtureHeaderLines returns the fixture header (teams, kickoff, venue) for emails and dry-run.
+// Venue is prominent in the first 1–2 lines; if a single meta line would exceed emailLineWidth,
+// it splits to "TEAM vs TEAM · date · venue" and "time TZ" on the next line.
+func FormatFixtureHeaderLines(ctx MatchDayContext) []string {
+	teams := fmt.Sprintf("%s vs %s", ctx.HomeTeam, ctx.AwayTeam)
+	date := formatKickoffDateShort(ctx.Kickoff)
+	timeStr, tz := formatKickoffTimeShort(ctx.Kickoff)
+	venue := venueHeaderLabel(ctx.Venue.Name)
+
+	dateTime := strings.TrimSpace(strings.Join([]string{date, timeStr}, " "))
+	var meta string
+	switch {
+	case dateTime != "" && venue != "":
+		meta = dateTime + " · " + venue
+	case dateTime != "":
+		meta = dateTime
+	case venue != "":
+		meta = venue
 	}
-	if venue := shortVenueLabel(ctx.Venue.Name); venue != "" {
-		parts = append(parts, venue)
+
+	if meta != "" && len(meta) <= emailLineWidth {
+		return []string{teams, meta}
 	}
-	return strings.Join(parts, " · ")
+
+	shortVenue := shortVenueLabel(ctx.Venue.Name)
+	line1 := joinNonEmpty(" · ", teams, date, shortVenue)
+	if len(line1) <= emailLineWidth {
+		lines := []string{line1}
+		if timeWithTZ := joinNonEmpty(" ", timeStr, tz); timeWithTZ != "" {
+			lines = append(lines, timeWithTZ)
+		}
+		return lines
+	}
+
+	lines := []string{teams}
+	if meta != "" {
+		lines = append(lines, meta)
+	}
+	return lines
+}
+
+func venueHeaderLabel(name string) string {
+	short := shortVenueLabel(name)
+	full := strings.TrimSpace(name)
+	if short == "" {
+		return full
+	}
+	if full == "" || strings.EqualFold(short, full) {
+		return short
+	}
+	return fmt.Sprintf("%s (%s)", short, full)
+}
+
+func joinNonEmpty(sep string, parts ...string) string {
+	var kept []string
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			kept = append(kept, p)
+		}
+	}
+	return strings.Join(kept, sep)
+}
+
+func formatKickoffDateShort(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	loc := melbourneLoc
+	if loc == nil {
+		loc = time.UTC
+	}
+	return t.In(loc).Format("Mon 2 Jan")
+}
+
+func formatKickoffTimeShort(t time.Time) (timeStr, tz string) {
+	if t.IsZero() {
+		return "", ""
+	}
+	loc := melbourneLoc
+	if loc == nil {
+		loc = time.UTC
+	}
+	local := t.In(loc)
+	return local.Format("3:04 PM"), local.Format("MST")
+}
+
+// FormatLadderOrdinal renders 1 as "1st", 2 as "2nd", etc. Returns "" for non-positive input.
+func FormatLadderOrdinal(pos int) string {
+	if pos <= 0 {
+		return ""
+	}
+	suffix := "th"
+	switch pos % 10 {
+	case 1:
+		if pos%100 != 11 {
+			suffix = "st"
+		}
+	case 2:
+		if pos%100 != 12 {
+			suffix = "nd"
+		}
+	case 3:
+		if pos%100 != 13 {
+			suffix = "rd"
+		}
+	}
+	return fmt.Sprintf("%d%s", pos, suffix)
+}
+
+// FormatFixtureLadderLine returns a compact ladder summary for email/dry-run output.
+// Example: "Ladder: ESS 15th · STK 8th"
+func FormatFixtureLadderLine(ctx MatchDayContext) string {
+	home := FormatLadderOrdinal(ctx.HomeStats.LadderPosition)
+	away := FormatLadderOrdinal(ctx.AwayStats.LadderPosition)
+	if home == "" && away == "" {
+		return ""
+	}
+	if home == "" {
+		home = "—"
+	}
+	if away == "" {
+		away = "—"
+	}
+	return fmt.Sprintf("Ladder: %s %s · %s %s", ctx.HomeTeam, home, ctx.AwayTeam, away)
 }
 
 func formatKickoffMelbourneShort(t time.Time) string {

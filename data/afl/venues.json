@@ -11,6 +11,16 @@
       "home_win_rates": {"MEL": 0.62, "RICH": 0.55, "HAW": 0.52}
     },
     {
+      "id": "DOCKLANDS",
+      "name": "Marvel Stadium",
+      "dimension": "wide",
+      "latitude": -37.8165,
+      "longitude": 144.9475,
+      "interstate": false,
+      "primary_home_team": "STK",
+      "home_win_rates": {"STK": 0.58, "NMFC": 0.52}
+    },
+    {
       "id": "GMHBA",
       "name": "GMHBA Stadium",
       "dimension": "narrow",

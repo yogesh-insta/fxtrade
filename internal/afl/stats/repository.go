@@ -13,8 +13,9 @@ import (
 // Repository loads static AFL stats and reference data from JSON files.
 type Repository struct {
 	dir      string
-	venues   map[afl.VenueID]afl.VenueProfile
-	teams    map[afl.TeamID]afl.TeamStats
+	venues           map[afl.VenueID]afl.VenueProfile
+	teams            map[afl.TeamID]afl.TeamStats
+	teamDefaultVenue map[afl.TeamID]afl.VenueID
 	players  map[afl.TeamID][]afl.PlayerImpact
 	aliases  map[string]afl.TeamID
 	venueAlias map[string]afl.VenueID
@@ -84,8 +85,9 @@ type injuriesFile struct {
 func NewRepository(dir string) (*Repository, error) {
 	r := &Repository{
 		dir:     dir,
-		venues:  make(map[afl.VenueID]afl.VenueProfile),
-		teams:   make(map[afl.TeamID]afl.TeamStats),
+		venues:           make(map[afl.VenueID]afl.VenueProfile),
+		teams:            make(map[afl.TeamID]afl.TeamStats),
+		teamDefaultVenue: make(map[afl.TeamID]afl.VenueID),
 		players: make(map[afl.TeamID][]afl.PlayerImpact),
 		aliases: make(map[string]afl.TeamID),
 		venueAlias: make(map[string]afl.VenueID),
@@ -136,6 +138,9 @@ func (r *Repository) loadTeams(path string) error {
 		return err
 	}
 	for _, t := range f.Teams {
+		if t.DefaultVenue != "" {
+			r.teamDefaultVenue[afl.TeamID(t.ID)] = afl.VenueID(t.DefaultVenue)
+		}
 		r.teams[afl.TeamID(t.ID)] = afl.TeamStats{
 			TeamID:                  afl.TeamID(t.ID),
 			FormWinsLast10:          t.FormWinsLast10,
@@ -221,15 +226,17 @@ func (r *Repository) Venue(id afl.VenueID) (afl.VenueProfile, bool) {
 	return v, ok
 }
 
-// DefaultVenueForTeam picks a home venue for a team (first match in venues primary).
+// DefaultVenueForTeam returns the team's home base venue for travel calculations.
 func (r *Repository) DefaultVenueForTeam(team afl.TeamID) afl.VenueProfile {
-	for _, v := range r.venues {
-		if v.PrimaryHomeTeam == team {
+	if vid, ok := r.teamDefaultVenue[team]; ok {
+		if v, ok := r.venues[vid]; ok {
 			return v
 		}
 	}
 	for _, v := range r.venues {
-		return v
+		if v.PrimaryHomeTeam == team {
+			return v
+		}
 	}
 	return afl.VenueProfile{}
 }

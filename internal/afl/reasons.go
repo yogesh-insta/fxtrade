@@ -43,11 +43,13 @@ func BuildMatchPredictionReasons(r MatchReport) []string {
 		reasons = append(reasons, venue)
 	}
 
-	travel := TravelFatigue(ctx.AwayTeam, ctx.Venue, ctx.TravelKM)
-	if travel > 0.12 {
-		reasons = append(reasons, fmt.Sprintf(
-			"Away travel: %s ~%.0f km to %s (fatigue factor %.0f%%)",
-			ctx.AwayTeam, ctx.TravelKM, ctx.Venue.Name, travel*100))
+	if MeaningfulTravel(ctx.TravelKM) {
+		travel := TravelFatigue(ctx.AwayTeam, ctx.Venue, ctx.TravelKM)
+		if travel > 0.12 {
+			reasons = append(reasons, fmt.Sprintf(
+				"Away travel: %s ~%.0f km to %s (fatigue factor %.0f%%)",
+				ctx.AwayTeam, ctx.TravelKM, ctx.Venue.Name, travel*100))
+		}
 	}
 
 	if wx := weatherReason(ctx); wx != "" {

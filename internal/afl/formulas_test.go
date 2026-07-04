@@ -16,6 +16,42 @@ func TestTravelFatigueIncreasesWithDistance(t *testing.T) {
 	}
 }
 
+func TestAwayTravelKMStKToMCG(t *testing.T) {
+	stkBase := VenueProfile{
+		ID: "DOCKLANDS", Name: "Marvel Stadium",
+		Latitude: -37.8165, Longitude: 144.9475,
+	}
+	mcg := VenueProfile{
+		ID: "MCG", Name: "Melbourne Cricket Ground",
+		Latitude: -37.8199, Longitude: 144.9834,
+	}
+	km := AwayTravelKM(stkBase, mcg)
+	if km >= MinMeaningfulTravelKM {
+		t.Fatalf("STK→MCG should be intra-Melbourne, got %.1f km", km)
+	}
+	if km > 10 {
+		t.Fatalf("STK→MCG expected <10 km, got %.1f km", km)
+	}
+	if MeaningfulTravel(km) {
+		t.Fatalf("STK→MCG travel should not be meaningful, got %.1f km", km)
+	}
+	if TravelFatigue("STK", mcg, km) != 0 {
+		t.Fatalf("expected zero travel fatigue for short intra-city trip")
+	}
+}
+
+func TestAwayTravelKMInterstate(t *testing.T) {
+	melBase := VenueProfile{ID: "MCG", Latitude: -37.8199, Longitude: 144.9834}
+	gabba := VenueProfile{ID: "GABBA", Latitude: -27.4858, Longitude: 153.0381, Interstate: true}
+	km := AwayTravelKM(melBase, gabba)
+	if !MeaningfulTravel(km) {
+		t.Fatalf("Melbourne→Brisbane should be meaningful travel, got %.0f km", km)
+	}
+	if km < 1000 {
+		t.Fatalf("Melbourne→Brisbane expected >1000 km, got %.0f km", km)
+	}
+}
+
 func TestCrowdBiasHomeVenue(t *testing.T) {
 	venue := VenueProfile{
 		PrimaryHomeTeam: "GEE",

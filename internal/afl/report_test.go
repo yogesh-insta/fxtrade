@@ -12,6 +12,8 @@ func TestFormatMatchPredictionsRichCarl(t *testing.T) {
 			HomeTeam: "RICH",
 			AwayTeam: "CARL",
 			Kickoff:  time.Date(2025, 4, 17, 19, 30, 0, 0, time.UTC),
+			HomeStats: TeamStats{LadderPosition: 5},
+			AwayStats: TeamStats{LadderPosition: 10},
 		},
 		HomeWinProb: 0.765,
 		Score: ScoreProjection{
@@ -33,7 +35,7 @@ func TestFormatMatchPredictionsRichCarl(t *testing.T) {
 	}
 
 	block := FormatFixturePredictionBlock(report)
-	for _, want := range []string{"RICH vs CARL", "PREDICTION", "CONTEXT", "────────────────"} {
+	for _, want := range []string{"RICH vs CARL", "Ladder: RICH 5th · CARL 10th", "PREDICTION", "CONTEXT", "────────────────"} {
 		if !strings.Contains(block, want) {
 			t.Fatalf("missing %q in block:\n%s", want, block)
 		}

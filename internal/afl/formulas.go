@@ -2,16 +2,49 @@ package afl
 
 import "math"
 
+// MinMeaningfulTravelKM is the minimum away-team travel distance before we
+// surface travel fatigue in reasons or value-bet bullets.
+const MinMeaningfulTravelKM = 100
+
+// earthRadiusKM is the mean Earth radius in kilometres.
+const earthRadiusKM = 6371.0
+
 // WeatherAdjustment captures team-specific weather impact.
 type WeatherAdjustment struct {
 	TeamStrengthFactor float64 // multiplier for team profile fit
 	TotalPointsFactor  float64 // match scoring expectation multiplier
 }
 
+// HaversineKM returns great-circle distance in kilometres between two lat/lon points.
+func HaversineKM(lat1, lon1, lat2, lon2 float64) float64 {
+	if lat1 == 0 && lon1 == 0 || lat2 == 0 && lon2 == 0 {
+		return 0
+	}
+	dLat := (lat2 - lat1) * math.Pi / 180
+	dLon := (lon2 - lon1) * math.Pi / 180
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1*math.Pi/180)*math.Cos(lat2*math.Pi/180)*
+			math.Sin(dLon/2)*math.Sin(dLon/2)
+	return 2 * earthRadiusKM * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+}
+
+// AwayTravelKM returns how far the away team travels from its home base to the match venue.
+func AwayTravelKM(awayBase, matchVenue VenueProfile) float64 {
+	if awayBase.ID != "" && awayBase.ID == matchVenue.ID {
+		return 0
+	}
+	return HaversineKM(awayBase.Latitude, awayBase.Longitude, matchVenue.Latitude, matchVenue.Longitude)
+}
+
+// MeaningfulTravel reports whether away-team travel is far enough to mention.
+func MeaningfulTravel(travelKM float64) bool {
+	return travelKM >= MinMeaningfulTravelKM
+}
+
 // TravelFatigue returns a 0-1 fatigue penalty for the away team based on travel distance.
 // Longer interstate trips (e.g. VIC→WA) produce higher fatigue scores.
 func TravelFatigue(away TeamID, venue VenueProfile, travelKM float64) float64 {
-	if travelKM <= 0 {
+	if travelKM <= 0 || !MeaningfulTravel(travelKM) {
 		return 0
 	}
 	base := math.Log1p(travelKM/500.0) / math.Log1p(6) // ~0 at 0km, ~1 near 3000km
