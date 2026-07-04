@@ -27,14 +27,15 @@ type Manager struct {
 }
 
 type State struct {
-	DayStart        time.Time `json:"day_start"`
-	WeekStart       time.Time `json:"week_start"`
-	DailyPnL        float64   `json:"daily_pnl"`
-	WeeklyPnL       float64   `json:"weekly_pnl"`
-	TradesThisMonth int       `json:"trades_this_month"`
-	MonthKey        string    `json:"month_key"`
-	LastLossAt      time.Time `json:"last_loss_at,omitempty"`
-	TradesOpened    int       `json:"trades_opened"`
+	DayStart              time.Time `json:"day_start"`
+	WeekStart             time.Time `json:"week_start"`
+	DailyPnL              float64   `json:"daily_pnl"`
+	WeeklyPnL             float64   `json:"weekly_pnl"`
+	TradesThisMonth       int       `json:"trades_this_month"`
+	MonthKey              string    `json:"month_key"`
+	LastLossAt            time.Time `json:"last_loss_at,omitempty"`
+	TradesOpened          int       `json:"trades_opened"`
+	WeeklyProfitNotified  bool      `json:"weekly_profit_notified,omitempty"`
 }
 
 func NewManager(cfg config.RiskConfig) *Manager {
@@ -84,7 +85,7 @@ func (m *Manager) AllowEntry(ctx context.Context, req EntryRequest) error {
 	if m.state.WeeklyPnL <= -m.weeklyLossLimit(req.AccountBalance) {
 		return fmt.Errorf("weekly loss limit reached (%.2f)", m.state.WeeklyPnL)
 	}
-	if m.state.TradesThisMonth >= m.cfg.MaxTradesPerMonth {
+	if m.cfg.MaxTradesPerMonth > 0 && m.state.TradesThisMonth >= m.cfg.MaxTradesPerMonth {
 		return fmt.Errorf("max trades per month (%d) reached", m.cfg.MaxTradesPerMonth)
 	}
 	if !m.state.LastLossAt.IsZero() {
@@ -149,6 +150,18 @@ func (m *Manager) RestoreState(s State) {
 	m.rollPeriods(time.Now())
 }
 
+func (m *Manager) WeeklyProfitNotified() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.state.WeeklyProfitNotified
+}
+
+func (m *Manager) MarkWeeklyProfitNotified() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.state.WeeklyProfitNotified = true
+}
+
 func (m *Manager) dailyLossLimit(balance float64) float64 {
 	return balance * m.cfg.MaxDailyLossPct / 100
 }
@@ -167,6 +180,7 @@ func (m *Manager) rollPeriods(now time.Time) {
 	if week.After(m.state.WeekStart) {
 		m.state.WeekStart = week
 		m.state.WeeklyPnL = 0
+		m.state.WeeklyProfitNotified = false
 	}
 	month := now.Format("2006-01")
 	if month != m.state.MonthKey {

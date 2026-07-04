@@ -8,19 +8,34 @@ import (
 )
 
 type Status struct {
-	OK                 bool      `json:"ok"`
-	StartedAt          time.Time `json:"started_at"`
-	LastTickAt         time.Time `json:"last_tick_at,omitempty"`
-	LastTickInst       string    `json:"last_tick_instrument,omitempty"`
-	TicksReceived      uint64    `json:"ticks_received"`
-	StreamConnected    bool      `json:"stream_connected"`
-	Halted             bool      `json:"halted"`
-	OpenPositions      int       `json:"open_positions"`
-	SentimentEnabled   bool      `json:"sentiment_enabled"`
-	SentimentDirection string    `json:"sentiment_direction,omitempty"`
-	SentimentConfidence float64  `json:"sentiment_confidence,omitempty"`
-	SentimentAt        time.Time `json:"sentiment_at,omitempty"`
-	TradingMode        string    `json:"trading_mode,omitempty"`
+	OK                  bool        `json:"ok"`
+	StartedAt           time.Time   `json:"started_at"`
+	LastTickAt          time.Time   `json:"last_tick_at,omitempty"`
+	LastTickInst        string      `json:"last_tick_instrument,omitempty"`
+	TicksReceived       uint64      `json:"ticks_received"`
+	StreamConnected     bool        `json:"stream_connected"`
+	Halted              bool        `json:"halted"`
+	OpenPositions       int         `json:"open_positions"`
+	DryRun              bool        `json:"dry_run"`
+	SentimentEnabled    bool        `json:"sentiment_enabled"`
+	SentimentDirection  string      `json:"sentiment_direction,omitempty"`
+	SentimentConfidence float64     `json:"sentiment_confidence,omitempty"`
+	SentimentAt         time.Time   `json:"sentiment_at,omitempty"`
+	TradingMode         string      `json:"trading_mode,omitempty"`
+	AvailableBots       []string    `json:"available_bots,omitempty"`
+	ActiveBots          []string    `json:"active_bots,omitempty"`
+	Bots                []BotStatus `json:"bots,omitempty"`
+}
+
+type BotStatus struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description,omitempty"`
+	Running       bool      `json:"running"`
+	Halted        bool      `json:"halted"`
+	OpenPositions int       `json:"open_positions"`
+	Detail        string    `json:"detail,omitempty"`
+	StartedAt     time.Time `json:"started_at,omitempty"`
 }
 
 type Server struct {
@@ -34,6 +49,10 @@ type Server struct {
 	openPosFn   func() int
 	sentimentFn func() (enabled bool, direction string, confidence float64, at time.Time)
 	tradingModeFn func() string
+	botStatusFn   func() []BotStatus
+	availableBots []string
+	activeBots    []string
+	dryRun        bool
 }
 
 func NewServer() *Server {
@@ -63,6 +82,22 @@ func (s *Server) SetTradingMode(fn func() string) {
 	s.tradingModeFn = fn
 }
 
+func (s *Server) SetBotStatus(fn func() []BotStatus) {
+	s.botStatusFn = fn
+}
+
+func (s *Server) SetAvailableBots(ids []string) {
+	s.availableBots = append([]string(nil), ids...)
+}
+
+func (s *Server) SetActiveBots(ids []string) {
+	s.activeBots = append([]string(nil), ids...)
+}
+
+func (s *Server) SetDryRun(v bool) {
+	s.dryRun = v
+}
+
 func (s *Server) SetStreamConnected(v bool) {
 	s.connected.Store(v)
 }
@@ -76,6 +111,7 @@ func (s *Server) RecordTick(instrument string, at time.Time) {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
+	mux.HandleFunc("GET /bots", s.handleBots)
 	mux.HandleFunc("POST /kill", s.handleKill)
 	return mux
 }
@@ -104,6 +140,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		LastTickInst:    inst,
 		TicksReceived:   s.ticks.Load(),
 		StreamConnected: s.connected.Load(),
+		DryRun:          s.dryRun,
 	}
 	if s.haltedFn != nil {
 		st.Halted = s.haltedFn()
@@ -120,6 +157,24 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.tradingModeFn != nil {
 		st.TradingMode = s.tradingModeFn()
+	}
+	st.AvailableBots = s.availableBots
+	st.ActiveBots = s.activeBots
+	if s.botStatusFn != nil {
+		st.Bots = s.botStatusFn()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(st)
+}
+
+func (s *Server) handleBots(w http.ResponseWriter, r *http.Request) {
+	st := map[string]any{
+		"dry_run":        s.dryRun,
+		"available_bots": s.availableBots,
+		"active_bots":    s.activeBots,
+	}
+	if s.botStatusFn != nil {
+		st["bots"] = s.botStatusFn()
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(st)

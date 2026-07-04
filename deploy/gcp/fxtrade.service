@@ -1,0 +1,24 @@
+[Unit]
+Description=fxtrade platform (all enabled bots from .credentials)
+Documentation=file:///opt/fxtrade/deploy/gcp/DEPLOY.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fxtrade
+Group=fxtrade
+WorkingDirectory=/opt/fxtrade
+EnvironmentFile=-/etc/fxtrade/fxtrade.env
+ExecStart=/opt/fxtrade/bin/fxtrade \
+  -credentials ${FXTRADE_CREDENTIALS} \
+  -health-addr ${FXTRADE_HEALTH_ADDR} \
+  ${FXTRADE_DRY_RUN}
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=65536
+StandardOutput=append:/opt/fxtrade/logs/daemon.stdout.log
+StandardError=append:/opt/fxtrade/logs/daemon.stderr.log
+
+[Install]
+WantedBy=multi-user.target

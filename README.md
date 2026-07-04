@@ -59,6 +59,18 @@ Leave this terminal open. The daemon runs:
 
 ---
 
+## Local testing (dry-run)
+
+Run the full daemon without placing or closing OANDA orders:
+
+```bash
+go run ./cmd/fxtrade --dry-run
+```
+
+Health still works (`/health` shows `"dry_run": true`). Use this to validate streaming, sentiment, and strategy cycles on practice credentials before enabling live order flow.
+
+---
+
 ## Verify it's working
 
 **Health check:**
@@ -107,6 +119,23 @@ go test -tags=integration ./internal/integration/...
 ```bash
 go test ./...
 ```
+
+---
+
+## Deploy on GCP (e2-micro)
+
+Production-style deploy on a single Ubuntu VM (bare binary, systemd, optional GitHub Actions CD).
+
+**Full guide:** [deploy/gcp/DEPLOY.md](deploy/gcp/DEPLOY.md)
+
+Quick outline:
+
+1. Create an **e2-micro** in `us-east1` (free tier).
+2. Run `sudo ./deploy/gcp/install.sh --enable-all` on the VM.
+3. Place `/opt/fxtrade/.credentials` (SCP or GCP Secret Manager).
+4. Deploy the binary manually or via `.github/workflows/deploy.yml` (configure `GCP_VM_HOST`, `GCP_VM_USER`, `GCP_SSH_KEY`).
+
+One systemd unit runs all enabled bots; use `fxtrade@BOT.service` for one bot per process (`--bot` flag).
 
 ---
 
@@ -171,7 +200,8 @@ fxtrade/
 ├── cmd/order-test/       # test orders
 ├── cmd/backtest/         # historical gate replay
 ├── cmd/expectancy/       # performance report
-├── deploy/               # macOS launchd install
+├── deploy/               # macOS launchd + GCP systemd (deploy/gcp/)
+├── .github/workflows/    # CI (test/build) + GCP deploy
 ├── logs/sentiment/       # LLM audit trail
 ├── logs/trades/          # journal + trade P&L
 ├── data/state.json       # persisted daemon state

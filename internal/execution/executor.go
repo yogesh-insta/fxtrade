@@ -22,10 +22,19 @@ type Executor struct {
 	risk     *risk.Manager
 	notify   notify.Notifier
 	trades   TradeAccounting
+	dryRun   bool
 }
 
 func NewExecutor(client *oanda.Client, rm *risk.Manager, n notify.Notifier) *Executor {
 	return &Executor{client: client, risk: rm, notify: n}
+}
+
+func (e *Executor) SetDryRun(v bool) {
+	e.dryRun = v
+}
+
+func (e *Executor) DryRun() bool {
+	return e.dryRun
 }
 
 func (e *Executor) SetTradeAccounting(t TradeAccounting) {
@@ -40,6 +49,22 @@ func (e *Executor) PlaceMarket(ctx context.Context, req risk.EntryRequest, param
 	order, err := BuildMarketOrder(params)
 	if err != nil {
 		return oanda.OrderResult{}, err
+	}
+
+	if e.dryRun {
+		msg := fmt.Sprintf("DRY RUN: would place MARKET %s %s %d units SL=%s",
+			params.Direction, params.Instrument, params.Units, oanda.FormatPrice(params.StopLoss))
+		if params.TakeProfit != nil {
+			msg += fmt.Sprintf(" TP=%s", oanda.FormatPrice(*params.TakeProfit))
+		}
+		slog.Info(msg, "correlation_id", req.CorrelationID)
+		return oanda.OrderResult{
+			TransactionID: "dry-run",
+			TradeID:       "dry-run-" + req.CorrelationID,
+			Instrument:    params.Instrument,
+			Units:         params.Units,
+			FillPrice:     params.StopLoss,
+		}, nil
 	}
 
 	subject := fmt.Sprintf("fxtrade: order submitted %s %s %d units", params.Direction, params.Instrument, params.Units)
@@ -87,6 +112,24 @@ func (e *Executor) PlaceLimit(ctx context.Context, req risk.EntryRequest, params
 		return oanda.OrderResult{}, err
 	}
 
+	if e.dryRun {
+		slog.Info("DRY RUN: would place LIMIT order",
+			"correlation_id", req.CorrelationID,
+			"direction", params.Direction,
+			"instrument", params.Instrument,
+			"units", params.Units,
+			"price", params.Price,
+			"stop_loss", params.StopLoss,
+		)
+		return oanda.OrderResult{
+			TransactionID: "dry-run",
+			OrderID:       "dry-run-" + req.CorrelationID,
+			Instrument:    params.Instrument,
+			Units:         params.Units,
+			FillPrice:     params.Price,
+		}, nil
+	}
+
 	subject := fmt.Sprintf("fxtrade: limit submitted %s %s @ %s", params.Direction, params.Instrument, oanda.FormatPrice(params.Price))
 	body := fmt.Sprintf("correlation_id=%s\ndirection=%s\nunits=%d\nprice=%s\nstop_loss=%s\n",
 		req.CorrelationID, params.Direction, params.Units, oanda.FormatPrice(params.Price), oanda.FormatPrice(params.StopLoss))
@@ -118,6 +161,10 @@ func (e *Executor) PlaceLimit(ctx context.Context, req risk.EntryRequest, params
 }
 
 func (e *Executor) CancelOrder(ctx context.Context, orderID, correlationID string) error {
+	if e.dryRun {
+		slog.Info("DRY RUN: would cancel order", "correlation_id", correlationID, "order_id", orderID)
+		return nil
+	}
 	if _, err := e.client.CancelOrder(ctx, orderID); err != nil {
 		return err
 	}
@@ -132,6 +179,10 @@ func (e *Executor) CloseTrade(ctx context.Context, tradeID, correlationID string
 }
 
 func (e *Executor) CloseTradeUnits(ctx context.Context, tradeID, correlationID, units string) (float64, error) {
+	if e.dryRun {
+		slog.Info("DRY RUN: would close trade", "correlation_id", correlationID, "trade_id", tradeID, "units", units)
+		return 0, nil
+	}
 	resp, err := e.client.CloseTrade(ctx, tradeID, units)
 	if err != nil {
 		return 0, err

@@ -1,9 +1,11 @@
 package config
 
 type StrategyConfig struct {
-	Enabled       bool `json:"enabled"`
-	CycleMinutes  int  `json:"cycle_minutes"`
-	JournalDir    string `json:"journal_dir"`
+	Enabled      bool   `json:"enabled"`
+	Mode         string `json:"mode"`
+	CycleMinutes int    `json:"cycle_minutes"`
+	PollSeconds  int    `json:"poll_seconds"`
+	JournalDir   string `json:"journal_dir"`
 }
 
 type RangeModeConfig struct {
