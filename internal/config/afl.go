@@ -12,6 +12,7 @@ type AFLConfig struct {
 	TotalsModelPath      string  `json:"totals_model_path"`
 	StatsDir             string  `json:"stats_dir"`
 	InjuriesFile         string  `json:"injuries_file"`
+	EditorialPicksFile   string  `json:"editorial_picks_file"`
 	AlertTopN            int     `json:"alert_top_n"`
 	OverallTimeoutMin    int     `json:"overall_timeout_minutes"`
 	OddsAPIBaseURL       string  `json:"odds_api_base_url"`
@@ -32,9 +33,10 @@ func DefaultAFLConfig() AFLConfig {
 		MaxOddsAgeMinutes: 30,
 		ModelPath:         "data/afl/model_coefficients.json",
 		TotalsModelPath:   "data/afl/totals_coefficients.json",
-		StatsDir:          "data/afl",
-		InjuriesFile:      "data/afl/injuries.json",
-		AlertTopN:         5,
+		StatsDir:            "data/afl",
+		InjuriesFile:        "data/afl/injuries.json",
+		EditorialPicksFile:  "data/afl/round_picks.json",
+		AlertTopN:           5,
 		OverallTimeoutMin: 5,
 		OddsAPIBaseURL:    "https://api.the-odds-api.com/v4",
 		OddsSportKey:      "aussierules_afl",
@@ -72,6 +74,9 @@ func applyAFLDefaults(a *AFLConfig) {
 	}
 	if a.InjuriesFile == "" {
 		a.InjuriesFile = def.InjuriesFile
+	}
+	if a.EditorialPicksFile == "" {
+		a.EditorialPicksFile = def.EditorialPicksFile
 	}
 	if a.AlertTopN == 0 {
 		a.AlertTopN = def.AlertTopN

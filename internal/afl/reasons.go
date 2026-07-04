@@ -28,6 +28,13 @@ func BuildMatchPredictionReasons(r MatchReport) []string {
 
 	reasons = append(reasons, formCompareReason(ctx.HomeTeam, h, ctx.AwayTeam, a)...)
 
+	if streak := losingStreakReason(ctx.HomeTeam, h); streak != "" {
+		reasons = append(reasons, streak)
+	}
+	if streak := losingStreakReason(ctx.AwayTeam, a); streak != "" {
+		reasons = append(reasons, streak)
+	}
+
 	if h.H2HGamesVsOpponent > 0 {
 		awayWins := h.H2HGamesVsOpponent - h.H2HWinsVsOpponent
 		reasons = append(reasons, fmt.Sprintf(
@@ -63,11 +70,20 @@ func BuildMatchPredictionReasons(r MatchReport) []string {
 			"Squad availability: %s %.0f%%, %s %.0f%% (injuries file applied if configured)",
 			ctx.HomeTeam, homeAvail*100, ctx.AwayTeam, awayAvail*100))
 	}
+	if inj := unavailablePlayersReason(ctx.Players.Home); inj != "" {
+		reasons = append(reasons, inj)
+	}
+	if inj := unavailablePlayersReason(ctx.Players.Away); inj != "" {
+		reasons = append(reasons, inj)
+	}
 
 	reasons = append(reasons, totalReasons(r)...)
 
 	if margin := marginReason(r); margin != "" {
 		reasons = append(reasons, margin)
+	}
+	if lean := marginBetLeanReason(r); lean != "" {
+		reasons = append(reasons, lean)
 	}
 
 	if len(r.ValueBets) > 0 {
@@ -80,6 +96,14 @@ func BuildMatchPredictionReasons(r MatchReport) []string {
 			reasons = append(reasons, fmt.Sprintf(
 				"Aligned value: %s @ %.2f (%s) EV +%.0f%%",
 				vb.Team, vb.DecimalOdds, vb.Bookmaker, vb.EV*100))
+		}
+	}
+
+	if r.Editorial != nil {
+		for _, note := range r.Editorial.Notes {
+			if note = strings.TrimSpace(note); note != "" {
+				reasons = append(reasons, note)
+			}
 		}
 	}
 
@@ -208,4 +232,42 @@ func marginReason(r MatchReport) string {
 	return fmt.Sprintf(
 		"Margin %d (%s): offensive profiles %+.2f, win-probability edge %+.2f → projected spread %+.1f",
 		r.Score.Margin, r.Score.PredictedWinner, d.ProfileEdge, d.WinEdge, d.RawMargin)
+}
+
+func losingStreakReason(team TeamID, s TeamStats) string {
+	if s.FormWinsLast10 != 0 || s.FormLossesLast10 < 10 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"%s on a %d-game losing streak (0–%d over last 10) — opponent should control tempo",
+		team, s.FormLossesLast10, s.FormLossesLast10)
+}
+
+func unavailablePlayersReason(players []PlayerImpact) string {
+	var names []string
+	for _, p := range players {
+		if p.Available {
+			continue
+		}
+		name := strings.TrimSpace(p.DisplayName)
+		if name == "" {
+			name = p.PlayerID
+		}
+		names = append(names, name)
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("Key outs: %s", strings.Join(names, ", "))
+}
+
+func marginBetLeanReason(r MatchReport) string {
+	margin := r.Score.Margin
+	if margin <= 0 || margin >= 40 {
+		return ""
+	}
+	winner := r.Score.PredictedWinner
+	return fmt.Sprintf(
+		"Margin lean: %s projected to win by %d — 1–39 margin market may suit better than a large handicap line",
+		TeamDisplayName(winner), margin)
 }

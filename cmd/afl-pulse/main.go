@@ -139,6 +139,15 @@ func main() {
 	if err != nil {
 		slog.Warn("round report completed with errors", "error", err)
 	}
+
+	editorialPath := cfg.AFL.EditorialPicksFile
+	if editorial, err := afl.LoadRoundEditorial(editorialPath); err != nil {
+		slog.Warn("editorial picks not loaded", "path", editorialPath, "error", err)
+	} else if len(editorial.Fixtures) > 0 {
+		afl.AttachEditorialPicks(reports, editorial)
+		slog.Info("editorial picks attached", "path", editorialPath, "fixtures", len(editorial.Fixtures), "round", editorial.Round)
+	}
+
 	slog.Info("round report complete", "summary", afl.FormatRoundReportSummary(reports, valueBets))
 
 	for i, r := range reports {

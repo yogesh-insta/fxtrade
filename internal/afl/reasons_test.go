@@ -46,7 +46,7 @@ func TestBuildMatchPredictionReasonsNoTravelForIntraMelbourne(t *testing.T) {
 		t.Fatalf("expected several reasons, got %d: %v", len(reasons), reasons)
 	}
 	joined := strings.Join(reasons, "\n")
-	for _, want := range []string{"STK", "Form edge", "Scoring slump", "UNDER", "Margin"} {
+	for _, want := range []string{"STK", "Form edge", "Scoring slump", "UNDER", "Margin", "losing streak", "1–39 margin"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %q in:\n%s", want, joined)
 		}

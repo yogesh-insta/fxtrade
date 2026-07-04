@@ -1,3 +1,5 @@
 {
-  "unavailable": []
+  "unavailable": [
+    {"player_id": "stk_sinclair", "team_id": "STK"}
+  ]
 }

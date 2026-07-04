@@ -1,0 +1,36 @@
+{
+  "round": 17,
+  "fixtures": [
+    {
+      "match_label": "Match 1",
+      "home": "ESS",
+      "away": "STK",
+      "smart_picks": [
+        {
+          "type": "h2h",
+          "selection": "STK",
+          "odds": 1.20,
+          "label": "St Kilda Head-to-Head"
+        },
+        {
+          "type": "margin",
+          "selection": "STK 1-39",
+          "label": "St Kilda 1-39 Margin"
+        }
+      ],
+      "player_props": [
+        {
+          "player": "Nasiah Wanganeen-Milera",
+          "team": "STK",
+          "market": "25+ Disposals",
+          "why": "Coming off a 44-disposal game; Essendon allowed North Melbourne's half-backs to run riot last week — prime matchup for outside midfielders and defenders."
+        }
+      ],
+      "notes": [
+        "St Kilda are pushing hard for a wildcard finals spot.",
+        "Fatigue factor ~49% and Jack Sinclair (injured) may limit 4-quarter stamina to cover a massive -29.5 line.",
+        "Essendon are on a 10-game losing streak — Saints should win comfortably, but 1-39 margin covers fatigue risk."
+      ]
+    }
+  ]
+}

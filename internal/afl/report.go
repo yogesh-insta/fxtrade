@@ -31,6 +31,7 @@ type MatchReport struct {
 	TotalsLine  *TotalsOdds
 	MarketOdds  map[TeamID]MarketOdds // best h2h price per team (display only)
 	Provenance  DataProvenance
+	Editorial   *FixtureEditorial // optional curated picks and notes
 }
 
 // DataProvenance records which data sources fed this prediction.

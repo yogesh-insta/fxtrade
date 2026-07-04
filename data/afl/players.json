@@ -7,6 +7,8 @@
     {"player_id": "mel_petty", "team_id": "MEL", "role": "key_defender", "impact_score": 0.75},
     {"player_id": "gee_danger", "team_id": "GEE", "role": "midfielder", "impact_score": 0.80},
     {"player_id": "wce_kelly", "team_id": "WCE", "role": "midfielder", "impact_score": 0.77},
-    {"player_id": "syd_papley", "team_id": "SYD", "role": "key_forward", "impact_score": 0.76}
+    {"player_id": "syd_papley", "team_id": "SYD", "role": "key_forward", "impact_score": 0.76},
+    {"player_id": "stk_sinclair", "name": "Jack Sinclair", "team_id": "STK", "role": "midfielder", "impact_score": 0.82},
+    {"player_id": "stk_nwm", "name": "Nasiah Wanganeen-Milera", "team_id": "STK", "role": "midfielder", "impact_score": 0.78}
   ]
 }

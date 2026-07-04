@@ -124,6 +124,9 @@ func writeMatchReport(b *strings.Builder, r MatchReport) {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
+	if r.Editorial != nil && r.Editorial.MatchLabel != "" {
+		fmt.Fprintf(b, "%s: %s vs %s\n", r.Editorial.MatchLabel, TeamDisplayName(ctx.HomeTeam), TeamDisplayName(ctx.AwayTeam))
+	}
 	if ladder := FormatFixtureLadderLine(ctx); ladder != "" {
 		b.WriteString(ladder)
 		b.WriteString("\n")
@@ -139,6 +142,13 @@ func writeMatchReport(b *strings.Builder, r MatchReport) {
 
 	writeBookmakerSection(b, r)
 	b.WriteString("\n\n")
+
+	if r.Editorial != nil {
+		writeSmartPickSection(b, r)
+		b.WriteString("\n\n")
+		writePlayerPropSection(b, r)
+		b.WriteString("\n\n")
+	}
 
 	writeWhySection(b, r)
 	b.WriteString("\n\n")
@@ -305,6 +315,41 @@ func writeWhySection(b *strings.Builder, r MatchReport) {
 	for _, reason := range reasons {
 		b.WriteString(wrapIndented(bulletPrefix, reason, emailLineWidth, bulletContIndent))
 		b.WriteString("\n")
+	}
+}
+
+func writeSmartPickSection(b *strings.Builder, r MatchReport) {
+	ed := r.Editorial
+	if ed == nil || len(ed.SmartPicks) == 0 {
+		return
+	}
+	b.WriteString("SMART PICK\n")
+	for i, pick := range ed.SmartPicks {
+		prefix := "  "
+		if i == 0 {
+			prefix = "  ★ "
+		}
+		fmt.Fprintf(b, "%s%s\n", prefix, pick.FormatSmartPickLine())
+	}
+}
+
+func writePlayerPropSection(b *strings.Builder, r MatchReport) {
+	ed := r.Editorial
+	if ed == nil || len(ed.PlayerProps) == 0 {
+		return
+	}
+	b.WriteString("PLAYER PROP (Same Game Multi)\n")
+	for _, prop := range ed.PlayerProps {
+		line := fmt.Sprintf("%s %s", prop.Player, prop.Market)
+		if prop.Team != "" {
+			line += fmt.Sprintf(" (%s)", prop.Team)
+		}
+		b.WriteString(wrapIndented("  • ", line, emailLineWidth, bulletContIndent))
+		b.WriteString("\n")
+		if prop.Why != "" {
+			b.WriteString(wrapIndented("    ", prop.Why, emailLineWidth, "      "))
+			b.WriteString("\n")
+		}
 	}
 }
 

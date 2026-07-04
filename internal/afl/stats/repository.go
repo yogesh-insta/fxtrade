@@ -61,10 +61,11 @@ type playersFile struct {
 }
 
 type playerJSON struct {
-	PlayerID    string     `json:"player_id"`
-	TeamID      string     `json:"team_id"`
+	PlayerID    string         `json:"player_id"`
+	Name        string         `json:"name,omitempty"`
+	TeamID      string         `json:"team_id"`
 	Role        afl.PlayerRole `json:"role"`
-	ImpactScore float64    `json:"impact_score"`
+	ImpactScore float64        `json:"impact_score"`
 }
 
 type aliasesFile struct {
@@ -166,6 +167,7 @@ func (r *Repository) loadPlayers(path string) error {
 		tid := afl.TeamID(p.TeamID)
 		r.players[tid] = append(r.players[tid], afl.PlayerImpact{
 			PlayerID:    p.PlayerID,
+			DisplayName: p.Name,
 			TeamID:      tid,
 			Role:        p.Role,
 			ImpactScore: p.ImpactScore,

@@ -158,6 +158,7 @@ type VenueProfile struct {
 // PlayerImpact describes a single player's structural weight.
 type PlayerImpact struct {
 	PlayerID    string
+	DisplayName string
 	TeamID      TeamID
 	Role        PlayerRole
 	ImpactScore float64 // 0-1 premium weight
