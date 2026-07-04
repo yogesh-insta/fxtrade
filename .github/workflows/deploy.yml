@@ -24,6 +24,7 @@ jobs:
         run: |
           GOOS=linux GOARCH=amd64 go build -o fxtrade ./cmd/fxtrade
           GOOS=linux GOARCH=amd64 go build -o nifty-pulse ./cmd/nifty-pulse
+          GOOS=linux GOARCH=amd64 go build -o afl-pulse ./cmd/afl-pulse
 
       - name: Configure SSH
         env:
@@ -45,14 +46,20 @@ jobs:
           INSTALL_ROOT="$(dirname "$(dirname "$VM_PATH")")"
           REMOTE="${GCP_VM_USER}@${GCP_VM_HOST}"
 
-          scp -i ~/.ssh/deploy_key -o BatchMode=yes fxtrade nifty-pulse watchlist.txt "${REMOTE}:/tmp/"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes fxtrade nifty-pulse afl-pulse watchlist.txt "${REMOTE}:/tmp/"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes -r data/afl "${REMOTE}:/tmp/"
 
           ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$REMOTE" bash -s <<EOF
           set -euo pipefail
           sudo install -m 755 /tmp/fxtrade "${VM_PATH}"
           sudo install -m 755 /tmp/nifty-pulse "${INSTALL_ROOT}/bin/nifty-pulse"
+          sudo install -m 755 /tmp/afl-pulse "${INSTALL_ROOT}/bin/afl-pulse"
           sudo install -o fxtrade -g fxtrade -m 644 /tmp/watchlist.txt "${INSTALL_ROOT}/watchlist.txt"
-          rm -f /tmp/fxtrade /tmp/nifty-pulse /tmp/watchlist.txt
+          sudo mkdir -p "${INSTALL_ROOT}/data/afl"
+          sudo cp -f /tmp/afl/*.json "${INSTALL_ROOT}/data/afl/"
+          sudo chown -R fxtrade:fxtrade "${INSTALL_ROOT}/data/afl"
+          rm -f /tmp/fxtrade /tmp/nifty-pulse /tmp/afl-pulse /tmp/watchlist.txt
+          rm -rf /tmp/afl
           restarted=0
           if systemctl is-enabled fxtrade.service &>/dev/null; then
             sudo systemctl restart fxtrade.service

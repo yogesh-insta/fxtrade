@@ -238,19 +238,22 @@ watch -n 10 'curl -s http://localhost:8080/health | python3 -m json.tool'
 
 ## AFLPulse (AFL value betting scanner)
 
-On-demand AFL scanner: fetches AU bookmaker odds via [The Odds API](https://the-odds-api.com), builds match context (form, venue, weather, travel, player availability), runs a matrix/ONNX-ready model, and emails value bets when `(model_prob × decimal_odds) - 1 > min_ev_threshold`.
+Weekly AFL round scanner (Thursday 18:00 Australia/Melbourne on GCP via `afl-pulse.timer`): fetches AU bookmaker h2h + totals odds via [The Odds API](https://the-odds-api.com), builds match context (form, venue, weather, travel, player availability), projects scores, and emails a full round report with value bets highlighted.
 
 **Prerequisites:** `afl.odds_api_key` in `.credentials` (free tier at the-odds-api.com). OANDA keys are still required for `config.Load` when using the shared credentials file.
 
 ```bash
-# Safe test — log value bets, no email
+# Safe test — log predictions, no email
 go run ./cmd/afl-pulse -credentials .credentials -dry-run
 
-# Live run — email if EV > threshold
+# Live run — email full round report
 go run ./cmd/afl-pulse -credentials .credentials
 
 # Optional match-day injuries override
 go run ./cmd/afl-pulse -credentials .credentials -injuries data/afl/injuries.example.json -dry-run
+
+# Legacy: email only when value bets exist
+go run ./cmd/afl-pulse -credentials .credentials -value-only
 ```
 
 Seed stats live in `data/afl/` (`venues.json`, `teams.json`, `team_aliases.json`, `model_coefficients.json`). Refresh these periodically; odds are live from the API.

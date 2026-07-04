@@ -10,7 +10,88 @@ import (
 	"github.com/ym/fxtrade/internal/notify"
 )
 
-// FormatAlertSubject builds the AFLPulse email subject.
+// FormatRoundReportSubject builds the weekly AFL round scan email subject.
+func FormatRoundReportSubject(prefix string, fixtureCount, valueCount int) string {
+	if prefix == "" {
+		prefix = "[AFLPulse]"
+	}
+	if valueCount > 0 {
+		return fmt.Sprintf("%s Round scan · %d fixtures · %d value bet(s)", prefix, fixtureCount, valueCount)
+	}
+	return fmt.Sprintf("%s Round scan · %d fixtures", prefix, fixtureCount)
+}
+
+// FormatRoundReportEmail renders the full weekly scan with predictions and highlighted value bets.
+func FormatRoundReportEmail(reports []MatchReport, allValueBets []ValueBet) string {
+	var b strings.Builder
+	b.WriteString("AFLPulse weekly round scan\n")
+	b.WriteString("Predictions use form, inside-50, clearances, venue fit, weather (Open-Meteo), injuries, and bookmaker odds.\n\n")
+
+	for i, r := range reports {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		writeMatchReport(&b, r)
+	}
+
+	if len(allValueBets) > 0 {
+		b.WriteString("\n--- Value bets (EV above threshold) ---\n")
+		for i, vb := range allValueBets {
+			side := "HOME"
+			if !vb.IsHomePick {
+				side = "AWAY"
+			}
+			fmt.Fprintf(&b, "  %d. %s vs %s — %s %s @ %.2f (%s) EV +%.1f%%\n",
+				i+1, vb.HomeTeam, vb.AwayTeam, side, vb.Team, vb.DecimalOdds, vb.Bookmaker, vb.EV*100)
+		}
+	}
+
+	b.WriteString("\n--- Manual execution required ---\n")
+	b.WriteString("AFLPulse does NOT place bets automatically.\n")
+	b.WriteString("Verify team news, lineups, and account limits before wagering.\n")
+	return b.String()
+}
+
+func writeMatchReport(b *strings.Builder, r MatchReport) {
+	ctx := r.Context
+	fmt.Fprintf(b, "▸ %s vs %s", ctx.HomeTeam, ctx.AwayTeam)
+	if !ctx.Kickoff.IsZero() {
+		fmt.Fprintf(b, " · %s", ctx.Kickoff.Format(time.RFC1123))
+	}
+	b.WriteString("\n")
+
+	winnerSide := "home"
+	if r.Score.PredictedWinner == ctx.AwayTeam {
+		winnerSide = "away"
+	}
+	fmt.Fprintf(b, "  Winner: %s (%s) · %.0f%% home win prob\n",
+		r.Score.PredictedWinner, winnerSide, r.HomeWinProb*100)
+	fmt.Fprintf(b, "  Predicted score: %s %d – %d %s (total %d, margin %d)\n",
+		ctx.HomeTeam, r.Score.HomeScore, r.Score.AwayScore, ctx.AwayTeam, r.Score.TotalScore, r.Score.Margin)
+
+	if r.TotalsLine != nil {
+		diff := float64(r.Score.TotalScore) - r.TotalsLine.Line
+		bias := "near"
+		if diff > 3 {
+			bias = "over"
+		} else if diff < -3 {
+			bias = "under"
+		}
+		fmt.Fprintf(b, "  Book total line: %.1f @ %s (model %s, Δ %+.1f)\n",
+			r.TotalsLine.Line, r.TotalsLine.Bookmaker, bias, diff)
+	}
+
+	fmt.Fprintf(b, "  Venue: %s (%s) · weather rain %.1fmm wind %.0f km/h\n",
+		ctx.Venue.Name, ctx.Venue.Dimension, ctx.Weather.RainMM, ctx.Weather.WindKPH)
+
+	if len(r.ValueBets) > 0 {
+		vb := r.ValueBets[0]
+		fmt.Fprintf(b, "  ★ VALUE: %s @ %.2f (%s) EV +%.1f%%\n",
+			vb.Team, vb.DecimalOdds, vb.Bookmaker, vb.EV*100)
+	}
+}
+
+// FormatAlertSubject builds the AFLPulse value-bet email subject (legacy single-bet alert).
 func FormatAlertSubject(prefix string, bet ValueBet) string {
 	if prefix == "" {
 		prefix = "[AFLPulse]"
@@ -85,6 +166,17 @@ func writeContenders(b *strings.Builder, contenders []ValueBet, selected TeamID)
 		fmt.Fprintf(b, "  %d. %s vs %s — pick %s @ %.2f (%s) EV +%.1f%%%s\n",
 			i+1, c.HomeTeam, c.AwayTeam, c.Team, c.DecimalOdds, c.Bookmaker, c.EV*100, marker)
 	}
+}
+
+// SendRoundReport emails the weekly full round scan.
+func SendRoundReport(n notify.Notifier, ctx context.Context, cfg config.AFLConfig, notif config.NotificationsConfig, reports []MatchReport, valueBets []ValueBet) {
+	if len(reports) == 0 {
+		return
+	}
+	prefix := notif.EffectiveAFLPrefix()
+	subject := FormatRoundReportSubject(prefix, len(reports), len(valueBets))
+	body := FormatRoundReportEmail(reports, valueBets)
+	n.Send(ctx, subject, body)
 }
 
 // SendAlert emails the top value bet using the shared notify package.

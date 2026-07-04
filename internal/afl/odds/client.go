@@ -36,6 +36,12 @@ func NewClient(cfg config.AFLConfig) *Client {
 	}
 }
 
+type apiOutcome struct {
+	Name  string  `json:"name"`
+	Price float64 `json:"price"`
+	Point float64 `json:"point"`
+}
+
 type apiEvent struct {
 	ID           string    `json:"id"`
 	SportKey     string    `json:"sport_key"`
@@ -47,21 +53,24 @@ type apiEvent struct {
 		Title      string    `json:"title"`
 		LastUpdate time.Time `json:"last_update"`
 		Markets    []struct {
-			Key        string `json:"key"`
-			LastUpdate time.Time `json:"last_update"`
-			Outcomes   []struct {
-				Name  string  `json:"name"`
-				Price float64 `json:"price"`
-			} `json:"outcomes"`
+			Key        string       `json:"key"`
+			LastUpdate time.Time    `json:"last_update"`
+			Outcomes   []apiOutcome `json:"outcomes"`
 		} `json:"markets"`
 	} `json:"bookmakers"`
 }
 
-// FetchOdds returns market odds for all upcoming AFL events.
-func (c *Client) FetchOdds(ctx context.Context, resolve func(string) (afl.TeamID, error)) ([]afl.MarketOdds, error) {
+// FetchResult holds head-to-head and totals markets from The Odds API.
+type FetchResult struct {
+	H2H    []afl.MarketOdds
+	Totals []afl.TotalsOdds
+}
+
+// FetchOdds returns h2h and totals markets for all upcoming AFL events.
+func (c *Client) FetchOdds(ctx context.Context, resolve func(string) (afl.TeamID, error)) (FetchResult, error) {
 	u, err := url.Parse(fmt.Sprintf("%s/sports/%s/odds", c.baseURL, c.sportKey))
 	if err != nil {
-		return nil, err
+		return FetchResult{}, err
 	}
 	q := u.Query()
 	q.Set("apiKey", c.apiKey)
@@ -72,17 +81,17 @@ func (c *Client) FetchOdds(ctx context.Context, resolve func(string) (afl.TeamID
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
-		return nil, err
+		return FetchResult{}, err
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("odds api request: %w", err)
+		return FetchResult{}, fmt.Errorf("odds api request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("odds api status %d: %s", resp.StatusCode, string(body))
+		return FetchResult{}, fmt.Errorf("odds api status %d: %s", resp.StatusCode, string(body))
 	}
 
 	remaining := resp.Header.Get("x-requests-remaining")
@@ -93,18 +102,22 @@ func (c *Client) FetchOdds(ctx context.Context, resolve func(string) (afl.TeamID
 
 	var events []apiEvent
 	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
-		return nil, fmt.Errorf("decode odds response: %w", err)
+		return FetchResult{}, fmt.Errorf("decode odds response: %w", err)
 	}
+	return parseEvents(events, resolve), nil
+}
 
-	var out []afl.MarketOdds
+func parseEvents(events []apiEvent, resolve func(string) (afl.TeamID, error)) FetchResult {
+	var h2h []afl.MarketOdds
+	var totals []afl.TotalsOdds
 	for _, ev := range events {
 		homeID, err := resolve(ev.HomeTeam)
 		if err != nil {
-			return nil, fmt.Errorf("event %s: %w", ev.ID, err)
+			continue
 		}
 		awayID, err := resolve(ev.AwayTeam)
 		if err != nil {
-			return nil, fmt.Errorf("event %s: %w", ev.ID, err)
+			continue
 		}
 		for _, bm := range ev.Bookmakers {
 			updated := bm.LastUpdate
@@ -112,75 +125,77 @@ func (c *Client) FetchOdds(ctx context.Context, resolve func(string) (afl.TeamID
 				updated = time.Now().UTC()
 			}
 			for _, mkt := range bm.Markets {
-				if mkt.Key != "h2h" {
-					continue
-				}
 				if !mkt.LastUpdate.IsZero() {
 					updated = mkt.LastUpdate
 				}
-				for _, oc := range mkt.Outcomes {
-					teamID, err := resolve(oc.Name)
-					if err != nil {
+				switch mkt.Key {
+				case "h2h":
+					for _, oc := range mkt.Outcomes {
+						teamID, err := resolve(oc.Name)
+						if err != nil {
+							continue
+						}
+						h2h = append(h2h, afl.MarketOdds{
+							EventID:     ev.ID,
+							HomeTeam:    homeID,
+							AwayTeam:    awayID,
+							Bookmaker:   bm.Key,
+							Team:        teamID,
+							DecimalOdds: oc.Price,
+							UpdatedAt:   updated,
+							Kickoff:     ev.CommenceTime,
+						})
+					}
+				case "totals":
+					line, over, under := parseTotalsOutcomes(mkt.Outcomes)
+					if line <= 0 {
 						continue
 					}
-					out = append(out, afl.MarketOdds{
-						EventID:     ev.ID,
-						HomeTeam:    homeID,
-						AwayTeam:    awayID,
-						Bookmaker:   bm.Key,
-						Team:        teamID,
-						DecimalOdds: oc.Price,
-						UpdatedAt:   updated,
-						Kickoff:     ev.CommenceTime,
+					totals = append(totals, afl.TotalsOdds{
+						EventID:    ev.ID,
+						HomeTeam:   homeID,
+						AwayTeam:   awayID,
+						Bookmaker:  bm.Key,
+						Line:       line,
+						OverPrice:  over,
+						UnderPrice: under,
+						UpdatedAt:  updated,
+						Kickoff:    ev.CommenceTime,
 					})
 				}
 			}
 		}
 	}
-	return out, nil
+	return FetchResult{H2H: h2h, Totals: totals}
+}
+
+func parseTotalsOutcomes(outcomes []apiOutcome) (line, over, under float64) {
+	for _, oc := range outcomes {
+		if oc.Point > 0 {
+			line = oc.Point
+		}
+		name := strings.ToLower(strings.TrimSpace(oc.Name))
+		switch {
+		case name == "over":
+			over = oc.Price
+		case name == "under":
+			under = oc.Price
+		case strings.HasPrefix(name, "over "):
+			fmt.Sscanf(name, "over %f", &line)
+			over = oc.Price
+		case strings.HasPrefix(name, "under "):
+			fmt.Sscanf(name, "under %f", &line)
+			under = oc.Price
+		}
+	}
+	return line, over, under
 }
 
 // ParseEvents decodes API JSON for tests.
-func ParseEvents(data []byte, resolve func(string) (afl.TeamID, error)) ([]afl.MarketOdds, error) {
+func ParseEvents(data []byte, resolve func(string) (afl.TeamID, error)) (FetchResult, error) {
 	var events []apiEvent
 	if err := json.Unmarshal(data, &events); err != nil {
-		return nil, err
+		return FetchResult{}, err
 	}
-	c := &Client{}
-	var out []afl.MarketOdds
-	for _, ev := range events {
-		homeID, err := resolve(ev.HomeTeam)
-		if err != nil {
-			return nil, err
-		}
-		awayID, err := resolve(ev.AwayTeam)
-		if err != nil {
-			return nil, err
-		}
-		for _, bm := range ev.Bookmakers {
-			for _, mkt := range bm.Markets {
-				if mkt.Key != "h2h" {
-					continue
-				}
-				for _, oc := range mkt.Outcomes {
-					teamID, err := resolve(oc.Name)
-					if err != nil {
-						continue
-					}
-					out = append(out, afl.MarketOdds{
-						EventID:     ev.ID,
-						HomeTeam:    homeID,
-						AwayTeam:    awayID,
-						Bookmaker:   bm.Key,
-						Team:        teamID,
-						DecimalOdds: oc.Price,
-						UpdatedAt:   time.Now().UTC(),
-						Kickoff:     ev.CommenceTime,
-					})
-				}
-			}
-		}
-	}
-	_ = c
-	return out, nil
+	return parseEvents(events, resolve), nil
 }
