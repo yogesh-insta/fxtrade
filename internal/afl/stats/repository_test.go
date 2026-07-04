@@ -56,6 +56,9 @@ func TestMatchVenueESSSTKRound17(t *testing.T) {
 	if v.ID != "DOCKLANDS" || v.Name != "Marvel Stadium" {
 		t.Fatalf("ESS vs STK venue = %+v, want Marvel Stadium (DOCKLANDS)", v)
 	}
+	if v.Dimension != afl.VenueClosed {
+		t.Fatalf("DOCKLANDS dimension = %s, want closed", v.Dimension)
+	}
 }
 
 func TestNewRepository(t *testing.T) {

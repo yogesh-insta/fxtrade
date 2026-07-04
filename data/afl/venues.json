@@ -13,7 +13,7 @@
     {
       "id": "DOCKLANDS",
       "name": "Marvel Stadium",
-      "dimension": "wide",
+      "dimension": "closed",
       "latitude": -37.8165,
       "longitude": 144.9475,
       "interstate": false,

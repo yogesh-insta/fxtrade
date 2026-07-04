@@ -8,8 +8,9 @@ func BuildHomeFeatureVector(ctx MatchDayContext) FeatureVector {
 	crowdBias := CrowdBias(ctx.HomeTeam, ctx.AwayTeam, ctx.Venue)
 	homeVenueFit := VenueStyleFit(ctx.HomeStats, ctx.Venue)
 	awayVenueFit := VenueStyleFit(ctx.AwayStats, ctx.Venue)
-	homeWeather := WeatherProfileAdjust(ctx.Weather, ctx.HomeStats)
-	awayWeather := WeatherProfileAdjust(ctx.Weather, ctx.AwayStats)
+	weather := MatchWeather(ctx.Venue, ctx.Weather)
+	homeWeather := WeatherProfileAdjust(weather, ctx.HomeStats)
+	awayWeather := WeatherProfileAdjust(weather, ctx.AwayStats)
 	homePlayers := PlayerAvailabilityAdjust(ctx.Players.Home)
 	awayPlayers := PlayerAvailabilityAdjust(ctx.Players.Away)
 
@@ -35,7 +36,7 @@ func BuildHomeFeatureVector(ctx MatchDayContext) FeatureVector {
 	vals[FeatVenueStyleAway] = awayVenueFit
 	vals[FeatTravelFatigue] = travelFatigue
 	vals[FeatCrowdBias] = crowdBias
-	vals[FeatWeatherContest] = ctx.Weather.ContestFavorability
+	vals[FeatWeatherContest] = weather.ContestFavorability
 	vals[FeatWeatherTotalPts] = homeWeather.TotalPointsFactor
 	vals[FeatHomePlayerAvail] = homePlayers
 	vals[FeatAwayPlayerAvail] = awayPlayers
@@ -66,7 +67,7 @@ func BuildValueBetReasons(ctx MatchDayContext, bet ValueBet) []string {
 	if crowd > 1.05 {
 		reasons = append(reasons, fmt.Sprintf("Home crowd/venue bias multiplier %.2f at %s", crowd, ctx.Venue.Name))
 	}
-	if ctx.Weather.RainMM > 2 || ctx.Weather.WindKPH > 25 {
+	if !VenueIsClosed(ctx.Venue) && (ctx.Weather.RainMM > 2 || ctx.Weather.WindKPH > 25) {
 		reasons = append(reasons, fmt.Sprintf("Weather: rain %.1fmm, wind %.0f km/h — favors contested profiles", ctx.Weather.RainMM, ctx.Weather.WindKPH))
 	}
 	homeAvail := PlayerAvailabilityAdjust(ctx.Players.Home)

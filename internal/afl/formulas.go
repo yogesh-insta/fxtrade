@@ -75,6 +75,22 @@ func CrowdBias(home, away TeamID, venue VenueProfile) float64 {
 	return bias
 }
 
+// VenueIsClosed reports retractable-roof / indoor venues where outdoor weather barely affects play.
+func VenueIsClosed(venue VenueProfile) bool {
+	return venue.Dimension == VenueClosed
+}
+
+// MatchWeather returns scoring-relevant weather, neutralizing outdoor conditions at closed venues.
+func MatchWeather(venue VenueProfile, weather WeatherMetrics) WeatherMetrics {
+	if !VenueIsClosed(venue) {
+		return weather
+	}
+	w := weather
+	w.ContestFavorability = 0.2
+	w.TotalPointsFactor = 1.0
+	return w
+}
+
 // WeatherProfileAdjust down-weights disposal-heavy teams in wet/windy conditions.
 func WeatherProfileAdjust(weather WeatherMetrics, team TeamStats) WeatherAdjustment {
 	wetWind := Clamp01(weather.RainMM/8.0 + weather.WindKPH/40.0)
@@ -107,6 +123,9 @@ func VenueStyleFit(team TeamStats, venue VenueProfile) float64 {
 	case VenueWide:
 		// Wide expanses favor clearance chains and disposal volume.
 		return Clamp01(team.ClearanceRate*0.4 + team.DisposalRate*0.6)
+	case VenueClosed:
+		// Indoor / closed-roof: balanced profile, not wide-open disposal chains.
+		return Clamp01((team.Inside50Efficiency + team.ClearanceRate + team.ContestedPossessionRate) / 3.0)
 	default:
 		return Clamp01((team.Inside50Efficiency + team.ClearanceRate + team.ContestedPossessionRate) / 3.0)
 	}

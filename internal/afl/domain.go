@@ -41,6 +41,7 @@ const (
 	VenueNarrow   VenueDimension = "narrow"
 	VenueStandard VenueDimension = "standard"
 	VenueWide     VenueDimension = "wide"
+	VenueClosed   VenueDimension = "closed" // retractable-roof / indoor (e.g. Marvel Stadium)
 )
 
 // PlayerRole classifies structural player impact.
