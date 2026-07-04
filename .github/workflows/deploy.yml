@@ -20,8 +20,10 @@ jobs:
           go-version: "1.22"
           cache: true
 
-      - name: Build linux/amd64 binary
-        run: GOOS=linux GOARCH=amd64 go build -o fxtrade ./cmd/fxtrade
+      - name: Build linux/amd64 binaries
+        run: |
+          GOOS=linux GOARCH=amd64 go build -o fxtrade ./cmd/fxtrade
+          GOOS=linux GOARCH=amd64 go build -o nifty-pulse ./cmd/nifty-pulse
 
       - name: Configure SSH
         env:
@@ -33,21 +35,24 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$GCP_VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Deploy binary and restart service
+      - name: Deploy binaries and restart service
         env:
           GCP_VM_HOST: ${{ secrets.GCP_VM_HOST }}
           GCP_VM_USER: ${{ secrets.GCP_VM_USER }}
           GCP_VM_PATH: ${{ secrets.GCP_VM_PATH }}
         run: |
           VM_PATH="${GCP_VM_PATH:-/opt/fxtrade/bin/fxtrade}"
+          INSTALL_ROOT="$(dirname "$(dirname "$VM_PATH")")"
           REMOTE="${GCP_VM_USER}@${GCP_VM_HOST}"
 
-          scp -i ~/.ssh/deploy_key -o BatchMode=yes fxtrade "${REMOTE}:/tmp/fxtrade.new"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes fxtrade nifty-pulse watchlist.txt "${REMOTE}:/tmp/"
 
           ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$REMOTE" bash -s <<EOF
           set -euo pipefail
-          sudo install -m 755 /tmp/fxtrade.new "${VM_PATH}"
-          rm -f /tmp/fxtrade.new
+          sudo install -m 755 /tmp/fxtrade "${VM_PATH}"
+          sudo install -m 755 /tmp/nifty-pulse "${INSTALL_ROOT}/bin/nifty-pulse"
+          sudo install -o fxtrade -g fxtrade -m 644 /tmp/watchlist.txt "${INSTALL_ROOT}/watchlist.txt"
+          rm -f /tmp/fxtrade /tmp/nifty-pulse /tmp/watchlist.txt
           restarted=0
           if systemctl is-enabled fxtrade.service &>/dev/null; then
             sudo systemctl restart fxtrade.service

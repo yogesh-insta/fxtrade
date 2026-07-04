@@ -1,0 +1,15 @@
+[Unit]
+Description=NiftyPulse daily NSE swing scanner
+Documentation=file:///opt/fxtrade/deploy/gcp/DEPLOY.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=fxtrade
+Group=fxtrade
+WorkingDirectory=/opt/fxtrade
+EnvironmentFile=-/etc/fxtrade/fxtrade.env
+ExecStart=/opt/fxtrade/bin/nifty-pulse -credentials /opt/fxtrade/.credentials -watchlist /opt/fxtrade/watchlist.txt
+StandardOutput=append:/opt/fxtrade/logs/nifty-pulse.log
+StandardError=append:/opt/fxtrade/logs/nifty-pulse.stderr.log

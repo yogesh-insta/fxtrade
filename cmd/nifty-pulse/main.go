@@ -14,14 +14,14 @@ import (
 	"github.com/ym/fxtrade/internal/stockscan"
 )
 
-// NiftyPulse — daily NSE swing scanner. Run via cron on the GCP VM, e.g.:
+// NiftyPulse — daily NSE swing scanner.
 //
-//	30 3 * * 1-5 cd /opt/fxtrade && /usr/local/bin/nifty-pulse -credentials .credentials -watchlist watchlist.txt >> logs/nifty-pulse.log 2>&1
-//
-// 03:30 UTC ≈ 09:00 IST (adjust for DST if needed).
+// Scheduled on the GCP VM via nifty-pulse.timer (18:00 Australia/Sydney, Sun–Fri).
+// On demand: sudo systemctl start nifty-pulse.service, or ./scripts/nifty-pulse-run.sh
 func main() {
 	credentialsPath := flag.String("credentials", ".credentials", "path to credentials JSON")
 	watchlistPath := flag.String("watchlist", "watchlist.txt", "path to NSE symbol watchlist (one per line)")
+	dryRun := flag.Bool("dry-run", false, "scan and log pick without sending email")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -58,17 +58,24 @@ func main() {
 	if topN <= 0 {
 		topN = 3
 	}
-	pick, err := sentiment.PickWithSentiment(ctx, ranked, topN)
+	sentimentPick, err := sentiment.PickWithSentiment(ctx, ranked, topN)
 	if err != nil {
 		slog.Error("sentiment pick failed", "error", err)
 		os.Exit(1)
 	}
-	if pick == nil {
+	if sentimentPick == nil {
 		slog.Info("no pick after sentiment gate; no alert sent")
 		return
 	}
 
-	trade := stockscan.BuildPick(*pick, cfg.StockScan)
+	var sentimentNote string
+	if sentimentPick.SentimentUsed {
+		sentimentNote = stockscan.FormatSentimentNote(sentimentPick.Signal)
+	}
+	reasons := stockscan.BuildReasons(sentimentPick.Candidate, cfg.StockScan, sentimentNote)
+	trade := stockscan.BuildPick(sentimentPick.Candidate, cfg.StockScan, reasons)
+	contenders := stockscan.BuildContenders(stockscan.TopN(ranked, 5), cfg.StockScan, trade.Candidate.Symbol)
+
 	slog.Info("pick selected",
 		"symbol", trade.Candidate.Symbol,
 		"entry", trade.Entry,
@@ -77,7 +84,21 @@ func main() {
 	)
 
 	prefix := cfg.Notifications.EffectiveNSEPrefix()
+	if *dryRun {
+		subject := stockscan.FormatAlertSubject(prefix, trade)
+		slog.Info("dry-run: pick ready (email not sent)",
+			"subject", subject,
+			"symbol", trade.Candidate.Symbol,
+			"entry", trade.Entry,
+			"stop_loss", trade.StopLoss,
+			"target", trade.Target,
+			"reasons", trade.Reasons,
+			"would_send_to", cfg.Email.AlertTo,
+		)
+		return
+	}
+
 	notifier := notify.New(cfg.Email)
-	stockscan.SendAlert(notifier, ctx, prefix, trade)
+	stockscan.SendAlert(notifier, ctx, prefix, trade, contenders, len(ranked))
 	slog.Info("alert dispatched", "symbol", trade.Candidate.Symbol, "to", cfg.Email.AlertTo)
 }
