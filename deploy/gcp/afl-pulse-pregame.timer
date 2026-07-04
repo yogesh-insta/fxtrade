@@ -1,0 +1,11 @@
+[Unit]
+Description=AFLPulse pregame poll timer (every 5 minutes)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=afl-pulse-pregame.service
+
+[Install]
+WantedBy=timers.target

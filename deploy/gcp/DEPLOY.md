@@ -78,6 +78,7 @@ This creates:
 | `/opt/fxtrade/bin/fxtrade` | FX daemon binary (deployed by CI or manual `scp`) |
 | `/opt/fxtrade/bin/nifty-pulse` | NiftyPulse daily NSE scanner |
 | `/opt/fxtrade/bin/afl-pulse` | AFLPulse weekly AFL round scanner |
+| `/opt/fxtrade/bin/afl-pulse-pregame` | AFLPulse T-30 pregame scanner (Gemini) |
 | `/opt/fxtrade/watchlist.txt` | NSE symbol watchlist for NiftyPulse |
 | `/opt/fxtrade/data/afl/` | AFL seed stats (teams, venues, model coefficients) |
 | `/opt/fxtrade/.credentials` | Secrets JSON (600, owner `fxtrade`) |
@@ -90,6 +91,8 @@ This creates:
 | `/etc/systemd/system/nifty-pulse.timer` | Daily 18:00 Australia/Sydney (Sun–Fri) |
 | `/etc/systemd/system/afl-pulse.service` | AFLPulse oneshot round scan |
 | `/etc/systemd/system/afl-pulse.timer` | Weekly 18:00 Australia/Melbourne (Thursday) |
+| `/etc/systemd/system/afl-pulse-pregame.service` | AFLPulse T-30 pregame oneshot |
+| `/etc/systemd/system/afl-pulse-pregame.timer` | Every 5 minutes (pregame poll) |
 
 ### Systemd modes
 
@@ -165,11 +168,13 @@ sudo systemctl restart fxtrade.service
 GOOS=linux GOARCH=amd64 go build -o fxtrade ./cmd/fxtrade
 GOOS=linux GOARCH=amd64 go build -o nifty-pulse ./cmd/nifty-pulse
 GOOS=linux GOARCH=amd64 go build -o afl-pulse ./cmd/afl-pulse
-scp fxtrade nifty-pulse afl-pulse watchlist.txt user@VM_IP:/tmp/
+GOOS=linux GOARCH=amd64 go build -o afl-pulse-pregame ./cmd/afl-pulse-pregame
+scp fxtrade nifty-pulse afl-pulse afl-pulse-pregame watchlist.txt user@VM_IP:/tmp/
 scp -r data/afl user@VM_IP:/tmp/
 ssh user@VM_IP 'sudo install -m 755 /tmp/fxtrade /opt/fxtrade/bin/fxtrade && \
   sudo install -m 755 /tmp/nifty-pulse /opt/fxtrade/bin/nifty-pulse && \
   sudo install -m 755 /tmp/afl-pulse /opt/fxtrade/bin/afl-pulse && \
+  sudo install -m 755 /tmp/afl-pulse-pregame /opt/fxtrade/bin/afl-pulse-pregame && \
   sudo install -o fxtrade -g fxtrade -m 644 /tmp/watchlist.txt /opt/fxtrade/watchlist.txt && \
   sudo mkdir -p /opt/fxtrade/data/afl && sudo cp -f /tmp/afl/*.json /opt/fxtrade/data/afl/ && \
   sudo chown -R fxtrade:fxtrade /opt/fxtrade/data/afl && \
@@ -306,6 +311,62 @@ Re-install or update systemd units after pulling deploy changes:
 sudo cp deploy/gcp/afl-pulse.{service,timer} /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now afl-pulse.timer
+```
+
+## 6b. AFLPulse pregame (T-30)
+
+`afl-pulse-pregame` polls Squiggle every **5 minutes** for fixtures whose kickoff is **30–35 minutes away**. When a fixture enters the window and has not been emailed yet:
+
+1. Fetches AU bookmaker odds (The Odds API)
+2. Builds one AFLPulse model report (`BuildRoundReports`)
+3. Calls **Gemini 2.5 Flash-Lite + Google Search** (compact JSON in, structured JSON out)
+4. Emails the T-30 pregame report and records the Squiggle game ID in `data/afl/pregame-sent.json`
+
+If Gemini fails after retries, an **alert email** is sent instead (dedup state unchanged so the next poll can retry).
+
+**Requires** `afl.gemini_api_key` in `.credentials`. Weekly round-scan LLM (`llm_analytics_enabled`) is **opt-in** and defaults to `false`.
+
+### Schedule
+
+`install.sh` enables `afl-pulse-pregame.timer` (`OnUnitActiveSec=5min`).
+
+```bash
+sudo systemctl status afl-pulse-pregame.timer
+sudo systemctl list-timers afl-pulse-pregame.timer
+journalctl -u afl-pulse-pregame.service -n 50
+tail -f /opt/fxtrade/logs/afl-pulse-pregame.log
+```
+
+### On-demand / dry-run
+
+**On the VM** (real email when a fixture is in window):
+
+```bash
+sudo systemctl start afl-pulse-pregame.service
+```
+
+**Safe test on the VM**:
+
+```bash
+sudo -u fxtrade /opt/fxtrade/bin/afl-pulse-pregame \
+  -credentials /opt/fxtrade/.credentials \
+  -dry-run
+```
+
+**Locally**:
+
+```bash
+chmod +x scripts/afl-pulse-pregame-run.sh
+./scripts/afl-pulse-pregame-run.sh --dry-run
+go run ./cmd/afl-pulse-pregame -credentials .credentials -dry-run
+```
+
+Re-install systemd units after pulling deploy changes:
+
+```bash
+sudo cp deploy/gcp/afl-pulse-pregame.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now afl-pulse-pregame.timer
 ```
 
 ## 7. Firewall (optional health check from outside)
