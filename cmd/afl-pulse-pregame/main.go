@@ -41,8 +41,8 @@ func main() {
 		slog.Error("afl config", "error", err)
 		os.Exit(1)
 	}
-	if cfg.AFL.GeminiAPIKey == "" {
-		slog.Error("pregame requires afl.gemini_api_key")
+	if cfg.AFL.GeminiAPIKey == "" && cfg.AFL.PregameLLMRequiredEnabled() {
+		slog.Error("pregame requires afl.gemini_api_key when pregame_llm_required is true")
 		os.Exit(1)
 	}
 
@@ -174,20 +174,33 @@ func main() {
 		}
 		report := reports[0]
 
-		llmResp, llmErr := afl.RunPregameLLM(ctx, cfg.AFL, sfix, report)
-		if llmErr != nil {
-			slog.Error("pregame gemini failed",
-				"squiggle_id", game.ID,
-				"match", fmt.Sprintf("%s vs %s", fixture.HomeTeam, fixture.AwayTeam),
-				"error", llmErr,
-			)
-			if !*dryRun {
-				alertBody := afl.FormatPregameFailureAlert(
-					sfix, fixture.HomeTeam, fixture.AwayTeam, game.Venue, llmErr, *logPath,
+		var llmResp afl.PregameLLMResponse
+		if cfg.AFL.GeminiAPIKey != "" {
+			var llmErr error
+			llmResp, llmErr = afl.RunPregameLLM(ctx, cfg.AFL, sfix, report)
+			if llmErr != nil {
+				slog.Error("pregame gemini failed",
+					"squiggle_id", game.ID,
+					"match", fmt.Sprintf("%s vs %s", fixture.HomeTeam, fixture.AwayTeam),
+					"error", llmErr,
 				)
-				afl.SendPregameFailureAlert(notifier, ctx, cfg.Notifications, fixture.HomeTeam, fixture.AwayTeam, alertBody)
+				if cfg.AFL.PregameLLMRequiredEnabled() {
+					if !*dryRun {
+						alertBody := afl.FormatPregameFailureAlert(
+							sfix, fixture.HomeTeam, fixture.AwayTeam, game.Venue, llmErr, *logPath,
+						)
+						afl.SendPregameFailureAlert(notifier, ctx, cfg.Notifications, fixture.HomeTeam, fixture.AwayTeam, alertBody)
+					}
+					continue
+				}
+				slog.Warn("pregame gemini optional; sending model-only email",
+					"squiggle_id", game.ID,
+				)
 			}
-			continue
+		} else {
+			slog.Info("pregame_llm_required false and no gemini key; model-only email",
+				"squiggle_id", game.ID,
+			)
 		}
 
 		body := afl.FormatPregameEmail(sfix, report, llmResp)
