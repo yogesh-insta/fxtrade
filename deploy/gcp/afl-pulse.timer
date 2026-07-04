@@ -1,0 +1,11 @@
+[Unit]
+Description=AFLPulse weekly timer (18:00 Australia/Melbourne, Thursday)
+
+[Timer]
+OnCalendar=Thu *-*-* 18:00:00
+Timezone=Australia/Melbourne
+Persistent=true
+Unit=afl-pulse.service
+
+[Install]
+WantedBy=timers.target

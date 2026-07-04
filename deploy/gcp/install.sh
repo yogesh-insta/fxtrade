@@ -7,6 +7,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 INSTALL_ROOT="${FXTRADE_HOME:-/opt/fxtrade}"
 BINARY_SRC=""
 NIFTY_PULSE_SRC=""
+AFL_PULSE_SRC=""
 CREDENTIALS_SRC=""
 ENABLE_ALL=false
 ENABLE_BOT=""
@@ -19,6 +20,7 @@ Usage: sudo ./deploy/gcp/install.sh [options]
 Options:
   --binary PATH         Linux amd64 fxtrade binary (default: build on VM or copy separately)
   --nifty-pulse PATH    Linux amd64 nifty-pulse binary (default: deploy via CI or build manually)
+  --afl-pulse PATH      Linux amd64 afl-pulse binary (default: deploy via CI or build manually)
   --credentials PATH    Local .credentials to install (default: skip; use fetch-credentials.sh)
   --enable-all          Enable fxtrade.service (all bots from .credentials)
   --enable-bot ID       Enable fxtrade@ID.service (e.g. universe_scanner, range_trend)
@@ -35,6 +37,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --binary) BINARY_SRC="$2"; shift 2 ;;
     --nifty-pulse) NIFTY_PULSE_SRC="$2"; shift 2 ;;
+    --afl-pulse) AFL_PULSE_SRC="$2"; shift 2 ;;
     --credentials) CREDENTIALS_SRC="$2"; shift 2 ;;
     --enable-all) ENABLE_ALL=true; shift ;;
     --enable-bot) ENABLE_BOT="$2"; shift 2 ;;
@@ -87,6 +90,20 @@ elif [[ ! -x "$INSTALL_ROOT/bin/nifty-pulse" ]]; then
   echo "  scp nifty-pulse user@vm:/tmp/nifty-pulse && sudo install -m 755 /tmp/nifty-pulse $INSTALL_ROOT/bin/nifty-pulse"
 fi
 
+if [[ -n "$AFL_PULSE_SRC" ]]; then
+  install -m 755 "$AFL_PULSE_SRC" "$INSTALL_ROOT/bin/afl-pulse"
+elif [[ ! -x "$INSTALL_ROOT/bin/afl-pulse" ]]; then
+  echo "note: no binary at $INSTALL_ROOT/bin/afl-pulse yet — deploy via GitHub Actions or:"
+  echo "  GOOS=linux GOARCH=amd64 go build -o afl-pulse ./cmd/afl-pulse"
+  echo "  scp afl-pulse user@vm:/tmp/afl-pulse && sudo install -m 755 /tmp/afl-pulse $INSTALL_ROOT/bin/afl-pulse"
+fi
+
+if [[ -d "$ROOT/data/afl" ]]; then
+  mkdir -p "$INSTALL_ROOT/data/afl"
+  cp -f "$ROOT/data/afl/"*.json "$INSTALL_ROOT/data/afl/"
+  chown -R fxtrade:fxtrade "$INSTALL_ROOT/data/afl"
+fi
+
 if [[ -f "$ROOT/watchlist.txt" ]]; then
   install -o fxtrade -g fxtrade -m 644 "$ROOT/watchlist.txt" "$INSTALL_ROOT/watchlist.txt"
 elif [[ ! -f "$INSTALL_ROOT/watchlist.txt" ]]; then
@@ -108,6 +125,9 @@ systemctl daemon-reload
 
 systemctl enable --now nifty-pulse.timer
 echo "Enabled nifty-pulse.timer (18:00 Australia/Sydney, Sun–Fri)"
+
+systemctl enable --now afl-pulse.timer
+echo "Enabled afl-pulse.timer (18:00 Australia/Melbourne, Thursday)"
 
 if $ENABLE_ALL; then
   systemctl enable --now fxtrade.service

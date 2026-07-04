@@ -77,7 +77,9 @@ This creates:
 |------|---------|
 | `/opt/fxtrade/bin/fxtrade` | FX daemon binary (deployed by CI or manual `scp`) |
 | `/opt/fxtrade/bin/nifty-pulse` | NiftyPulse daily NSE scanner |
+| `/opt/fxtrade/bin/afl-pulse` | AFLPulse weekly AFL round scanner |
 | `/opt/fxtrade/watchlist.txt` | NSE symbol watchlist for NiftyPulse |
+| `/opt/fxtrade/data/afl/` | AFL seed stats (teams, venues, model coefficients) |
 | `/opt/fxtrade/.credentials` | Secrets JSON (600, owner `fxtrade`) |
 | `/opt/fxtrade/data/` | Bot state files |
 | `/opt/fxtrade/logs/` | Daemon stdout/stderr |
@@ -86,6 +88,8 @@ This creates:
 | `/etc/systemd/system/fxtrade@.service` | One bot per unit (`--bot`) |
 | `/etc/systemd/system/nifty-pulse.service` | NiftyPulse oneshot scan |
 | `/etc/systemd/system/nifty-pulse.timer` | Daily 18:00 Australia/Sydney (Sun–Fri) |
+| `/etc/systemd/system/afl-pulse.service` | AFLPulse oneshot round scan |
+| `/etc/systemd/system/afl-pulse.timer` | Weekly 18:00 Australia/Melbourne (Thursday) |
 
 ### Systemd modes
 
@@ -160,14 +164,19 @@ sudo systemctl restart fxtrade.service
 ```bash
 GOOS=linux GOARCH=amd64 go build -o fxtrade ./cmd/fxtrade
 GOOS=linux GOARCH=amd64 go build -o nifty-pulse ./cmd/nifty-pulse
-scp fxtrade nifty-pulse watchlist.txt user@VM_IP:/tmp/
+GOOS=linux GOARCH=amd64 go build -o afl-pulse ./cmd/afl-pulse
+scp fxtrade nifty-pulse afl-pulse watchlist.txt user@VM_IP:/tmp/
+scp -r data/afl user@VM_IP:/tmp/
 ssh user@VM_IP 'sudo install -m 755 /tmp/fxtrade /opt/fxtrade/bin/fxtrade && \
   sudo install -m 755 /tmp/nifty-pulse /opt/fxtrade/bin/nifty-pulse && \
+  sudo install -m 755 /tmp/afl-pulse /opt/fxtrade/bin/afl-pulse && \
   sudo install -o fxtrade -g fxtrade -m 644 /tmp/watchlist.txt /opt/fxtrade/watchlist.txt && \
+  sudo mkdir -p /opt/fxtrade/data/afl && sudo cp -f /tmp/afl/*.json /opt/fxtrade/data/afl/ && \
+  sudo chown -R fxtrade:fxtrade /opt/fxtrade/data/afl && \
   sudo systemctl restart fxtrade.service'
 ```
 
-**Via GitHub Actions:** push to `main` (see `.github/workflows/deploy.yml`) after configuring secrets below. The workflow deploys `fxtrade`, `nifty-pulse`, and `watchlist.txt`, then restarts every enabled `fxtrade.service` and `fxtrade@*.service` unit.
+**Via GitHub Actions:** push to `main` (see `.github/workflows/deploy.yml`) after configuring secrets below. The workflow deploys `fxtrade`, `nifty-pulse`, `afl-pulse`, `watchlist.txt`, and `data/afl/`, then restarts every enabled `fxtrade.service` and `fxtrade@*.service` unit.
 
 ## 5. NiftyPulse (NSE daily scanner)
 
@@ -228,7 +237,78 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now nifty-pulse.timer
 ```
 
-## 6. Firewall (optional health check from outside)
+## 6. AFLPulse (AFL weekly round scanner)
+
+AFLPulse scans upcoming AFL fixtures every Thursday evening: fetches AU bookmaker h2h and totals odds via [The Odds API](https://the-odds-api.com), builds match context from seed stats (`data/afl/teams.json`, `venues.json`, `players.json`), optional injuries override, and Open-Meteo weather, then emails a **full round report** with win probability, predicted scores, margin, and any value bets highlighted.
+
+### Data sources (free)
+
+| Source | File / API | Used for |
+|--------|------------|----------|
+| Team form & efficiency | `data/afl/teams.json` | Form, inside-50, clearances, contested possessions, disposals |
+| Venues | `data/afl/venues.json` | Home win rates, ground dimensions, lat/lon |
+| Players / injuries | `data/afl/players.json` + `-injuries` JSON | Key player availability impact |
+| Weather | Open-Meteo (no key) | Rain, wind, scoring/total adjustment |
+| Odds | The Odds API (`h2h,totals`) | Head-to-head EV; totals line benchmark |
+| Team name aliases | `data/afl/team_aliases.json` | Odds API name → team ID |
+| Model coefficients | `data/afl/model_coefficients.json` | Win probability (matrix predictor) |
+
+### Schedule
+
+`install.sh` enables `afl-pulse.timer`, which fires **every Thursday at 18:00 Australia/Melbourne** (`OnCalendar=Thu *-*-* 18:00:00` with `Timezone=Australia/Melbourne`). Systemd applies **AEST/AEDT automatically**.
+
+```bash
+sudo systemctl status afl-pulse.timer
+sudo systemctl list-timers afl-pulse.timer
+journalctl -u afl-pulse.service -n 50
+tail -f /opt/fxtrade/logs/afl-pulse.log
+```
+
+### On-demand runs
+
+**On the VM** (sends a real email with full round report):
+
+```bash
+sudo systemctl start afl-pulse.service
+```
+
+**Safe test on the VM** (scan only, no email):
+
+```bash
+sudo -u fxtrade /opt/fxtrade/bin/afl-pulse \
+  -credentials /opt/fxtrade/.credentials \
+  -dry-run
+```
+
+**Locally** (from repo root):
+
+```bash
+chmod +x scripts/afl-pulse-run.sh
+./scripts/afl-pulse-run.sh --dry-run
+./scripts/afl-pulse-run.sh
+```
+
+Optional match-day injuries override:
+
+```bash
+./scripts/afl-pulse-run.sh -injuries data/afl/injuries.example.json --dry-run
+```
+
+Legacy value-bet-only email (no full round report):
+
+```bash
+./bin/afl-pulse -credentials .credentials -value-only
+```
+
+Re-install or update systemd units after pulling deploy changes:
+
+```bash
+sudo cp deploy/gcp/afl-pulse.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now afl-pulse.timer
+```
+
+## 7. Firewall (optional health check from outside)
 
 Health listens on `:8080` by default (localhost-only is fine for SSH tunneling).
 
@@ -255,7 +335,7 @@ ssh -L 8080:127.0.0.1:8080 user@VM_IP
 curl http://localhost:8080/health
 ```
 
-## 7. Operations
+## 8. Operations
 
 ```bash
 sudo systemctl status fxtrade.service

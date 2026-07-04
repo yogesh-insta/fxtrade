@@ -17,14 +17,16 @@ import (
 	"github.com/ym/fxtrade/internal/notify"
 )
 
-// AFLPulse — on-demand AFL value betting scanner.
+// AFLPulse — weekly AFL round scanner with score projections and value bets.
 //
-// On demand: go run ./cmd/afl-pulse -credentials .credentials
+// Scheduled on the GCP VM via afl-pulse.timer (Thu 18:00 Australia/Melbourne).
+// On demand: sudo systemctl start afl-pulse.service, or ./scripts/afl-pulse-run.sh
 // Safe test:  go run ./cmd/afl-pulse -credentials .credentials -dry-run
 func main() {
 	credentialsPath := flag.String("credentials", ".credentials", "path to credentials JSON")
-	dryRun := flag.Bool("dry-run", false, "evaluate and log value bets without sending email")
+	dryRun := flag.Bool("dry-run", false, "evaluate and log predictions without sending email")
 	injuriesPath := flag.String("injuries", "", "optional path to injuries JSON override")
+	valueOnly := flag.Bool("value-only", false, "email only when value bets exist (legacy mode)")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -62,13 +64,13 @@ func main() {
 	}
 
 	oddsClient := odds.NewClient(cfg.AFL)
-	marketOdds, err := oddsClient.FetchOdds(ctx, repo.ResolveTeam)
+	fetched, err := oddsClient.FetchOdds(ctx, repo.ResolveTeam)
 	if err != nil {
 		slog.Error("fetch odds", "error", err)
 		os.Exit(1)
 	}
-	slog.Info("odds fetched", "outcomes", len(marketOdds))
-	if len(marketOdds) == 0 {
+	slog.Info("odds fetched", "h2h_outcomes", len(fetched.H2H), "totals_lines", len(fetched.Totals))
+	if len(fetched.H2H) == 0 {
 		slog.Info("no upcoming AFL markets; exiting")
 		return
 	}
@@ -86,19 +88,27 @@ func main() {
 	}
 	evaluator := afl.NewEvaluator(cfg.AFL, predictor, builder)
 
-	valueBets, err := evaluator.Evaluate(ctx, marketOdds)
+	fixtures := afl.FixturesFromOdds(fetched.H2H)
+	reports, valueBets, err := evaluator.BuildRoundReports(ctx, fixtures, fetched.H2H, fetched.Totals)
 	if err != nil {
-		slog.Warn("evaluate completed with errors", "error", err)
+		slog.Warn("round report completed with errors", "error", err)
 	}
-	slog.Info("evaluation complete", "summary", afl.FormatEvaluateSummary(valueBets))
+	slog.Info("round report complete", "summary", afl.FormatRoundReportSummary(reports, valueBets))
 
-	if len(valueBets) == 0 {
-		slog.Info("no value bets above threshold; no alert sent", "min_ev", cfg.AFL.MinEVThreshold)
-		return
+	for _, r := range reports {
+		slog.Info("fixture prediction",
+			"match", string(r.Context.HomeTeam)+" vs "+string(r.Context.AwayTeam),
+			"winner", r.Score.PredictedWinner,
+			"score", r.Score.HomeScore,
+			"away_score", r.Score.AwayScore,
+			"total", r.Score.TotalScore,
+			"margin", r.Score.Margin,
+			"home_win_prob", r.HomeWinProb,
+			"value_bets", len(r.ValueBets),
+		)
 	}
 
-	topN := afl.TopN(valueBets, cfg.AFL.AlertTopN)
-	for i, vb := range topN {
+	for i, vb := range afl.TopN(valueBets, cfg.AFL.AlertTopN) {
 		slog.Info("value bet",
 			"rank", i+1,
 			"match", string(vb.HomeTeam)+" vs "+string(vb.AwayTeam),
@@ -110,13 +120,27 @@ func main() {
 		)
 	}
 
+	if *valueOnly && len(valueBets) == 0 {
+		slog.Info("value-only mode: no value bets above threshold; no alert sent", "min_ev", cfg.AFL.MinEVThreshold)
+		return
+	}
+	if len(reports) == 0 {
+		slog.Info("no fixture reports generated; exiting")
+		return
+	}
+
 	if *dryRun {
 		slog.Info("dry-run: skipping email alert")
 		return
 	}
 
 	notifier := notify.New(cfg.Email)
-	prefix := cfg.Notifications.EffectiveAFLPrefix()
-	afl.SendAlertMulti(notifier, ctx, cfg.AFL, cfg.Notifications, valueBets)
-	slog.Info("alert dispatched", "pick", topN[0].Team, "prefix", prefix)
+	if *valueOnly {
+		afl.SendAlertMulti(notifier, ctx, cfg.AFL, cfg.Notifications, valueBets)
+		slog.Info("value-only alert dispatched", "value_bets", len(valueBets))
+		return
+	}
+
+	afl.SendRoundReport(notifier, ctx, cfg.AFL, cfg.Notifications, reports, valueBets)
+	slog.Info("round report email dispatched", "fixtures", len(reports), "value_bets", len(valueBets))
 }
