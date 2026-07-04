@@ -60,12 +60,16 @@ func TestFormatRoundReportEmailRichCarl(t *testing.T) {
 	for _, want := range []string{
 		"AFLPulse Round Scan",
 		"RICH vs CARL",
+		"Fri 18 Apr ·",
+		"MCG",
 		"PREDICTION",
 		"Winner:     Richmond (58%)",
 		"Score:      Richmond 92 – Carlton 78  (margin 14)",
 		"Total:      170 points",
 		"VS BOOKMAKER",
-		"Total line: 168.5",
+		"H2H: RICH",
+		"Total: line 168.5 · model 170",
+		"Lean: NEAR",
 		"★ VALUE BET: Richmond",
 		"VALUE BETS (1)",
 		"Manual execution required",
@@ -106,5 +110,88 @@ func TestFormatKickoffMelbourne(t *testing.T) {
 	got := formatKickoffMelbourne(kick)
 	if !strings.Contains(got, "Jul") || !strings.Contains(got, "3:15 PM") {
 		t.Fatalf("unexpected kickoff format: %q", got)
+	}
+	short := formatKickoffMelbourneShort(kick)
+	if !strings.Contains(short, "Sat 5 Jul") || !strings.Contains(short, "3:15 PM") {
+		t.Fatalf("unexpected short kickoff format: %q", short)
+	}
+}
+
+func TestWrapIndented(t *testing.T) {
+	text := "Model favours STK to win (62%) — away side rated 62% despite playing at Melbourne Cricket Ground"
+	got := wrapIndented(bulletPrefix, text, 40, bulletContIndent)
+	for _, line := range strings.Split(got, "\n") {
+		if len(line) > 40 {
+			t.Fatalf("line exceeds width 40: len=%d %q", len(line), line)
+		}
+	}
+	if !strings.HasPrefix(got, bulletPrefix) {
+		t.Fatalf("expected bullet prefix on first line: %q", got)
+	}
+	if !strings.Contains(got, "\n"+bulletContIndent) {
+		t.Fatalf("expected continuation indent: %q", got)
+	}
+}
+
+func TestWriteLastFiveSectionMobileLayout(t *testing.T) {
+	var b strings.Builder
+	writeLastFiveSection(&b, MatchDayContext{
+		HomeTeam: "ESS",
+		AwayTeam: "STK",
+		Venue:    VenueProfile{Name: "Melbourne Cricket Ground"},
+		HomeStats: TeamStats{
+			Last5Scores: []RecentMatchScore{
+				{Opponent: "RICH", For: 56, Against: 74, Venue: "M.C.G.", Total: 130},
+				{Opponent: "WCE", For: 55, Against: 85, Venue: "Optus Stadium", Total: 140},
+			},
+		},
+		AwayStats: TeamStats{
+			Last5Scores: []RecentMatchScore{
+				{Opponent: "CARL", For: 80, Against: 70, Venue: "M.C.G.", Total: 150},
+			},
+		},
+	})
+	body := b.String()
+	for _, want := range []string{
+		"LAST 5 GAMES",
+		"— ESS",
+		"56-74 vs RICH @ MCG · total 130 · L",
+		"55-85 vs WCE @ Optus · total 140 · L",
+		"At this venue",
+		"— STK",
+		"80-70 vs CARL @ MCG · total 150 · W",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, " | ") {
+		t.Fatalf("expected one game per line, found pipe separator:\n%s", body)
+	}
+}
+
+func TestWriteBookmakerSectionMobileLayout(t *testing.T) {
+	var b strings.Builder
+	writeBookmakerSection(&b, MatchReport{
+		HomeWinProb: 0.38,
+		Score: ScoreProjection{
+			TotalScore: 155, PredictedWinner: "STK",
+		},
+		MarketOdds: map[TeamID]MarketOdds{
+			"STK": {DecimalOdds: 1.26},
+		},
+		TotalsLine: &TotalsOdds{Line: 174.5, Bookmaker: "sportsbet"},
+	})
+	body := b.String()
+	for _, want := range []string{
+		"VS BOOKMAKER",
+		"H2H: STK $1.26 (~79% market)",
+		"Model: less bullish than market",
+		"Total: line 174.5 · model 155",
+		"Lean: UNDER (Δ -19.5)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in:\n%s", want, body)
+		}
 	}
 }
