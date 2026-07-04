@@ -28,6 +28,7 @@ type StatsSource interface {
 	ResolveTeam(name string) (TeamID, error)
 	Team(id TeamID) (TeamStats, bool)
 	Venue(id VenueID) (VenueProfile, bool)
+	MatchVenue(home, away TeamID) (VenueProfile, bool)
 	DefaultVenueForTeam(team TeamID) VenueProfile
 	PlayerMatrix(home, away TeamID, injuriesPath string) PlayerAvailabilityMatrix
 	HeadToHead(home, away TeamID) (wins, games int)
@@ -52,7 +53,9 @@ func (b *RepositoryContextBuilder) Build(ctx context.Context, odds MarketOdds) (
 		homeStats.H2HGamesVsOpponent = games
 	}
 	venue := b.Repo.DefaultVenueForTeam(odds.HomeTeam)
-	if v, ok := b.Repo.Venue(venue.ID); ok {
+	if v, ok := b.Repo.MatchVenue(odds.HomeTeam, odds.AwayTeam); ok {
+		venue = v
+	} else if v, ok := b.Repo.Venue(venue.ID); ok {
 		venue = v
 	}
 

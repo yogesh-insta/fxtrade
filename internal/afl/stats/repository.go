@@ -19,8 +19,9 @@ type Repository struct {
 	players  map[afl.TeamID][]afl.PlayerImpact
 	aliases  map[string]afl.TeamID
 	venueAlias map[string]afl.VenueID
-	h2h      map[string][2]int
-	liveMeta LiveStatsMeta
+	h2h           map[string][2]int
+	fixtureVenues map[string]afl.VenueID
+	liveMeta      LiveStatsMeta
 }
 
 type venuesFile struct {
@@ -223,6 +224,19 @@ func (r *Repository) Team(id afl.TeamID) (afl.TeamStats, bool) {
 // Venue returns profile for a venue.
 func (r *Repository) Venue(id afl.VenueID) (afl.VenueProfile, bool) {
 	v, ok := r.venues[id]
+	return v, ok
+}
+
+// MatchVenue returns the scheduled ground for an upcoming fixture when known.
+func (r *Repository) MatchVenue(home, away afl.TeamID) (afl.VenueProfile, bool) {
+	if r.fixtureVenues == nil {
+		return afl.VenueProfile{}, false
+	}
+	vid, ok := r.fixtureVenues[h2hKey(home, away)]
+	if !ok {
+		return afl.VenueProfile{}, false
+	}
+	v, ok := r.Venue(vid)
 	return v, ok
 }
 

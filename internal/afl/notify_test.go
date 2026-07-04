@@ -91,7 +91,7 @@ func TestFormatFixtureHeaderLinesESSSTK(t *testing.T) {
 	ctx := MatchDayContext{
 		HomeTeam: "ESS",
 		AwayTeam: "STK",
-		Venue:    VenueProfile{Name: "Melbourne Cricket Ground"},
+		Venue:    VenueProfile{Name: "Marvel Stadium"},
 		Kickoff:  kick,
 	}
 	lines := FormatFixtureHeaderLines(ctx)
@@ -101,7 +101,7 @@ func TestFormatFixtureHeaderLinesESSSTK(t *testing.T) {
 	if lines[0] != "ESS vs STK" {
 		t.Fatalf("line 0 = %q, want teams only", lines[0])
 	}
-	wantMeta := "Sun 5 Jul 3:15 PM · MCG (Melbourne Cricket Ground)"
+	wantMeta := "Sun 5 Jul 3:15 PM · Docklands (Marvel Stadium)"
 	if lines[1] != wantMeta {
 		t.Fatalf("line 1 = %q, want %q", lines[1], wantMeta)
 	}

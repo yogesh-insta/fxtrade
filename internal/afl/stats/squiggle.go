@@ -104,13 +104,14 @@ func (r *Repository) RefreshLiveStats(ctx context.Context, year int, client *Squ
 	if err != nil {
 		return LiveStatsMeta{}, err
 	}
+	r.fixtureVenues = indexFixtureVenues(games, r.ResolveTeam, r.ResolveVenue)
 	round := maxRound(games)
 	standings, err := client.fetchStandings(ctx, year, round)
 	if err != nil {
 		return LiveStatsMeta{}, err
 	}
 
-	teamStats, h2h, venueAvgs, err := buildLiveStats(games, standings, r.ResolveTeam, r.ResolveVenue)
+	teamStats, h2h, venueAvgs, err := buildLiveStats(completedGames(games), standings, r.ResolveTeam, r.ResolveVenue)
 	if err != nil {
 		return LiveStatsMeta{}, err
 	}
@@ -181,7 +182,7 @@ func (r *Repository) HeadToHead(home, away afl.TeamID) (wins, games int) {
 }
 
 func (c *SquiggleClient) fetchGames(ctx context.Context, year int) ([]squiggleGame, error) {
-	url := fmt.Sprintf("%s?q=games;year=%d;complete=100", squiggleBaseURL, year)
+	url := fmt.Sprintf("%s?q=games;year=%d", squiggleBaseURL, year)
 	var resp squiggleGamesResponse
 	if err := c.getJSON(ctx, url, &resp); err != nil {
 		return nil, fmt.Errorf("squiggle games: %w", err)
@@ -388,6 +389,43 @@ func efficiencyFromLadder(percentage float64, pointsFor, pointsAgainst, played i
 	contested := afl.Clamp01(inside*0.90 + (1-scoringBias)*0.10)
 	disposal := afl.Clamp01(inside*0.85 + scoringBias*0.15)
 	return [4]float64{inside, clearance, contested, disposal}
+}
+
+func completedGames(games []squiggleGame) []squiggleGame {
+	out := make([]squiggleGame, 0, len(games))
+	for _, g := range games {
+		if g.Complete >= 100 {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+// indexFixtureVenues maps upcoming home|away pairs to venue IDs from Squiggle.
+func indexFixtureVenues(games []squiggleGame, resolve teamResolver, resolveVenue venueResolver) map[string]afl.VenueID {
+	out := make(map[string]afl.VenueID)
+	for _, g := range games {
+		if g.Complete >= 100 {
+			continue
+		}
+		if g.HTeam == "" || g.ATeam == "" || strings.EqualFold(g.HTeam, "none") {
+			continue
+		}
+		homeID, err := resolve(g.HTeam)
+		if err != nil {
+			continue
+		}
+		awayID, err := resolve(g.ATeam)
+		if err != nil {
+			continue
+		}
+		vid, ok := resolveVenue(g.Venue)
+		if !ok {
+			continue
+		}
+		out[h2hKey(homeID, awayID)] = vid
+	}
+	return out
 }
 
 func maxRound(games []squiggleGame) int {

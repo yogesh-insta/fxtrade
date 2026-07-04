@@ -40,6 +40,24 @@ func TestDefaultVenueForTeamUsesDefaultVenueField(t *testing.T) {
 	}
 }
 
+func TestMatchVenueESSSTKRound17(t *testing.T) {
+	dir := filepath.Join("..", "..", "..", "data", "afl")
+	repo, err := NewRepository(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.fixtureVenues = map[string]afl.VenueID{
+		h2hKey("ESS", "STK"): "DOCKLANDS",
+	}
+	v, ok := repo.MatchVenue("ESS", "STK")
+	if !ok {
+		t.Fatal("expected fixture venue for ESS vs STK")
+	}
+	if v.ID != "DOCKLANDS" || v.Name != "Marvel Stadium" {
+		t.Fatalf("ESS vs STK venue = %+v, want Marvel Stadium (DOCKLANDS)", v)
+	}
+}
+
 func TestNewRepository(t *testing.T) {
 	dir := filepath.Join("..", "..", "..", "data", "afl")
 	repo, err := NewRepository(dir)
