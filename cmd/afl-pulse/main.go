@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -95,17 +96,19 @@ func main() {
 	}
 	slog.Info("round report complete", "summary", afl.FormatRoundReportSummary(reports, valueBets))
 
-	for _, r := range reports {
-		slog.Info("fixture prediction",
-			"match", string(r.Context.HomeTeam)+" vs "+string(r.Context.AwayTeam),
-			"winner", r.Score.PredictedWinner,
-			"score", r.Score.HomeScore,
-			"away_score", r.Score.AwayScore,
-			"total", r.Score.TotalScore,
-			"margin", r.Score.Margin,
-			"home_win_prob", r.HomeWinProb,
-			"value_bets", len(r.ValueBets),
-		)
+	for i, r := range reports {
+		block := afl.FormatFixturePredictionBlock(r)
+		if *dryRun {
+			if i > 0 {
+				fmt.Println()
+			}
+			fmt.Println(block)
+			if len(r.ValueBets) > 0 {
+				fmt.Printf("  Value bets: %d\n", len(r.ValueBets))
+			}
+		} else {
+			slog.Info("fixture prediction", "block", block, "value_bets", len(r.ValueBets))
+		}
 	}
 
 	for i, vb := range afl.TopN(valueBets, cfg.AFL.AlertTopN) {

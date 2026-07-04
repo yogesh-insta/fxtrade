@@ -56,9 +56,10 @@ func TestFormatRoundReportEmailRichCarl(t *testing.T) {
 	body := FormatRoundReportEmail([]MatchReport{report}, report.ValueBets)
 	for _, want := range []string{
 		"RICH vs CARL",
-		"Winner: RICH",
-		"Predicted score: RICH 92 – 78 CARL",
-		"total 170, margin 14",
+		"Winner: RICH (58% probability)",
+		"Total score: 170 points",
+		"Team scores: RICH 92 – CARL 78",
+		"Winning margin: 14 points (RICH)",
 		"Book total line: 168.5",
 		"★ VALUE: RICH",
 		"Manual execution required",
