@@ -1,6 +1,11 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"path/filepath"
+	"strings"
+	"time"
+)
 
 // AFLConfig holds AFLPulse value-betting scanner settings.
 type AFLConfig struct {
@@ -23,6 +28,15 @@ type AFLConfig struct {
 	StatsRefreshOnRun    *bool   `json:"stats_refresh_on_run"`
 	SquiggleUserAgent    string  `json:"squiggle_user_agent"`
 	StatsSeasonYear      int     `json:"stats_season_year"`
+	GeminiAPIKey              string  `json:"gemini_api_key"`
+	GeminiModel               string  `json:"gemini_model"`
+	LLMAnalyticsEnabled       *bool   `json:"llm_analytics_enabled"`
+	LLMConcurrency            int     `json:"llm_concurrency"`
+	PregameLeadMinutes        int     `json:"pregame_lead_minutes"`
+	PregamePollWindowMinutes  int     `json:"pregame_poll_window_minutes"`
+	PregameStatePath          string  `json:"pregame_state_path"`
+	PregameLLMRequired        *bool   `json:"pregame_llm_required"`
+	PregameLLMRetries         int     `json:"pregame_llm_retries"`
 }
 
 func DefaultAFLConfig() AFLConfig {
@@ -42,6 +56,11 @@ func DefaultAFLConfig() AFLConfig {
 		OddsMarkets:       "h2h,totals",
 		PredictorType:     "matrix",
 		StatsRefreshOnRun: defaultStatsRefreshOnRun(),
+		GeminiModel:              "gemini-2.5-flash-lite",
+		LLMConcurrency:           2,
+		PregameLeadMinutes:       30,
+		PregamePollWindowMinutes: 5,
+		PregameLLMRetries:        2,
 	}
 }
 
@@ -100,6 +119,78 @@ func applyAFLDefaults(a *AFLConfig) {
 	if a.StatsRefreshOnRun == nil {
 		a.StatsRefreshOnRun = def.StatsRefreshOnRun
 	}
+	if a.GeminiModel == "" {
+		a.GeminiModel = def.GeminiModel
+	}
+	if a.LLMConcurrency == 0 {
+		a.LLMConcurrency = def.LLMConcurrency
+	}
+	if a.PregameLeadMinutes == 0 {
+		a.PregameLeadMinutes = def.PregameLeadMinutes
+	}
+	if a.PregamePollWindowMinutes == 0 {
+		a.PregamePollWindowMinutes = def.PregamePollWindowMinutes
+	}
+	if a.PregameLLMRetries == 0 {
+		a.PregameLLMRetries = def.PregameLLMRetries
+	}
+}
+
+// AnalyticsEnabled reports whether weekly Gemini grounded analytics should run (opt-in).
+func (a AFLConfig) AnalyticsEnabled() bool {
+	if a.GeminiAPIKey == "" {
+		return false
+	}
+	if a.LLMAnalyticsEnabled == nil {
+		return false
+	}
+	return *a.LLMAnalyticsEnabled
+}
+
+// ResolvedPregameLead returns how long before kickoff pregame alerts fire.
+func (a AFLConfig) ResolvedPregameLead() time.Duration {
+	return time.Duration(a.PregameLeadMinutes) * time.Minute
+}
+
+// ResolvedPregamePollWindow returns the poll window width after the lead time.
+func (a AFLConfig) ResolvedPregamePollWindow() time.Duration {
+	return time.Duration(a.PregamePollWindowMinutes) * time.Minute
+}
+
+// ResolvedPregameStatePath returns the dedup JSON path for pregame emails.
+func (a AFLConfig) ResolvedPregameStatePath() string {
+	if p := strings.TrimSpace(a.PregameStatePath); p != "" {
+		return p
+	}
+	base := strings.TrimSpace(a.StatsDir)
+	if base == "" {
+		base = "data/afl"
+	}
+	return filepath.Join(base, "pregame-sent.json")
+}
+
+// PregameLLMRequiredEnabled reports whether LLM is mandatory for pregame (always true by default).
+func (a AFLConfig) PregameLLMRequiredEnabled() bool {
+	if a.PregameLLMRequired == nil {
+		return true
+	}
+	return *a.PregameLLMRequired
+}
+
+// ResolvedPregameLLMRetries returns retry count after the first attempt.
+func (a AFLConfig) ResolvedPregameLLMRetries() int {
+	if a.PregameLLMRetries < 0 {
+		return 0
+	}
+	return a.PregameLLMRetries
+}
+
+// ResolvedGeminiModel returns the configured Gemini model or the cheapest search-capable default.
+func (a AFLConfig) ResolvedGeminiModel() string {
+	if a.GeminiModel == "" {
+		return "gemini-2.5-flash-lite"
+	}
+	return a.GeminiModel
 }
 
 // StatsRefreshEnabled reports whether live stats should be fetched before each run.
