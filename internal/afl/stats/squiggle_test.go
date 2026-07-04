@@ -109,3 +109,40 @@ func TestVenueAvgTotalsFromGames(t *testing.T) {
 		t.Fatalf("GABBA avg expected 195, got %.0f", avgs["GABBA"])
 	}
 }
+
+func TestIndexFixtureVenuesUpcomingOnly(t *testing.T) {
+	games := []squiggleGame{
+		{HTeam: "Essendon", ATeam: "St Kilda", Venue: "Docklands", Complete: 0},
+		{HTeam: "Essendon", ATeam: "Carlton", Venue: "M.C.G.", Complete: 100},
+		{HTeam: "None", ATeam: "None", Venue: "M.C.G.", Complete: 0},
+	}
+	resolve := func(name string) (afl.TeamID, error) {
+		switch name {
+		case "Essendon":
+			return "ESS", nil
+		case "St Kilda":
+			return "STK", nil
+		case "Carlton":
+			return "CARL", nil
+		default:
+			return "", fmt.Errorf("unknown")
+		}
+	}
+	resolveVenue := func(name string) (afl.VenueID, bool) {
+		switch normalizeName(name) {
+		case "docklands":
+			return "DOCKLANDS", true
+		case "m.c.g.":
+			return "MCG", true
+		default:
+			return "", false
+		}
+	}
+	idx := indexFixtureVenues(games, resolve, resolveVenue)
+	if idx[h2hKey("ESS", "STK")] != "DOCKLANDS" {
+		t.Fatalf("ESS vs STK venue = %q, want DOCKLANDS", idx[h2hKey("ESS", "STK")])
+	}
+	if _, ok := idx[h2hKey("ESS", "CARL")]; ok {
+		t.Fatal("completed fixture should not be indexed")
+	}
+}
