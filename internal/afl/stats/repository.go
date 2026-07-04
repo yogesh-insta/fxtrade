@@ -17,6 +17,9 @@ type Repository struct {
 	teams    map[afl.TeamID]afl.TeamStats
 	players  map[afl.TeamID][]afl.PlayerImpact
 	aliases  map[string]afl.TeamID
+	venueAlias map[string]afl.VenueID
+	h2h      map[string][2]int
+	liveMeta LiveStatsMeta
 }
 
 type venuesFile struct {
@@ -46,6 +49,8 @@ type teamJSON struct {
 	ClearanceRate           float64 `json:"clearance_rate"`
 	ContestedPossessionRate float64 `json:"contested_possession_rate"`
 	DisposalRate            float64 `json:"disposal_rate"`
+	H2HWinsVsOpponent       int     `json:"h2h_wins_vs_opponent"`
+	H2HGamesVsOpponent      int     `json:"h2h_games_vs_opponent"`
 	DefaultVenue            string  `json:"default_venue"`
 }
 
@@ -64,6 +69,10 @@ type aliasesFile struct {
 	Aliases map[string]string `json:"aliases"`
 }
 
+type venueAliasesFile struct {
+	Aliases map[string]string `json:"aliases"`
+}
+
 type injuriesFile struct {
 	Unavailable []struct {
 		PlayerID string `json:"player_id"`
@@ -79,6 +88,7 @@ func NewRepository(dir string) (*Repository, error) {
 		teams:   make(map[afl.TeamID]afl.TeamStats),
 		players: make(map[afl.TeamID][]afl.PlayerImpact),
 		aliases: make(map[string]afl.TeamID),
+		venueAlias: make(map[string]afl.VenueID),
 	}
 	if err := r.loadVenues(filepath.Join(dir, "venues.json")); err != nil {
 		return nil, err
@@ -92,6 +102,7 @@ func NewRepository(dir string) (*Repository, error) {
 	if err := r.loadAliases(filepath.Join(dir, "team_aliases.json")); err != nil {
 		return nil, err
 	}
+	_ = r.loadVenueAliases(filepath.Join(dir, "venue_aliases.json"))
 	return r, nil
 }
 
@@ -133,6 +144,8 @@ func (r *Repository) loadTeams(path string) error {
 			ClearanceRate:           t.ClearanceRate,
 			ContestedPossessionRate: t.ContestedPossessionRate,
 			DisposalRate:            t.DisposalRate,
+			H2HWinsVsOpponent:       t.H2HWinsVsOpponent,
+			H2HGamesVsOpponent:      t.H2HGamesVsOpponent,
 		}
 	}
 	return nil
@@ -165,6 +178,27 @@ func (r *Repository) loadAliases(path string) error {
 		r.aliases[normalizeName(name)] = afl.TeamID(id)
 	}
 	return nil
+}
+
+func (r *Repository) loadVenueAliases(path string) error {
+	var f venueAliasesFile
+	if err := readJSON(path, &f); err != nil {
+		return nil // optional file
+	}
+	for name, id := range f.Aliases {
+		r.venueAlias[normalizeName(name)] = afl.VenueID(id)
+	}
+	return nil
+}
+
+// ResolveVenue maps a Squiggle venue name to internal VenueID.
+func (r *Repository) ResolveVenue(name string) (afl.VenueID, bool) {
+	if id, ok := r.venueAlias[normalizeName(name)]; ok {
+		if _, known := r.venues[id]; known {
+			return id, true
+		}
+	}
+	return "", false
 }
 
 // ResolveTeam maps an API team name to internal TeamID.
@@ -205,9 +239,18 @@ func (r *Repository) PlayerMatrix(home, away afl.TeamID, injuriesPath string) af
 	homePlayers := clonePlayers(r.players[home])
 	awayPlayers := clonePlayers(r.players[away])
 	if injuriesPath != "" {
-		applyInjuries(homePlayers, awayPlayers, injuriesPath)
+		_, _ = applyInjuries(homePlayers, awayPlayers, injuriesPath)
 	}
 	return afl.PlayerAvailabilityMatrix{Home: homePlayers, Away: awayPlayers}
+}
+
+// CountInjuries returns how many players are listed unavailable in the injuries file.
+func (r *Repository) CountInjuries(path string) (int, error) {
+	var f injuriesFile
+	if err := readJSON(path, &f); err != nil {
+		return 0, err
+	}
+	return len(f.Unavailable), nil
 }
 
 func clonePlayers(src []afl.PlayerImpact) []afl.PlayerImpact {
@@ -216,25 +259,28 @@ func clonePlayers(src []afl.PlayerImpact) []afl.PlayerImpact {
 	return out
 }
 
-func applyInjuries(home, away []afl.PlayerImpact, path string) {
+func applyInjuries(home, away []afl.PlayerImpact, path string) (int, error) {
 	var f injuriesFile
 	if err := readJSON(path, &f); err != nil {
-		return
+		return 0, fmt.Errorf("injuries %s: %w", path, err)
 	}
 	unavail := make(map[string]struct{})
 	for _, u := range f.Unavailable {
 		unavail[u.PlayerID] = struct{}{}
 	}
-	markUnavailable(home, unavail)
-	markUnavailable(away, unavail)
+	n := markUnavailable(home, unavail) + markUnavailable(away, unavail)
+	return n, nil
 }
 
-func markUnavailable(players []afl.PlayerImpact, unavail map[string]struct{}) {
+func markUnavailable(players []afl.PlayerImpact, unavail map[string]struct{}) int {
+	n := 0
 	for i := range players {
 		if _, ok := unavail[players[i].PlayerID]; ok {
 			players[i].Available = false
+			n++
 		}
 	}
+	return n
 }
 
 func readJSON(path string, v any) error {

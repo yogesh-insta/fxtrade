@@ -58,10 +58,30 @@ func main() {
 		os.Exit(1)
 	}
 
+	if cfg.AFL.StatsRefreshEnabled() {
+		year := cfg.AFL.StatsSeasonYear
+		if year == 0 {
+			year = time.Now().Year()
+		}
+		squiggle := &stats.SquiggleClient{UserAgent: cfg.AFL.SquiggleUserAgent}
+		meta, err := repo.RefreshLiveStats(ctx, year, squiggle)
+		if err != nil {
+			slog.Warn("live stats refresh failed; using seed teams.json", "error", err)
+		} else {
+			slog.Info("live stats refreshed", "source", meta.Source, "year", meta.Year, "round", meta.Round)
+		}
+	}
+
 	predictor, err := afl.NewPredictor(cfg.AFL.PredictorType, cfg.AFL.ModelPath, cfg.AFL.ONNXModelPath)
 	if err != nil {
 		slog.Error("load predictor", "error", err)
 		os.Exit(1)
+	}
+	if tp, err := afl.NewLinearPredictor(cfg.AFL.TotalsModelPath); err == nil {
+		afl.TotalsPredictor = tp
+		slog.Info("totals model loaded", "path", cfg.AFL.TotalsModelPath)
+	} else {
+		slog.Info("heuristic totals model", "hint", "run cmd/afl-train to build totals_coefficients.json")
 	}
 
 	oddsClient := odds.NewClient(cfg.AFL)
@@ -80,6 +100,15 @@ func main() {
 	if *injuriesPath != "" {
 		injuries = *injuriesPath
 	}
+	injuriesCount := 0
+	if injuries != "" {
+		if n, err := repo.CountInjuries(injuries); err != nil {
+			slog.Warn("injuries file not readable", "path", injuries, "error", err)
+		} else if n > 0 {
+			injuriesCount = n
+			slog.Info("injuries loaded", "path", injuries, "unavailable", n)
+		}
+	}
 
 	wx := weather.NewClient()
 	builder := &afl.RepositoryContextBuilder{
@@ -88,6 +117,22 @@ func main() {
 		InjuriesFile: injuries,
 	}
 	evaluator := afl.NewEvaluator(cfg.AFL, predictor, builder)
+
+	reportMeta := afl.DataProvenance{
+		StatsSource:   "seed teams.json",
+		PredictorType: cfg.AFL.PredictorType,
+		InjuriesFile:  injuries,
+	}
+	if injuriesCount > 0 {
+		reportMeta.InjuriesApplied = true
+		reportMeta.InjuriesCount = injuriesCount
+	}
+	if live, ok := repo.LiveStatsMeta(); ok {
+		reportMeta.StatsSource = live.Source
+		reportMeta.StatsDetail = fmt.Sprintf("%d round %d", live.Year, live.Round)
+		reportMeta.StatsAsOf = live.AsOf
+	}
+	evaluator.SetReportMeta(reportMeta)
 
 	fixtures := afl.FixturesFromOdds(fetched.H2H)
 	reports, valueBets, err := evaluator.BuildRoundReports(ctx, fixtures, fetched.H2H, fetched.Totals)

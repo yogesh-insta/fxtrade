@@ -63,6 +63,81 @@ type TeamStats struct {
 	DisposalRate            float64 // 0-1 normalized
 	H2HWinsVsOpponent       int
 	H2HGamesVsOpponent      int
+	PointsForPerGame        float64 // season average points scored
+	PointsAgainstPerGame    float64 // season average points conceded
+	RecentPointsForPerGame  float64 // rolling last-N games points scored
+	RecentPointsAgainstPerGame float64 // rolling last-N games points conceded
+	ScoringTrendFor         float64 // recent for minus season for (pts/game)
+	ScoringTrendAgainst     float64 // recent against minus season against
+	Last5Scores             []RecentMatchScore
+}
+
+// RecentMatchScore is one completed game from the team's perspective.
+type RecentMatchScore struct {
+	Opponent TeamID
+	For      int
+	Against  int
+	Venue    string
+	Total    int // combined match score at venue
+}
+
+// FormatTeamLast5 formats up to five recent results for email/log output.
+func FormatTeamLast5(team TeamID, scores []RecentMatchScore) string {
+	if len(scores) == 0 {
+		return ""
+	}
+	parts := make([]string, len(scores))
+	for i, m := range scores {
+		parts[i] = formatOneRecentMatch(m)
+	}
+	return fmt.Sprintf("  %s last %d: %s", team, len(scores), strings.Join(parts, ", "))
+}
+
+func formatOneRecentMatch(m RecentMatchScore) string {
+	tag := "D"
+	switch {
+	case m.For > m.Against:
+		tag = "W"
+	case m.For < m.Against:
+		tag = "L"
+	}
+	total := m.Total
+	if total <= 0 {
+		total = m.For + m.Against
+	}
+	venue := ShortVenueName(m.Venue)
+	if venue == "" {
+		venue = "unknown venue"
+	}
+	return fmt.Sprintf("%d-%d vs %s @ %s (total %d, %s)", m.For, m.Against, m.Opponent, venue, total, tag)
+}
+
+// ShortVenueName maps Squiggle/book venue strings to a compact email label.
+func ShortVenueName(venue string) string {
+	switch strings.ToLower(strings.TrimSpace(venue)) {
+	case "m.c.g.", "mcg", "melbourne cricket ground":
+		return "MCG"
+	case "s.c.g.", "scg", "sydney cricket ground":
+		return "SCG"
+	case "docklands", "marvel stadium":
+		return "Docklands"
+	case "gabba", "the gabba":
+		return "Gabba"
+	case "kardinia park", "gmhba stadium":
+		return "GMHBA"
+	case "perth stadium", "optus stadium":
+		return "Optus"
+	case "adelaide oval":
+		return "Adelaide Oval"
+	case "sydney showground", "showground":
+		return "Showground"
+	case "carrara":
+		return "Carrara"
+	case "bellerive oval":
+		return "Bellerive"
+	default:
+		return strings.TrimSpace(venue)
+	}
 }
 
 // VenueProfile describes ground characteristics and home advantage data.
@@ -75,6 +150,7 @@ type VenueProfile struct {
 	Interstate      bool
 	HomeWinRates    map[TeamID]float64 // team-specific home win rate at this venue
 	PrimaryHomeTeam TeamID
+	AvgTotalScore   float64 // season average combined match total at venue (0 = unknown)
 }
 
 // PlayerImpact describes a single player's structural weight.
@@ -182,8 +258,34 @@ const (
 	FeatHomePlayerAvail
 	FeatAwayPlayerAvail
 	FeatHomeAdvantage
+	FeatHomeRecentFor
+	FeatAwayRecentFor
+	FeatHomeRecentAgainst
+	FeatAwayRecentAgainst
+	FeatHomeScoringTrend
+	FeatAwayScoringTrend
 	FeatureCount
 )
+
+// RollingFormGames is the default window for recent scoring form.
+const RollingFormGames = 5
+
+// NormRecentPoints scales pts/game into model feature range (~0-1).
+func NormRecentPoints(ptsPerGame float64) float64 {
+	return Clamp01(ptsPerGame / 120.0)
+}
+
+// NormScoringTrend scales pts/game trend into roughly [-1, 1].
+func NormScoringTrend(trend float64) float64 {
+	v := trend / 30.0
+	if v < -1 {
+		return -1
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
 
 // ValueBet is a confirmed positive-EV opportunity.
 type ValueBet struct {

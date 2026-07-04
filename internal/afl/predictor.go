@@ -67,6 +67,15 @@ func sigmoid(z float64) float64 {
 	return 1.0 / (1.0 + math.Exp(-z))
 }
 
+// SaveMatrixModel writes H2H model coefficients to JSON.
+func SaveMatrixModel(path string, m MatrixModel) error {
+	data, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o644)
+}
+
 // ONNXPredictor loads an ONNX model for inference (requires onnx build tag for full impl).
 type ONNXPredictor struct {
 	path string

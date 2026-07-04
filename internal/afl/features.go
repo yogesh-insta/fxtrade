@@ -40,6 +40,12 @@ func BuildHomeFeatureVector(ctx MatchDayContext) FeatureVector {
 	vals[FeatHomePlayerAvail] = homePlayers
 	vals[FeatAwayPlayerAvail] = awayPlayers
 	vals[FeatHomeAdvantage] = homeAdvantage
+	vals[FeatHomeRecentFor] = NormRecentPoints(ctx.HomeStats.RecentPointsForPerGame)
+	vals[FeatAwayRecentFor] = NormRecentPoints(ctx.AwayStats.RecentPointsForPerGame)
+	vals[FeatHomeRecentAgainst] = NormRecentPoints(ctx.HomeStats.RecentPointsAgainstPerGame)
+	vals[FeatAwayRecentAgainst] = NormRecentPoints(ctx.AwayStats.RecentPointsAgainstPerGame)
+	vals[FeatHomeScoringTrend] = NormScoringTrend(ctx.HomeStats.ScoringTrendFor)
+	vals[FeatAwayScoringTrend] = NormScoringTrend(ctx.AwayStats.ScoringTrendFor)
 	return FeatureVector{Values: vals}
 }
 

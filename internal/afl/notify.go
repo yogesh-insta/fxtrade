@@ -25,7 +25,8 @@ func FormatRoundReportSubject(prefix string, fixtureCount, valueCount int) strin
 func FormatRoundReportEmail(reports []MatchReport, allValueBets []ValueBet) string {
 	var b strings.Builder
 	b.WriteString("AFLPulse weekly round scan\n")
-	b.WriteString("Predictions use form, inside-50, clearances, venue fit, weather (Open-Meteo), injuries, and bookmaker odds.\n\n")
+	b.WriteString("Predictions use live Squiggle ladder/form, rolling scoring trends, trained models\n")
+	b.WriteString("(2018–2025 history), bookmaker odds, weather, and optional injuries.\n\n")
 
 	for i, r := range reports {
 		if i > 0 {
@@ -43,6 +44,9 @@ func FormatRoundReportEmail(reports []MatchReport, allValueBets []ValueBet) stri
 			}
 			fmt.Fprintf(&b, "  %d. %s vs %s — %s %s @ %.2f (%s) EV +%.1f%%\n",
 				i+1, vb.HomeTeam, vb.AwayTeam, side, vb.Team, vb.DecimalOdds, vb.Bookmaker, vb.EV*100)
+			for _, reason := range vb.Reasons {
+				fmt.Fprintf(&b, "      • %s\n", reason)
+			}
 		}
 	}
 
@@ -62,6 +66,10 @@ func writeMatchReport(b *strings.Builder, r MatchReport) {
 
 	b.WriteString(FormatMatchPredictions(r))
 	b.WriteString("\n")
+	writeScoreBreakdown(b, r.Score, ctx)
+	writeTeamFormLine(b, ctx)
+	writeLastFiveScores(b, ctx)
+	writePredictionReasons(b, r)
 
 	if r.TotalsLine != nil {
 		diff := float64(r.Score.TotalScore) - r.TotalsLine.Line
@@ -78,11 +86,137 @@ func writeMatchReport(b *strings.Builder, r MatchReport) {
 	fmt.Fprintf(b, "  Venue: %s (%s) · weather rain %.1fmm wind %.0f km/h\n",
 		ctx.Venue.Name, ctx.Venue.Dimension, ctx.Weather.RainMM, ctx.Weather.WindKPH)
 
+	writeProvenance(b, r)
+
 	if len(r.ValueBets) > 0 {
 		vb := r.ValueBets[0]
 		fmt.Fprintf(b, "  ★ VALUE: %s @ %.2f (%s) EV +%.1f%%\n",
 			vb.Team, vb.DecimalOdds, vb.Bookmaker, vb.EV*100)
+		if len(vb.Reasons) > 0 {
+			b.WriteString("  Value bet detail:\n")
+			for _, reason := range vb.Reasons {
+				fmt.Fprintf(b, "    • %s\n", reason)
+			}
+		}
 	}
+}
+
+func writePredictionReasons(b *strings.Builder, r MatchReport) {
+	reasons := BuildMatchPredictionReasons(r)
+	if len(reasons) == 0 {
+		return
+	}
+	b.WriteString("  Why this prediction:\n")
+	for _, reason := range reasons {
+		fmt.Fprintf(b, "    • %s\n", reason)
+	}
+}
+
+func writeScoreBreakdown(b *strings.Builder, score ScoreProjection, ctx MatchDayContext) {
+	d := score.Breakdown
+	if d.BaselineTotal == 0 {
+		return
+	}
+	if d.TeamBasedTotal > 0 {
+		fmt.Fprintf(b, "  Total model: %s %.0f for / %.0f against · %s %.0f for / %.0f against\n",
+			ctx.HomeTeam, teamPtsFor(ctx.HomeStats), teamPtsAgainst(ctx.HomeStats),
+			ctx.AwayTeam, teamPtsFor(ctx.AwayStats), teamPtsAgainst(ctx.AwayStats))
+		fmt.Fprintf(b, "  Expected: %s %.0f + %s %.0f = %.0f team-based",
+			ctx.HomeTeam, d.HomeExpected, ctx.AwayTeam, d.AwayExpected, d.TeamBasedTotal)
+		if d.VenueAvgTotal > 0 {
+			fmt.Fprintf(b, " · venue avg %.0f → blended %.0f", d.VenueAvgTotal, d.BlendedTotal)
+		}
+		fmt.Fprintf(b, " × weather %.2f = %.0f\n", d.WeatherFactor, d.AdjustedTotal)
+	} else {
+		fmt.Fprintf(b, "  Score model: baseline %.0f × weather %.2f = %.0f total\n",
+			d.BaselineTotal, d.WeatherFactor, d.AdjustedTotal)
+	}
+	fmt.Fprintf(b, "  Margin model: offensive %s %.2f vs %s %.2f (profile %+.2f, win %+.2f → margin %+.1f)\n",
+		ctx.HomeTeam, d.HomeOffensive, ctx.AwayTeam, d.AwayOffensive, d.ProfileEdge, d.WinEdge, d.RawMargin)
+	if d.HomeGoalsBehind != "" {
+		fmt.Fprintf(b, "  AFL format: %s %s – %s %s\n",
+			ctx.HomeTeam, d.HomeGoalsBehind, ctx.AwayTeam, d.AwayGoalsBehind)
+	}
+}
+
+func teamPtsFor(s TeamStats) float64 {
+	if s.PointsForPerGame > 0 {
+		return s.PointsForPerGame
+	}
+	return LeagueBaselineTeamPoints
+}
+
+func teamPtsAgainst(s TeamStats) float64 {
+	if s.PointsAgainstPerGame > 0 {
+		return s.PointsAgainstPerGame
+	}
+	return LeagueBaselineTeamPoints
+}
+
+func writeLastFiveScores(b *strings.Builder, ctx MatchDayContext) {
+	if line := FormatTeamLast5(ctx.HomeTeam, ctx.HomeStats.Last5Scores); line != "" {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	if line := FormatTeamLast5(ctx.AwayTeam, ctx.AwayStats.Last5Scores); line != "" {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+}
+
+func writeTeamFormLine(b *strings.Builder, ctx MatchDayContext) {
+	h := ctx.HomeStats
+	a := ctx.AwayStats
+	fmt.Fprintf(b, "  Form (last 10): %s %d-%d", ctx.HomeTeam, h.FormWinsLast10, h.FormLossesLast10)
+	if h.RecentPointsForPerGame > 0 {
+		fmt.Fprintf(b, " · scoring %.0f (trend %+.0f)", h.RecentPointsForPerGame, h.ScoringTrendFor)
+	}
+	if h.H2HGamesVsOpponent > 0 {
+		fmt.Fprintf(b, " · H2H %d-%d", h.H2HWinsVsOpponent, h.H2HGamesVsOpponent-h.H2HWinsVsOpponent)
+	}
+	fmt.Fprintf(b, " | %s %d-%d", ctx.AwayTeam, a.FormWinsLast10, a.FormLossesLast10)
+	if a.RecentPointsForPerGame > 0 {
+		fmt.Fprintf(b, " · scoring %.0f (trend %+.0f)", a.RecentPointsForPerGame, a.ScoringTrendFor)
+	}
+	b.WriteString("\n")
+}
+
+func writeProvenance(b *strings.Builder, r MatchReport) {
+	p := r.Provenance
+	if p.StatsSource == "" && p.PredictorType == "" {
+		return
+	}
+	b.WriteString("  Data: ")
+	parts := make([]string, 0, 5)
+	if p.StatsSource != "" {
+		line := p.StatsSource
+		if p.StatsDetail != "" {
+			line += " (" + p.StatsDetail + ")"
+		}
+		if !p.StatsAsOf.IsZero() {
+			line += " as of " + p.StatsAsOf.Format("2006-01-02 15:04 UTC")
+		}
+		parts = append(parts, "stats "+line)
+	}
+	if p.OddsSource != "" {
+		line := p.OddsSource
+		if !p.OddsUpdatedAt.IsZero() {
+			line += " @ " + p.OddsUpdatedAt.Format("2006-01-02 15:04 UTC")
+		}
+		parts = append(parts, "odds "+line)
+	}
+	if p.WeatherSource != "" {
+		parts = append(parts, "weather "+p.WeatherSource)
+	}
+	if p.PredictorType != "" {
+		parts = append(parts, "model "+p.PredictorType)
+	}
+	if p.InjuriesApplied {
+		parts = append(parts, fmt.Sprintf("injuries %s (%d out)", p.InjuriesFile, p.InjuriesCount))
+	} else if p.InjuriesFile != "" {
+		parts = append(parts, "injuries none flagged")
+	}
+	fmt.Fprintf(b, "%s\n", strings.Join(parts, " · "))
 }
 
 // FormatAlertSubject builds the AFLPulse value-bet email subject (legacy single-bet alert).

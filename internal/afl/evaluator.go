@@ -30,6 +30,7 @@ type StatsSource interface {
 	Venue(id VenueID) (VenueProfile, bool)
 	DefaultVenueForTeam(team TeamID) VenueProfile
 	PlayerMatrix(home, away TeamID, injuriesPath string) PlayerAvailabilityMatrix
+	HeadToHead(home, away TeamID) (wins, games int)
 }
 
 // WeatherSource fetches weather for a venue at kickoff.
@@ -45,6 +46,10 @@ func (b *RepositoryContextBuilder) Build(ctx context.Context, odds MarketOdds) (
 	awayStats, ok := b.Repo.Team(odds.AwayTeam)
 	if !ok {
 		awayStats = TeamStats{TeamID: odds.AwayTeam}
+	}
+	if wins, games := b.Repo.HeadToHead(odds.HomeTeam, odds.AwayTeam); games > 0 {
+		homeStats.H2HWinsVsOpponent = wins
+		homeStats.H2HGamesVsOpponent = games
 	}
 	venue := b.Repo.DefaultVenueForTeam(odds.HomeTeam)
 	if v, ok := b.Repo.Venue(venue.ID); ok {
@@ -94,13 +99,19 @@ func estimateTravelKM(home, away TeamID, venue VenueProfile) float64 {
 
 // Evaluator processes market odds concurrently and finds value bets.
 type Evaluator struct {
-	cfg       config.AFLConfig
-	predictor Predictor
-	builder   ContextBuilder
+	cfg        config.AFLConfig
+	predictor  Predictor
+	builder    ContextBuilder
+	reportMeta DataProvenance
 }
 
 func NewEvaluator(cfg config.AFLConfig, predictor Predictor, builder ContextBuilder) *Evaluator {
 	return &Evaluator{cfg: cfg, predictor: predictor, builder: builder}
+}
+
+// SetReportMeta attaches data-source metadata copied onto each match report.
+func (e *Evaluator) SetReportMeta(meta DataProvenance) {
+	e.reportMeta = meta
 }
 
 // Evaluate runs the pipeline on all market odds and returns deduplicated value bets.

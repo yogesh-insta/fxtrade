@@ -85,3 +85,12 @@ func TestFixturesFromOddsDedup(t *testing.T) {
 		t.Fatalf("expected 2 fixtures, got %d", len(fixtures))
 	}
 }
+
+func TestFormatGoalsBehind(t *testing.T) {
+	if got := formatGoalsBehind(88); got != "14.4" {
+		t.Fatalf("expected 14.4, got %s", got)
+	}
+	if got := formatGoalsBehind(78); got != "13.0" {
+		t.Fatalf("expected 13.0, got %s", got)
+	}
+}

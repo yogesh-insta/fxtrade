@@ -1,0 +1,26 @@
+{
+  "aliases": {
+    "adelaide oval": "ADELAIDE",
+    "bellerive oval": "BELLERIVE",
+    "carrara": "CARRARA",
+    "docklands": "DOCKLANDS",
+    "gabba": "GABBA",
+    "the gabba": "GABBA",
+    "gmhba stadium": "GMHBA",
+    "kardinia park": "GMHBA",
+    "m.c.g.": "MCG",
+    "mcg": "MCG",
+    "melbourne cricket ground": "MCG",
+    "manuka oval": "MANUKA",
+    "marrara oval": "MARRARA",
+    "norwood oval": "NORWOOD",
+    "perth stadium": "OPTUS",
+    "optus stadium": "OPTUS",
+    "s.c.g.": "SCG",
+    "scg": "SCG",
+    "sydney cricket ground": "SCG",
+    "sydney showground": "SHOWGROUND",
+    "traeger park": "TRAEGER",
+    "york park": "YORK"
+  }
+}
