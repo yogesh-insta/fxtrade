@@ -23,6 +23,25 @@ func TestAFLConfigValidateRequiresKey(t *testing.T) {
 	}
 }
 
+func TestAFLConfigLLMAnalyticsEnabled(t *testing.T) {
+	cfg := DefaultAFLConfig()
+	if cfg.AnalyticsEnabled() {
+		t.Fatal("should be disabled without api key")
+	}
+	cfg.GeminiAPIKey = "key"
+	if !cfg.AnalyticsEnabled() {
+		t.Fatal("should auto-enable when api key set")
+	}
+	disabled := false
+	cfg.LLMAnalyticsEnabled = &disabled
+	if cfg.AnalyticsEnabled() {
+		t.Fatal("should respect explicit false")
+	}
+	if cfg.ResolvedGeminiModel() != "gemini-2.5-flash-lite" {
+		t.Fatalf("model = %q", cfg.ResolvedGeminiModel())
+	}
+}
+
 func TestEffectiveAFLPrefix(t *testing.T) {
 	n := NotificationsConfig{AFLPrefix: "[AFLPulse TEST]"}
 	if n.EffectiveAFLPrefix() != "[AFLPulse TEST]" {

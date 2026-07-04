@@ -23,6 +23,10 @@ type AFLConfig struct {
 	StatsRefreshOnRun    *bool   `json:"stats_refresh_on_run"`
 	SquiggleUserAgent    string  `json:"squiggle_user_agent"`
 	StatsSeasonYear      int     `json:"stats_season_year"`
+	GeminiAPIKey         string  `json:"gemini_api_key"`
+	GeminiModel          string  `json:"gemini_model"`
+	LLMAnalyticsEnabled  *bool   `json:"llm_analytics_enabled"`
+	LLMConcurrency       int     `json:"llm_concurrency"`
 }
 
 func DefaultAFLConfig() AFLConfig {
@@ -42,6 +46,8 @@ func DefaultAFLConfig() AFLConfig {
 		OddsMarkets:       "h2h,totals",
 		PredictorType:     "matrix",
 		StatsRefreshOnRun: defaultStatsRefreshOnRun(),
+		GeminiModel:       "gemini-2.5-flash-lite",
+		LLMConcurrency:    2,
 	}
 }
 
@@ -100,6 +106,31 @@ func applyAFLDefaults(a *AFLConfig) {
 	if a.StatsRefreshOnRun == nil {
 		a.StatsRefreshOnRun = def.StatsRefreshOnRun
 	}
+	if a.GeminiModel == "" {
+		a.GeminiModel = def.GeminiModel
+	}
+	if a.LLMConcurrency == 0 {
+		a.LLMConcurrency = def.LLMConcurrency
+	}
+}
+
+// AnalyticsEnabled reports whether Gemini grounded analytics should run.
+func (a AFLConfig) AnalyticsEnabled() bool {
+	if a.GeminiAPIKey == "" {
+		return false
+	}
+	if a.LLMAnalyticsEnabled == nil {
+		return true
+	}
+	return *a.LLMAnalyticsEnabled
+}
+
+// ResolvedGeminiModel returns the configured Gemini model or the cheapest search-capable default.
+func (a AFLConfig) ResolvedGeminiModel() string {
+	if a.GeminiModel == "" {
+		return "gemini-2.5-flash-lite"
+	}
+	return a.GeminiModel
 }
 
 // StatsRefreshEnabled reports whether live stats should be fetched before each run.
