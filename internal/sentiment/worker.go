@@ -63,6 +63,13 @@ func (w *Worker) Instruments() []string {
 
 func (w *Worker) Run(ctx context.Context) {
 	interval := time.Duration(w.cfg.IntervalMinutes) * time.Minute
+	if interval < time.Duration(config.MinSentimentIntervalMinutes)*time.Minute {
+		interval = time.Duration(config.MinSentimentIntervalMinutes) * time.Minute
+		slog.Warn("sentiment interval below minimum; using floor",
+			"configured_minutes", w.cfg.IntervalMinutes,
+			"floor_minutes", config.MinSentimentIntervalMinutes,
+		)
+	}
 	schedule.RunPeriodic(ctx, "sentiment worker", interval, func(cycleCtx context.Context) {
 		if _, err := w.runOnce(cycleCtx); err != nil {
 			slog.Warn("sentiment cycle finished with errors", "error", err)

@@ -9,6 +9,7 @@ BINARY_SRC=""
 NIFTY_PULSE_SRC=""
 AFL_PULSE_SRC=""
 AFL_PULSE_PREGAME_SRC=""
+HEALTH_WATCH_SRC=""
 CREDENTIALS_SRC=""
 ENABLE_ALL=false
 ENABLE_BOT=""
@@ -23,6 +24,7 @@ Options:
   --nifty-pulse PATH    Linux amd64 nifty-pulse binary (default: deploy via CI or build manually)
   --afl-pulse PATH      Linux amd64 afl-pulse binary (default: deploy via CI or build manually)
   --afl-pulse-pregame PATH  Linux amd64 afl-pulse-pregame binary
+  --health-watch PATH   Linux amd64 health-watch binary (watchdog alerts)
   --credentials PATH    Local .credentials to install (default: skip; use fetch-credentials.sh)
   --enable-all          Enable fxtrade.service (all bots from .credentials)
   --enable-bot ID       Enable fxtrade@ID.service (e.g. universe_scanner, range_trend)
@@ -41,6 +43,7 @@ while [[ $# -gt 0 ]]; do
     --nifty-pulse) NIFTY_PULSE_SRC="$2"; shift 2 ;;
     --afl-pulse) AFL_PULSE_SRC="$2"; shift 2 ;;
     --afl-pulse-pregame) AFL_PULSE_PREGAME_SRC="$2"; shift 2 ;;
+    --health-watch) HEALTH_WATCH_SRC="$2"; shift 2 ;;
     --credentials) CREDENTIALS_SRC="$2"; shift 2 ;;
     --enable-all) ENABLE_ALL=true; shift ;;
     --enable-bot) ENABLE_BOT="$2"; shift 2 ;;
@@ -59,7 +62,7 @@ if ! id fxtrade &>/dev/null; then
   useradd --system --home-dir "$INSTALL_ROOT" --shell /usr/sbin/nologin fxtrade
 fi
 
-mkdir -p "$INSTALL_ROOT"/{bin,data,logs,deploy/gcp}
+mkdir -p "$INSTALL_ROOT"/{bin,data,logs,scripts,deploy/gcp}
 mkdir -p /etc/fxtrade
 
 cp -f "$ROOT/deploy/gcp/"*.service /etc/systemd/system/
@@ -109,6 +112,20 @@ elif [[ ! -x "$INSTALL_ROOT/bin/afl-pulse-pregame" ]]; then
   echo "  scp afl-pulse-pregame user@vm:/tmp/ && sudo install -m 755 /tmp/afl-pulse-pregame $INSTALL_ROOT/bin/afl-pulse-pregame"
 fi
 
+if [[ -n "$HEALTH_WATCH_SRC" ]]; then
+  install -m 755 "$HEALTH_WATCH_SRC" "$INSTALL_ROOT/bin/health-watch"
+elif [[ ! -x "$INSTALL_ROOT/bin/health-watch" ]]; then
+  echo "note: no binary at $INSTALL_ROOT/bin/health-watch yet — build manually:"
+  echo "  GOOS=linux GOARCH=amd64 go build -o health-watch ./cmd/health-watch"
+  echo "  scp health-watch user@vm:/tmp/ && sudo install -m 755 /tmp/health-watch $INSTALL_ROOT/bin/health-watch"
+fi
+
+install -m 755 "$ROOT/deploy/gcp/check-scheduled-jobs.sh" "$INSTALL_ROOT/scripts/check-scheduled-jobs.sh"
+install -m 755 "$ROOT/deploy/gcp/run-health-watch.sh" "$INSTALL_ROOT/scripts/run-health-watch.sh"
+install -m 644 "$ROOT/deploy/gcp/fxtrade-watch.cron" /etc/cron.d/fxtrade-watch
+chmod 644 /etc/cron.d/fxtrade-watch
+echo "Installed watchdog cron (/etc/cron.d/fxtrade-watch) — emails on failure via .credentials SMTP"
+
 if [[ -d "$ROOT/data/afl" ]]; then
   mkdir -p "$INSTALL_ROOT/data/afl"
   cp -f "$ROOT/data/afl/"*.json "$INSTALL_ROOT/data/afl/"
@@ -151,6 +168,7 @@ elif [[ -n "$ENABLE_BOT" ]]; then
   case "$ENABLE_BOT" in
     universe_scanner) port=":8081" ;;
     range_trend) port=":8082" ;;
+    btc_cfd) port=":8083" ;;
     *) port=":8080" ;;
   esac
   cat >"/etc/fxtrade/fxtrade@${ENABLE_BOT}.env" <<EOF

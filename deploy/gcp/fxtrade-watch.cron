@@ -1,0 +1,16 @@
+# fxtrade watchdog — email alerts when bots fail (see deploy/gcp/DEPLOY.md)
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+*/5 * * * * fxtrade /opt/fxtrade/scripts/run-health-watch.sh >> /opt/fxtrade/logs/health-watch.log 2>&1
+
+# NiftyPulse: 30 min after daily 18:00 Sydney (Sun–Fri)
+CRON_TZ=Australia/Sydney
+30 18 * * 0-5 fxtrade /opt/fxtrade/scripts/check-scheduled-jobs.sh nifty >> /opt/fxtrade/logs/health-watch.log 2>&1
+
+# AFLPulse: 30 min after weekly Thu 18:00 Melbourne
+CRON_TZ=Australia/Melbourne
+30 18 * * 4 fxtrade /opt/fxtrade/scripts/check-scheduled-jobs.sh afl >> /opt/fxtrade/logs/health-watch.log 2>&1
+
+# AFL pregame: check for failed runs every 20 minutes
+*/20 * * * * fxtrade /opt/fxtrade/scripts/run-health-watch.sh -check-timers pregame >> /opt/fxtrade/logs/health-watch.log 2>&1

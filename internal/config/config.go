@@ -18,6 +18,7 @@ type Config struct {
 	Email         EmailConfig           `json:"email"`
 	Notifications NotificationsConfig   `json:"notifications"`
 	Scanner       ScannerConfig         `json:"scanner"`
+	BtcCfd        BtcCfdConfig          `json:"btc_cfd"`
 	Bots          BotsConfig            `json:"bots"`
 	Risk          RiskConfig            `json:"risk"`
 	Finnhub   FinnhubConfig   `json:"finnhub"`
@@ -112,6 +113,9 @@ func DefaultLLMConfig() LLMConfig {
 		Model:    "llama-3.3-70b-versatile",
 	}
 }
+
+// MinSentimentIntervalMinutes is the floor for Groq/LLM sentiment cycles.
+const MinSentimentIntervalMinutes = 30
 
 func DefaultSentimentConfig() SentimentConfig {
 	return SentimentConfig{
@@ -238,6 +242,9 @@ func (c *Config) applyDefaults() {
 	if c.Sentiment.IntervalMinutes == 0 {
 		c.Sentiment.IntervalMinutes = defSent.IntervalMinutes
 	}
+	if c.Sentiment.IntervalMinutes < MinSentimentIntervalMinutes {
+		c.Sentiment.IntervalMinutes = MinSentimentIntervalMinutes
+	}
 	if c.Sentiment.MaxHeadlines == 0 {
 		c.Sentiment.MaxHeadlines = defSent.MaxHeadlines
 	}
@@ -254,6 +261,7 @@ func (c *Config) applyDefaults() {
 
 	applyStrategyDefaults(c)
 	applyScannerDefaults(c)
+	applyBtcCfdDefaults(c)
 	applyNotificationsDefaults(c)
 	applyStateDefaults(c)
 

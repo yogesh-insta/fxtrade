@@ -125,6 +125,53 @@ Per-bot health ports (set by `install.sh --enable-bot`):
 | `range_trend` | `:8082` |
 | `fxtrade.service` (all) | `:8080` |
 
+## 2b. Email alerts when bots fail (free)
+
+`install.sh` installs a **watchdog** that emails you via the same Gmail SMTP in `.credentials`. No external monitoring service or open firewall ports.
+
+| Check | How often | What triggers an email |
+|-------|-----------|------------------------|
+| FX daemon | Every 5 min | Process down, stream disconnected, stale ticks (FX hours only), bot not running, kill switch on |
+| NiftyPulse | Daily 18:30 Sydney (Sun–Fri) | `nifty-pulse.service` failed |
+| AFLPulse | Thu 18:30 Melbourne | `afl-pulse.service` failed |
+| AFL pregame | Every 20 min | `afl-pulse-pregame.service` failed |
+
+Files:
+
+| Path | Purpose |
+|------|---------|
+| `/opt/fxtrade/bin/health-watch` | Watchdog binary |
+| `/opt/fxtrade/scripts/run-health-watch.sh` | Resolves health port from `/etc/fxtrade/fxtrade.env` |
+| `/opt/fxtrade/scripts/check-scheduled-jobs.sh` | Wrapper for timer failure checks |
+| `/etc/cron.d/fxtrade-watch` | Cron schedule (runs as `fxtrade` user) |
+| `/opt/fxtrade/data/health-watch.state.json` | Dedupes alerts (one email per incident) |
+| `/opt/fxtrade/logs/health-watch.log` | Watchdog log |
+
+Manual test on the VM:
+
+```bash
+# Should print "health ok" and send no email
+sudo -u fxtrade /opt/fxtrade/scripts/run-health-watch.sh
+
+# Simulate failure: stop daemon, wait for cron (or run again within 5 min)
+sudo systemctl stop fxtrade@universe_scanner.service
+sudo -u fxtrade /opt/fxtrade/scripts/run-health-watch.sh
+# Check inbox for "fxtrade: unhealthy"
+
+sudo systemctl start fxtrade@universe_scanner.service
+sudo -u fxtrade /opt/fxtrade/scripts/run-health-watch.sh
+# Check inbox for "fxtrade: recovered"
+```
+
+Build/deploy the watchdog binary:
+
+```bash
+GOOS=linux GOARCH=amd64 go build -o health-watch ./cmd/health-watch
+scp health-watch user@VM:/tmp/ && sudo install -m 755 /tmp/health-watch /opt/fxtrade/bin/health-watch
+```
+
+The `/health` endpoint returns HTTP 503 with `"ok": false` when unhealthy (stream down, stale ticks, etc.).
+
 ## 3. Place `.credentials`
 
 **Option A — copy from laptop (simplest):**
