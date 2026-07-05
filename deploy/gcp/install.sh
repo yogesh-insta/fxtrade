@@ -168,6 +168,7 @@ elif [[ -n "$ENABLE_BOT" ]]; then
   case "$ENABLE_BOT" in
     universe_scanner) port=":8081" ;;
     range_trend) port=":8082" ;;
+    btc_cfd) port=":8083" ;;
     *) port=":8080" ;;
   esac
   cat >"/etc/fxtrade/fxtrade@${ENABLE_BOT}.env" <<EOF
