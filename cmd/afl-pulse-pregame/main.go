@@ -178,12 +178,13 @@ func main() {
 
 		var llmResp afl.PregameLLMResponse
 		llmFailed := false
+		modelFallbackUsed := false
 		var llmErr error
+		fallback := afl.BuildPregameModelFallback(report)
+
 		if cfg.AFL.GeminiAPIKey != "" {
 			if state.WasLLMAttempted(game.ID) {
-				// Prior attempt already burned the Gemini budget for this fixture.
-				// Still send model baseline with an explicit incomplete note.
-				slog.Info("pregame LLM already attempted; model-only email",
+				slog.Info("pregame LLM already attempted; using model fallback if needed",
 					"squiggle_id", game.ID,
 					"match", fmt.Sprintf("%s vs %s", fixture.HomeTeam, fixture.AwayTeam),
 				)
@@ -200,19 +201,27 @@ func main() {
 						"error", llmErr,
 					)
 				} else if llmResp.Incomplete() {
-					slog.Warn("pregame gemini incomplete; sending partial live analytics",
+					slog.Warn("pregame gemini incomplete; merging model fallback for main bet",
 						"squiggle_id", game.ID,
 					)
 				}
 			}
 		} else {
 			llmFailed = true
-			slog.Info("no gemini key; model-only email",
+			slog.Info("no gemini key; model fallback for main bet",
 				"squiggle_id", game.ID,
 			)
 		}
 
-		body := afl.FormatPregameEmail(sfix, report, llmResp)
+		llmResp, modelFallbackUsed = afl.MergePregameLLMWithFallback(llmResp, fallback)
+		if modelFallbackUsed {
+			slog.Info("pregame using model fallback for main bet",
+				"squiggle_id", game.ID,
+				"selection", llmResp.MainBet.Selection,
+			)
+		}
+
+		body := afl.FormatPregameEmail(sfix, report, llmResp, modelFallbackUsed)
 		if llmFailed && cfg.AFL.PregameLLMRequiredEnabled() && llmErr != nil && !*dryRun {
 			alertBody := afl.FormatPregameFailureAlert(
 				sfix, fixture.HomeTeam, fixture.AwayTeam, game.Venue, llmErr, *logPath,

@@ -57,9 +57,15 @@ func (c *Client) WithBaseURL(base string) *Client {
 }
 
 type generateRequest struct {
-	SystemInstruction *content   `json:"systemInstruction,omitempty"`
-	Contents          []content  `json:"contents"`
-	Tools             []toolSpec `json:"tools,omitempty"`
+	SystemInstruction *content          `json:"systemInstruction,omitempty"`
+	Contents          []content         `json:"contents"`
+	Tools             []toolSpec        `json:"tools,omitempty"`
+	GenerationConfig  *generationConfig `json:"generationConfig,omitempty"`
+}
+
+type generationConfig struct {
+	Temperature     float64 `json:"temperature,omitempty"`
+	MaxOutputTokens int     `json:"maxOutputTokens,omitempty"`
 }
 
 type content struct {
@@ -68,7 +74,9 @@ type content struct {
 }
 
 type part struct {
-	Text string `json:"text"`
+	Text             string `json:"text,omitempty"`
+	Thought          bool   `json:"thought,omitempty"`
+	ThoughtSignature string `json:"thoughtSignature,omitempty"`
 }
 
 type toolSpec struct {
@@ -76,14 +84,14 @@ type toolSpec struct {
 }
 
 type generateResponse struct {
-	Candidates []struct {
-		Content struct {
-			Parts []struct {
-				Text string `json:"text"`
-			} `json:"parts"`
-		} `json:"content"`
-	} `json:"candidates"`
-	Error *apiError `json:"error,omitempty"`
+	Candidates []candidate `json:"candidates"`
+	Error      *apiError   `json:"error,omitempty"`
+}
+
+type candidate struct {
+	Content       content `json:"content"`
+	FinishReason  string  `json:"finishReason"`
+	FinishMessage string  `json:"finishMessage"`
 }
 
 type apiError struct {
@@ -106,6 +114,10 @@ func (c *Client) GenerateGrounded(ctx context.Context, systemPrompt, userPrompt 
 			Parts: []part{{Text: userPrompt}},
 		}},
 		Tools: []toolSpec{{}},
+		GenerationConfig: &generationConfig{
+			Temperature:     0,
+			MaxOutputTokens: 4096,
+		},
 	}
 	if systemPrompt != "" {
 		reqBody.SystemInstruction = &content{
@@ -147,13 +159,61 @@ func (c *Client) GenerateGrounded(ctx context.Context, systemPrompt, userPrompt 
 	if out.Error != nil {
 		return "", fmt.Errorf("gemini api error: %s", out.Error.Message)
 	}
-	if len(out.Candidates) == 0 || len(out.Candidates[0].Content.Parts) == 0 {
+	if len(out.Candidates) == 0 {
 		return "", fmt.Errorf("gemini returned no candidates")
 	}
 
-	text := strings.TrimSpace(out.Candidates[0].Content.Parts[0].Text)
-	if text == "" {
-		return "", fmt.Errorf("gemini returned empty text")
+	text, err := extractResponseText(out.Candidates[0])
+	if err != nil {
+		return "", err
 	}
 	return text, nil
+}
+
+// extractResponseText collects non-thought text parts; prefers the last JSON-looking block.
+func extractResponseText(c candidate) (string, error) {
+	parts := c.Content.Parts
+	if len(parts) == 0 {
+		reason := strings.TrimSpace(c.FinishReason)
+		if reason == "" {
+			reason = "unknown"
+		}
+		msg := strings.TrimSpace(c.FinishMessage)
+		if msg != "" {
+			return "", fmt.Errorf("gemini returned no parts (finishReason=%s: %s)", reason, msg)
+		}
+		return "", fmt.Errorf("gemini returned no parts (finishReason=%s)", reason)
+	}
+
+	var texts []string
+	for _, p := range parts {
+		if p.Thought {
+			continue
+		}
+		if t := strings.TrimSpace(p.Text); t != "" {
+			texts = append(texts, t)
+		}
+	}
+	// If every part was thought-only, fall back to any text-bearing part.
+	if len(texts) == 0 {
+		for _, p := range parts {
+			if t := strings.TrimSpace(p.Text); t != "" {
+				texts = append(texts, t)
+			}
+		}
+	}
+	if len(texts) == 0 {
+		reason := strings.TrimSpace(c.FinishReason)
+		if reason == "" {
+			reason = "unknown"
+		}
+		return "", fmt.Errorf("gemini returned empty text (finishReason=%s)", reason)
+	}
+
+	for i := len(texts) - 1; i >= 0; i-- {
+		if strings.Contains(texts[i], "{") {
+			return texts[i], nil
+		}
+	}
+	return texts[len(texts)-1], nil
 }
