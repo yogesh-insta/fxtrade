@@ -26,11 +26,47 @@ type digestNotifier interface {
 
 // SendDigest delivers routine status emails, respecting min_interval_minutes when configured.
 func SendDigest(n Notifier, ctx context.Context, digestKey, subject, body string) {
+	if g, ok := n.(*tradeGatedNotifier); ok && g.tradeOnly {
+		slog.Info("routine email suppressed", "subject", subject, "digest_key", digestKey)
+		return
+	}
 	if d, ok := n.(digestNotifier); ok {
 		d.SendDigest(ctx, digestKey, subject, body)
 		return
 	}
 	n.Send(ctx, subject, body)
+}
+
+// SendRoutine delivers operational emails that are not tied to a trade event.
+// Suppressed when trade-only email mode is enabled.
+func SendRoutine(n Notifier, ctx context.Context, subject, body string) {
+	if g, ok := n.(*tradeGatedNotifier); ok && g.tradeOnly {
+		slog.Info("routine email suppressed", "subject", subject)
+		return
+	}
+	n.Send(ctx, subject, body)
+}
+
+// WithTradeOnly wraps a notifier so routine digests and SendRoutine calls are
+// suppressed while trade-event Send calls still deliver.
+func WithTradeOnly(n Notifier, tradeOnly bool) Notifier {
+	if !tradeOnly {
+		return n
+	}
+	return &tradeGatedNotifier{inner: n, tradeOnly: true}
+}
+
+type tradeGatedNotifier struct {
+	inner     Notifier
+	tradeOnly bool
+}
+
+func (g *tradeGatedNotifier) Send(ctx context.Context, subject, body string) {
+	g.inner.Send(ctx, subject, body)
+}
+
+func (g *tradeGatedNotifier) SendDigest(ctx context.Context, digestKey, subject, body string) {
+	slog.Info("routine email suppressed", "subject", subject, "digest_key", digestKey)
 }
 
 type LogNotifier struct{}

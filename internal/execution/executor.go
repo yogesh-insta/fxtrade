@@ -89,13 +89,13 @@ func (e *Executor) PlaceMarket(ctx context.Context, req risk.EntryRequest, param
 				return existing, nil
 			}
 		}
-		e.notify.Send(ctx, "fxtrade: order rejected", fmt.Sprintf("correlation_id=%s\nerror=%v\n", req.CorrelationID, err))
+		notify.SendRoutine(e.notify, ctx, "fxtrade: order rejected", fmt.Sprintf("correlation_id=%s\nerror=%v\n", req.CorrelationID, err))
 		return oanda.OrderResult{}, err
 	}
 
 	result, err := oanda.ParseOrderResult(resp)
 	if err != nil {
-		e.notify.Send(ctx, "fxtrade: order rejected", fmt.Sprintf("correlation_id=%s\nerror=%v\n", req.CorrelationID, err))
+		notify.SendRoutine(e.notify, ctx, "fxtrade: order rejected", fmt.Sprintf("correlation_id=%s\nerror=%v\n", req.CorrelationID, err))
 		return oanda.OrderResult{}, err
 	}
 
@@ -149,13 +149,13 @@ func (e *Executor) PlaceLimit(ctx context.Context, req risk.EntryRequest, params
 
 	resp, err := e.client.CreateOrder(ctx, order)
 	if err != nil {
-		e.notify.Send(ctx, "fxtrade: limit rejected", fmt.Sprintf("correlation_id=%s\nerror=%v\n", req.CorrelationID, err))
+		notify.SendRoutine(e.notify, ctx, "fxtrade: limit rejected", fmt.Sprintf("correlation_id=%s\nerror=%v\n", req.CorrelationID, err))
 		return oanda.OrderResult{}, err
 	}
 
 	result, err := oanda.ParseCreateOrderResult(resp)
 	if err != nil {
-		e.notify.Send(ctx, "fxtrade: limit rejected", fmt.Sprintf("correlation_id=%s\nerror=%v\n", req.CorrelationID, err))
+		notify.SendRoutine(e.notify, ctx, "fxtrade: limit rejected", fmt.Sprintf("correlation_id=%s\nerror=%v\n", req.CorrelationID, err))
 		return oanda.OrderResult{}, err
 	}
 
@@ -180,7 +180,7 @@ func (e *Executor) CancelOrder(ctx context.Context, orderID, correlationID strin
 	if _, err := e.client.CancelOrder(ctx, orderID); err != nil {
 		return err
 	}
-	e.notify.Send(ctx, "fxtrade: order cancelled",
+	notify.SendRoutine(e.notify, ctx, "fxtrade: order cancelled",
 		fmt.Sprintf("correlation_id=%s\norder_id=%s\n", correlationID, orderID))
 	slog.Info("order cancelled", "correlation_id", correlationID, "order_id", orderID)
 	return nil

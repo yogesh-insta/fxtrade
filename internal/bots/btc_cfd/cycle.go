@@ -270,7 +270,7 @@ func (e *cycleEngine) reconcileStartup(ctx context.Context) error {
 	if len(open) > 1 {
 		msg := fmt.Sprintf("btc_cfd startup: %d open %s trades (expected 0-1)", len(open), e.bc.Instrument)
 		slog.Warn(msg)
-		e.notifier.Send(ctx, "fxtrade: reconciliation mismatch", msg)
+		notify.SendRoutine(e.notifier, ctx, "fxtrade: reconciliation mismatch", msg)
 	}
 	if e.posMon != nil {
 		e.posMon.SeedOpenTrades(open)
@@ -307,7 +307,7 @@ func (e *cycleEngine) recordAPIFailure(ctx context.Context, err error) {
 	e.apiFailures++
 	slog.Warn("btc_cfd cycle", "error", err, "consecutive_failures", e.apiFailures)
 	if e.bc.APIFailureAlertAfter > 0 && e.apiFailures >= e.bc.APIFailureAlertAfter {
-		e.notifier.Send(ctx, "fxtrade: repeated API failures",
+		notify.SendRoutine(e.notifier, ctx, "fxtrade: repeated API failures",
 			fmt.Sprintf("bot=%s\nfailures=%d\nlast_error=%v\n", Meta.ID, e.apiFailures, err))
 	}
 }
