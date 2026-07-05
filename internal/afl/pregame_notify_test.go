@@ -60,7 +60,7 @@ func TestFormatPregameEmail_FullLLMResponse(t *testing.T) {
 
 	body := FormatPregameEmail(game, report, llm)
 	for _, want := range []string{
-		"T-30",
+		"T-45",
 		"MODEL BASELINE",
 		"LIVE ANALYTICS (Gemini)",
 		"Main bet: STK H2H (high)",

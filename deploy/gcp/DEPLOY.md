@@ -78,7 +78,7 @@ This creates:
 | `/opt/fxtrade/bin/fxtrade` | FX daemon binary (deployed by CI or manual `scp`) |
 | `/opt/fxtrade/bin/nifty-pulse` | NiftyPulse daily NSE scanner |
 | `/opt/fxtrade/bin/afl-pulse` | AFLPulse weekly AFL round scanner |
-| `/opt/fxtrade/bin/afl-pulse-pregame` | AFLPulse T-30 pregame scanner (Gemini) |
+| `/opt/fxtrade/bin/afl-pulse-pregame` | AFLPulse T-45 pregame scanner (Gemini) |
 | `/opt/fxtrade/watchlist.txt` | NSE symbol watchlist for NiftyPulse |
 | `/opt/fxtrade/data/afl/` | AFL seed stats (teams, venues, model coefficients) |
 | `/opt/fxtrade/.credentials` | Secrets JSON (600, owner `fxtrade`) |
@@ -91,7 +91,7 @@ This creates:
 | `/etc/systemd/system/nifty-pulse.timer` | Daily 18:00 Australia/Sydney (Sun–Fri) |
 | `/etc/systemd/system/afl-pulse.service` | AFLPulse oneshot round scan |
 | `/etc/systemd/system/afl-pulse.timer` | Weekly 18:00 Australia/Melbourne (Thursday) |
-| `/etc/systemd/system/afl-pulse-pregame.service` | AFLPulse T-30 pregame oneshot |
+| `/etc/systemd/system/afl-pulse-pregame.service` | AFLPulse T-45 pregame oneshot |
 | `/etc/systemd/system/afl-pulse-pregame.timer` | Every 5 minutes (pregame poll) |
 
 ### Systemd modes
@@ -390,14 +390,14 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now afl-pulse.timer
 ```
 
-## 6b. AFLPulse pregame (T-30)
+## 6b. AFLPulse pregame (T-45)
 
-`afl-pulse-pregame` polls Squiggle every **5 minutes** for fixtures whose kickoff is **30–35 minutes away**. When a fixture enters the window and has not been emailed yet:
+`afl-pulse-pregame` polls Squiggle every **5 minutes** for fixtures whose kickoff is **45–50 minutes away**. When a fixture enters the window and has not been emailed yet:
 
 1. Fetches AU bookmaker odds (The Odds API)
 2. Builds one AFLPulse model report (`BuildRoundReports`)
 3. Calls **Gemini 2.5 Flash-Lite + Google Search** (compact JSON in, structured JSON out)
-4. Emails the T-30 pregame report and records the Squiggle game ID in `data/afl/pregame-sent.json`
+4. Emails the T-45 pregame report and records the Squiggle game ID in `data/afl/pregame-sent.json`
 
 If Gemini fails after retries, an **alert email** is sent instead (dedup state unchanged so the next poll can retry).
 

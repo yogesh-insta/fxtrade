@@ -58,7 +58,7 @@ func DefaultAFLConfig() AFLConfig {
 		StatsRefreshOnRun: defaultStatsRefreshOnRun(),
 		GeminiModel:              "gemini-2.5-flash-lite",
 		LLMConcurrency:           2,
-		PregameLeadMinutes:       30,
+		PregameLeadMinutes:       45,
 		PregamePollWindowMinutes: 5,
 		PregameLLMRetries:        2,
 	}

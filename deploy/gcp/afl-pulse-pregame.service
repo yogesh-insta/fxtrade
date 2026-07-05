@@ -1,5 +1,5 @@
 [Unit]
-Description=AFLPulse T-30 pregame scanner (Gemini + Google Search)
+Description=AFLPulse T-45 pregame scanner (Gemini + Google Search)
 Documentation=file:///opt/fxtrade/deploy/gcp/DEPLOY.md
 After=network-online.target
 Wants=network-online.target
