@@ -173,6 +173,17 @@ func (m *PositionMonitor) lookupClosedPL(ctx context.Context, tradeID string) fl
 	return 0
 }
 
+// SeedOpenTrades registers pre-existing positions after startup reconciliation
+// without incrementing daily trade counters (position may predate today).
+func (m *PositionMonitor) SeedOpenTrades(trades []oanda.Trade) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, t := range trades {
+		m.known[t.ID] = t
+		m.recordedOpens[t.ID] = struct{}{}
+	}
+}
+
 func (m *PositionMonitor) OpenCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

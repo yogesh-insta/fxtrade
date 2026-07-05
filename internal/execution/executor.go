@@ -77,6 +77,18 @@ func (e *Executor) PlaceMarket(ctx context.Context, req risk.EntryRequest, param
 
 	resp, err := e.client.CreateOrder(ctx, order)
 	if err != nil {
+		if params.ClientOrderID != "" {
+			if existing, found, lookupErr := e.client.FindOrderByClientID(ctx, params.ClientOrderID); lookupErr == nil && found {
+				slog.Info("order recovered via idempotency key",
+					"client_order_id", params.ClientOrderID,
+					"trade_id", existing.TradeID,
+				)
+				if existing.TradeID != "" {
+					e.noteOpened(existing.TradeID)
+				}
+				return existing, nil
+			}
+		}
 		e.notify.Send(ctx, "fxtrade: order rejected", fmt.Sprintf("correlation_id=%s\nerror=%v\n", req.CorrelationID, err))
 		return oanda.OrderResult{}, err
 	}

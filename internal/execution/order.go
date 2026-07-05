@@ -13,11 +13,13 @@ const (
 )
 
 type MarketOrderParams struct {
-	Instrument string
-	Direction  string
-	Units      int64
-	StopLoss   float64
-	TakeProfit *float64
+	Instrument     string
+	Direction      string
+	Units          int64
+	StopLoss       float64
+	TakeProfit     *float64
+	ClientOrderID  string
+	ClientOrderTag string
 }
 
 func BuildMarketOrder(p MarketOrderParams) (oanda.CreateOrderRequest, error) {
@@ -58,6 +60,13 @@ func BuildMarketOrder(p MarketOrderParams) (oanda.CreateOrderRequest, error) {
 		order.Order.TakeProfitOnFill = &oanda.OnFillTakeProfit{
 			Price:       oanda.FormatPrice(*p.TakeProfit),
 			TimeInForce: oanda.TimeInForceGTC,
+		}
+	}
+
+	if p.ClientOrderID != "" || p.ClientOrderTag != "" {
+		order.Order.ClientExtensions = &oanda.ClientExtensions{
+			ID:  p.ClientOrderID,
+			Tag: p.ClientOrderTag,
 		}
 	}
 
