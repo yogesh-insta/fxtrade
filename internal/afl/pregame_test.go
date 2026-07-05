@@ -41,13 +41,16 @@ func TestBuildPregameLLMPayloadCompactJSON(t *testing.T) {
 }
 
 func TestParsePregameLLMResponse(t *testing.T) {
-	raw := `{"match_details":{"late_changes":"Smith in","weather_impact":"calm"},"main_bet":{"market":"H2H","selection":"STK","confidence":"high","reasons":["a","b","c"]},"player_prop":{"player":"X","market":"25+ disp","reasons":["r1","r2"]},"risk_note":"none","disclaimer":"bet responsibly"}`
+	raw := `{"match_details":{"late_changes":"Smith in","weather_impact":"calm","lineups":"confirmed"},"main_bet":{"market":"H2H","selection":"STK","confidence":"high","odds_note":"STK $1.65","reasons":["a","b","c"]},"player_prop":{"player":"X","market":"25+ disp","reasons":["r1","r2"]},"risk_note":"none","model_agreement":"aligns","disclaimer":"bet responsibly"}`
 	resp, err := ParsePregameLLMResponse(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.MainBet.Selection != "STK" {
-		t.Fatalf("selection = %q", resp.MainBet.Selection)
+	if resp.MainBet.Selection != "STK" || resp.MainBet.OddsNote != "STK $1.65" {
+		t.Fatalf("selection/odds = %q / %q", resp.MainBet.Selection, resp.MainBet.OddsNote)
+	}
+	if resp.ModelAgreement != "aligns" || resp.MatchDetails.Lineups != "confirmed" {
+		t.Fatalf("agreement/lineups = %q / %q", resp.ModelAgreement, resp.MatchDetails.Lineups)
 	}
 
 	fenced := "```json\n" + raw + "\n```"
@@ -57,6 +60,58 @@ func TestParsePregameLLMResponse(t *testing.T) {
 	}
 	if resp2.MainBet.Selection != "STK" {
 		t.Fatal("fence strip failed")
+	}
+}
+
+func TestParsePregameLLMResponseAlternateKeys(t *testing.T) {
+	raw := `{
+  "mainBet": {
+    "pick": "STK H2H",
+    "type": "H2H",
+    "conf": "medium",
+    "odds": "STK $1.70",
+    "why": ["form edge", "venue"]
+  },
+  "modelAgreement": "mixed",
+  "risks": "injury cloud",
+  "matchDetails": {"lineupStatus": "unconfirmed — late team news pending"}
+}`
+	resp, err := ParsePregameLLMResponse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.MainBet.Selection != "STK H2H" || resp.MainBet.Market != "H2H" {
+		t.Fatalf("main bet = %+v", resp.MainBet)
+	}
+	if len(resp.MainBet.Reasons) != 2 {
+		t.Fatalf("reasons = %#v", resp.MainBet.Reasons)
+	}
+	if resp.ModelAgreement != "mixed" || resp.RiskNote != "injury cloud" {
+		t.Fatalf("agreement/risk = %q / %q", resp.ModelAgreement, resp.RiskNote)
+	}
+	if resp.MatchDetails.Lineups == "" {
+		t.Fatal("expected lineups from alternate key")
+	}
+}
+
+func TestParsePregameLLMResponsePartialAndProse(t *testing.T) {
+	// Empty main_bet is accepted as partial, not an error.
+	partial := `{"match_details":{"weather_impact":"light wind"},"main_bet":{}}`
+	resp, err := ParsePregameLLMResponse(partial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Incomplete() || resp.IsEmpty() {
+		t.Fatalf("expected incomplete non-empty partial: incomplete=%v empty=%v", resp.Incomplete(), resp.IsEmpty())
+	}
+
+	prose := "Here is the analysis:\n```json\n" + partial + "\n```\nGood luck."
+	resp2, err := ParsePregameLLMResponse(prose)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp2.MatchDetails.WeatherImpact != "light wind" {
+		t.Fatalf("weather = %q", resp2.MatchDetails.WeatherImpact)
 	}
 }
 
@@ -72,20 +127,89 @@ func TestFormatPregameEmail(t *testing.T) {
 	}
 	llm := PregameLLMResponse{}
 	llm.MatchDetails.LateChanges = "No late changes"
+	llm.MatchDetails.Lineups = "confirmed"
 	llm.MainBet.Market = "H2H"
-	llm.MainBet.Selection = "St Kilda"
+	llm.MainBet.Selection = "STK"
 	llm.MainBet.Confidence = "high"
+	llm.MainBet.OddsNote = "STK $1.65"
 	llm.MainBet.Reasons = []string{"form", "lineups", "odds"}
+	llm.PlayerProp.Player = "Nasiah Wanganeen-Milera"
+	llm.PlayerProp.Market = "25+ disposals"
+	llm.RiskNote = "Essendon midfield rotation"
+	llm.ModelAgreement = "aligns"
 
 	body := FormatPregameEmail(game, report, llm)
-	if !strings.Contains(body, "T-30") {
-		t.Fatal("missing T-30 header")
+	for _, want := range []string{
+		"T-30",
+		"MODEL BASELINE",
+		"LIVE ANALYTICS (Gemini)",
+		"Main bet: STK H2H (high)",
+		"Odds note: STK $1.65",
+		"Why:",
+		"Player prop: Nasiah Wanganeen-Milera — 25+ disposals",
+		"Risks: Essendon midfield rotation",
+		"Model agreement: aligns",
+		"Lineups: confirmed",
+		"Squiggle game ID: 99",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in body:\n%s", want, body)
+		}
 	}
-	if !strings.Contains(body, "St Kilda") {
-		t.Fatal("missing main bet")
+	if strings.Contains(body, "[]") {
+		t.Fatalf("must not print empty slice: %s", body)
 	}
-	if !strings.Contains(body, "Squiggle game ID: 99") {
-		t.Fatal("missing squiggle id")
+}
+
+func TestFormatPregameEmailEmptyLLM(t *testing.T) {
+	game := SquiggleFixture{ID: 38629}
+	report := MatchReport{
+		Context: MatchDayContext{
+			HomeTeam: "ESS", AwayTeam: "STK",
+			Kickoff: time.Date(2026, 7, 5, 5, 15, 0, 0, time.UTC),
+			Venue:   VenueProfile{Name: "Docklands"},
+		},
+		Score: ScoreProjection{PredictedWinner: "STK", HomeScore: 79, AwayScore: 88, Margin: 9, TotalScore: 167},
+	}
+	body := FormatPregameEmail(game, report, PregameLLMResponse{})
+	if strings.Contains(body, "[]") {
+		t.Fatalf("must not print [] for empty LLM:\n%s", body)
+	}
+	if !strings.Contains(body, "Gemini returned incomplete analysis") {
+		t.Fatal("expected incomplete note")
+	}
+	if !strings.Contains(body, "Live analytics: unavailable") {
+		t.Fatal("expected unavailable line")
+	}
+	if !strings.Contains(body, "MODEL BASELINE") || !strings.Contains(body, "St Kilda") {
+		t.Fatalf("model baseline missing:\n%s", body)
+	}
+	if strings.Contains(body, "Main bet (medium confidence):") {
+		t.Fatal("old empty main-bet format must not appear")
+	}
+}
+
+func TestFormatPregameEmailPartialLLM(t *testing.T) {
+	game := SquiggleFixture{ID: 1}
+	report := MatchReport{
+		Context: MatchDayContext{HomeTeam: "PORT", AwayTeam: "NMFC"},
+		Score:   ScoreProjection{PredictedWinner: "PORT", HomeScore: 90, AwayScore: 80, Margin: 10, TotalScore: 170},
+	}
+	llm := PregameLLMResponse{}
+	llm.MatchDetails.WeatherImpact = "calm, no scoring impact"
+	llm.RiskNote = "key defender in doubt"
+	body := FormatPregameEmail(game, report, llm)
+	if strings.Contains(body, "[]") {
+		t.Fatal("must not print []")
+	}
+	if !strings.Contains(body, "Gemini returned incomplete analysis") {
+		t.Fatal("expected incomplete note for partial")
+	}
+	if !strings.Contains(body, "Main bet: unavailable") {
+		t.Fatal("expected unavailable main bet")
+	}
+	if !strings.Contains(body, "Weather: calm") || !strings.Contains(body, "Risks: key defender") {
+		t.Fatalf("partial fields missing:\n%s", body)
 	}
 }
 
@@ -105,6 +229,9 @@ func TestFormatPregameFailureAlert(t *testing.T) {
 	}
 	if !strings.Contains(body, "afl-pulse-pregame.log") {
 		t.Fatal("missing log path")
+	}
+	if !strings.Contains(body, "Model-baseline pregame email was still sent") {
+		t.Fatal("expected note that baseline email was sent")
 	}
 }
 

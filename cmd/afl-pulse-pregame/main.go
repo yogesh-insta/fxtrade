@@ -177,44 +177,48 @@ func main() {
 		report := reports[0]
 
 		var llmResp afl.PregameLLMResponse
+		llmFailed := false
+		var llmErr error
 		if cfg.AFL.GeminiAPIKey != "" {
 			if state.WasLLMAttempted(game.ID) {
+				// Prior attempt already burned the Gemini budget for this fixture.
+				// Still send model baseline with an explicit incomplete note.
 				slog.Info("pregame LLM already attempted; model-only email",
 					"squiggle_id", game.ID,
 					"match", fmt.Sprintf("%s vs %s", fixture.HomeTeam, fixture.AwayTeam),
 				)
+				llmFailed = true
 			} else {
 				state.MarkLLMAttempted(game.ID)
 				attemptedAny = true
-				var llmErr error
 				llmResp, llmErr = afl.RunPregameLLM(ctx, cfg.AFL, sfix, report)
 				if llmErr != nil {
+					llmFailed = true
 					slog.Error("pregame gemini failed",
 						"squiggle_id", game.ID,
 						"match", fmt.Sprintf("%s vs %s", fixture.HomeTeam, fixture.AwayTeam),
 						"error", llmErr,
 					)
-					if cfg.AFL.PregameLLMRequiredEnabled() {
-						if !*dryRun {
-							alertBody := afl.FormatPregameFailureAlert(
-								sfix, fixture.HomeTeam, fixture.AwayTeam, game.Venue, llmErr, *logPath,
-							)
-							afl.SendPregameFailureAlert(notifier, ctx, cfg.Notifications, fixture.HomeTeam, fixture.AwayTeam, alertBody)
-						}
-						continue
-					}
-					slog.Warn("pregame gemini optional; sending model-only email",
+				} else if llmResp.Incomplete() {
+					slog.Warn("pregame gemini incomplete; sending partial live analytics",
 						"squiggle_id", game.ID,
 					)
 				}
 			}
 		} else {
-			slog.Info("pregame_llm_required false and no gemini key; model-only email",
+			llmFailed = true
+			slog.Info("no gemini key; model-only email",
 				"squiggle_id", game.ID,
 			)
 		}
 
 		body := afl.FormatPregameEmail(sfix, report, llmResp)
+		if llmFailed && cfg.AFL.PregameLLMRequiredEnabled() && llmErr != nil && !*dryRun {
+			alertBody := afl.FormatPregameFailureAlert(
+				sfix, fixture.HomeTeam, fixture.AwayTeam, game.Venue, llmErr, *logPath,
+			)
+			afl.SendPregameFailureAlert(notifier, ctx, cfg.Notifications, fixture.HomeTeam, fixture.AwayTeam, alertBody)
+		}
 		if *dryRun {
 			fmt.Println(body)
 			slog.Info("dry-run: pregame email ready",

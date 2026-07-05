@@ -27,6 +27,7 @@ func FormatPregameFailureSubject(prefix string, home, away TeamID) string {
 }
 
 // FormatPregameEmail renders the T-30 pregame body from model report and LLM JSON.
+// Empty or partial LLM content never prints Go zero values (e.g. "[]"); it notes incompleteness.
 func FormatPregameEmail(game SquiggleFixture, report MatchReport, llm PregameLLMResponse) string {
 	var b strings.Builder
 	ctx := report.Context
@@ -51,55 +52,10 @@ func FormatPregameEmail(game SquiggleFixture, report MatchReport, llm PregameLLM
 	b.WriteString("\n\n")
 	b.WriteString(fixtureRule)
 	b.WriteString("\n")
-	b.WriteString("LIVE ANALYTICS (Gemini + Google Search)\n")
+	b.WriteString("LIVE ANALYTICS (Gemini)\n")
 	b.WriteString(fixtureRule)
 	b.WriteString("\n\n")
-
-	if s := strings.TrimSpace(llm.MatchDetails.LateChanges); s != "" {
-		b.WriteString("Late changes\n")
-		b.WriteString(wrapIndented("  • ", s, emailLineWidth, "    "))
-		b.WriteString("\n\n")
-	}
-	if s := strings.TrimSpace(llm.MatchDetails.WeatherImpact); s != "" {
-		b.WriteString("Weather impact\n")
-		b.WriteString(wrapIndented("  • ", s, emailLineWidth, "    "))
-		b.WriteString("\n\n")
-	}
-
-	conf := strings.TrimSpace(llm.MainBet.Confidence)
-	if conf == "" {
-		conf = "medium"
-	}
-	fmt.Fprintf(&b, "Main bet (%s confidence): %s [%s]\n",
-		conf, llm.MainBet.Selection, strings.TrimSpace(llm.MainBet.Market))
-	for _, r := range llm.MainBet.Reasons {
-		if s := strings.TrimSpace(r); s != "" {
-			b.WriteString(wrapIndented("  • ", s, emailLineWidth, "    "))
-			b.WriteString("\n")
-		}
-	}
-
-	if p := strings.TrimSpace(llm.PlayerProp.Player); p != "" {
-		b.WriteString("\nPlayer prop: ")
-		b.WriteString(p)
-		if m := strings.TrimSpace(llm.PlayerProp.Market); m != "" {
-			b.WriteString(" — ")
-			b.WriteString(m)
-		}
-		b.WriteString("\n")
-		for _, r := range llm.PlayerProp.Reasons {
-			if s := strings.TrimSpace(r); s != "" {
-				b.WriteString(wrapIndented("  • ", s, emailLineWidth, "    "))
-				b.WriteString("\n")
-			}
-		}
-	}
-
-	if s := strings.TrimSpace(llm.RiskNote); s != "" {
-		b.WriteString("\nRisk note\n")
-		b.WriteString(wrapIndented("  • ", s, emailLineWidth, "    "))
-		b.WriteString("\n")
-	}
+	writePregameLiveAnalytics(&b, llm)
 
 	b.WriteString("\n")
 	if s := strings.TrimSpace(llm.Disclaimer); s != "" {
@@ -110,6 +66,97 @@ func FormatPregameEmail(game SquiggleFixture, report MatchReport, llm PregameLLM
 	b.WriteString("\n\n")
 	writeManualExecutionFooter(&b)
 	return b.String()
+}
+
+func writePregameLiveAnalytics(b *strings.Builder, llm PregameLLMResponse) {
+	if llm.IsEmpty() {
+		b.WriteString("  Gemini returned incomplete analysis\n")
+		b.WriteString("  Live analytics: unavailable\n")
+		return
+	}
+
+	if llm.Incomplete() {
+		b.WriteString("  Gemini returned incomplete analysis\n\n")
+	}
+
+	if s := strings.TrimSpace(llm.MatchDetails.LateChanges); s != "" {
+		b.WriteString("  Late changes: ")
+		b.WriteString(s)
+		b.WriteString("\n")
+	}
+	if s := strings.TrimSpace(llm.MatchDetails.WeatherImpact); s != "" {
+		b.WriteString("  Weather: ")
+		b.WriteString(s)
+		b.WriteString("\n")
+	}
+	if s := strings.TrimSpace(llm.MatchDetails.Lineups); s != "" {
+		b.WriteString("  Lineups: ")
+		b.WriteString(s)
+		b.WriteString("\n")
+	}
+
+	sel := strings.TrimSpace(llm.MainBet.Selection)
+	mkt := strings.TrimSpace(llm.MainBet.Market)
+	conf := strings.TrimSpace(llm.MainBet.Confidence)
+	if conf == "" {
+		conf = "medium"
+	}
+	switch {
+	case sel != "" && mkt != "":
+		fmt.Fprintf(b, "  Main bet: %s %s (%s)\n", sel, mkt, conf)
+	case sel != "":
+		fmt.Fprintf(b, "  Main bet: %s (%s)\n", sel, conf)
+	default:
+		b.WriteString("  Main bet: unavailable\n")
+	}
+
+	if s := strings.TrimSpace(llm.MainBet.OddsNote); s != "" {
+		b.WriteString("  Odds note: ")
+		b.WriteString(s)
+		b.WriteString("\n")
+	}
+
+	reasons := trimNonEmpty(llm.MainBet.Reasons)
+	if len(reasons) > 0 {
+		b.WriteString("  Why:\n")
+		for _, r := range reasons {
+			b.WriteString(wrapIndented("    • ", r, emailLineWidth, "      "))
+			b.WriteString("\n")
+		}
+	}
+
+	player := strings.TrimSpace(llm.PlayerProp.Player)
+	propMkt := strings.TrimSpace(llm.PlayerProp.Market)
+	if player != "" || propMkt != "" {
+		b.WriteString("  Player prop: ")
+		switch {
+		case player != "" && propMkt != "":
+			b.WriteString(player)
+			b.WriteString(" — ")
+			b.WriteString(propMkt)
+		case player != "":
+			b.WriteString(player)
+		default:
+			b.WriteString(propMkt)
+		}
+		b.WriteString("\n")
+		for _, r := range trimNonEmpty(llm.PlayerProp.Reasons) {
+			b.WriteString(wrapIndented("    • ", r, emailLineWidth, "      "))
+			b.WriteString("\n")
+		}
+	}
+
+	if s := strings.TrimSpace(llm.RiskNote); s != "" {
+		b.WriteString("  Risks: ")
+		b.WriteString(s)
+		b.WriteString("\n")
+	}
+
+	if s := strings.TrimSpace(llm.ModelAgreement); s != "" {
+		b.WriteString("  Model agreement: ")
+		b.WriteString(s)
+		b.WriteString("\n")
+	}
 }
 
 // FormatPregameFailureAlert renders the Gemini failure alert body.
@@ -131,7 +178,7 @@ func FormatPregameFailureAlert(game SquiggleFixture, home, away TeamID, venue st
 	if logPath != "" {
 		fmt.Fprintf(&b, "\nCheck logs: %s\n", logPath)
 	}
-	b.WriteString("\nPregame email was NOT sent. Dedup state unchanged — will retry on next poll if still in window.\n")
+	b.WriteString("\nModel-baseline pregame email was still sent (live analytics unavailable).\n")
 	return b.String()
 }
 
