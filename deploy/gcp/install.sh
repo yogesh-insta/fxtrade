@@ -11,6 +11,7 @@ AFL_PULSE_SRC=""
 AFL_PULSE_PREGAME_SRC=""
 HEALTH_WATCH_SRC=""
 BTC_DAILY_EMAIL_SRC=""
+BOT_WEEKLY_EMAIL_SRC=""
 CREDENTIALS_SRC=""
 ENABLE_ALL=false
 ENABLE_BOT=""
@@ -27,6 +28,7 @@ Options:
   --afl-pulse-pregame PATH  Linux amd64 afl-pulse-pregame binary
   --health-watch PATH   Linux amd64 health-watch binary (watchdog alerts)
   --btc-daily-email PATH  Linux amd64 btc-daily-email binary (BTC daily summary)
+  --bot-weekly-email PATH Linux amd64 bot-weekly-email binary (weekly bot summary)
   --credentials PATH    Local .credentials to install (default: skip; use fetch-credentials.sh)
   --enable-all          Enable fxtrade.service (all bots from .credentials)
   --enable-bot ID       Enable fxtrade@ID.service (e.g. universe_scanner, fx_sentiment)
@@ -47,6 +49,7 @@ while [[ $# -gt 0 ]]; do
     --afl-pulse-pregame) AFL_PULSE_PREGAME_SRC="$2"; shift 2 ;;
     --health-watch) HEALTH_WATCH_SRC="$2"; shift 2 ;;
     --btc-daily-email) BTC_DAILY_EMAIL_SRC="$2"; shift 2 ;;
+    --bot-weekly-email) BOT_WEEKLY_EMAIL_SRC="$2"; shift 2 ;;
     --credentials) CREDENTIALS_SRC="$2"; shift 2 ;;
     --enable-all) ENABLE_ALL=true; shift ;;
     --enable-bot) ENABLE_BOT="$2"; shift 2 ;;
@@ -131,9 +134,18 @@ elif [[ ! -x "$INSTALL_ROOT/bin/btc-daily-email" ]]; then
   echo "  scp btc-daily-email user@vm:/tmp/ && sudo install -m 755 /tmp/btc-daily-email $INSTALL_ROOT/bin/btc-daily-email"
 fi
 
+if [[ -n "$BOT_WEEKLY_EMAIL_SRC" ]]; then
+  install -m 755 "$BOT_WEEKLY_EMAIL_SRC" "$INSTALL_ROOT/bin/bot-weekly-email"
+elif [[ ! -x "$INSTALL_ROOT/bin/bot-weekly-email" ]]; then
+  echo "note: no binary at $INSTALL_ROOT/bin/bot-weekly-email yet — build manually:"
+  echo "  GOOS=linux GOARCH=amd64 go build -o bot-weekly-email ./cmd/bot-weekly-email"
+  echo "  scp bot-weekly-email user@vm:/tmp/ && sudo install -m 755 /tmp/bot-weekly-email $INSTALL_ROOT/bin/bot-weekly-email"
+fi
+
 install -m 755 "$ROOT/deploy/gcp/check-scheduled-jobs.sh" "$INSTALL_ROOT/scripts/check-scheduled-jobs.sh"
 install -m 755 "$ROOT/deploy/gcp/run-health-watch.sh" "$INSTALL_ROOT/scripts/run-health-watch.sh"
 install -m 755 "$ROOT/deploy/gcp/run-btc-daily-email.sh" "$INSTALL_ROOT/scripts/run-btc-daily-email.sh"
+install -m 755 "$ROOT/deploy/gcp/run-bot-weekly-email.sh" "$INSTALL_ROOT/scripts/run-bot-weekly-email.sh"
 install -m 644 "$ROOT/deploy/gcp/fxtrade-watch.cron" /etc/cron.d/fxtrade-watch
 chmod 644 /etc/cron.d/fxtrade-watch
 echo "Installed watchdog cron (/etc/cron.d/fxtrade-watch) — emails on failure via .credentials SMTP"

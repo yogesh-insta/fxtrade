@@ -17,6 +17,8 @@ import (
 	"github.com/ym/fxtrade/internal/risk"
 	"github.com/ym/fxtrade/internal/sentiment"
 	"github.com/ym/fxtrade/internal/state"
+	"github.com/ym/fxtrade/internal/store"
+	"github.com/ym/fxtrade/internal/store/sqlite"
 	"github.com/ym/fxtrade/internal/strategy"
 )
 
@@ -59,6 +61,12 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 
 	tradeJournal := journal.New(cfg.Strategy.JournalDir)
 	tradeRecorder := state.NewTradeRecorder(stateStore, tradeJournal)
+	metaStore := store.NewMetaStore()
+
+	tradeDB, err := sqlite.Open(cfg.Strategy.DBPath)
+	if err != nil {
+		return nil, fmt.Errorf("open trade db: %w", err)
+	}
 
 	sentimentCaches := make(map[string]*sentiment.Cache, len(instruments))
 	for _, inst := range instruments {
@@ -88,15 +96,25 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	exec.SetDryRun(deps.DryRun)
 	posMon := monitor.New(client, rm, notifier, 30*time.Second)
 	exec.SetTradeAccounting(posMon)
-	posMon.SetOnTradeClosed(func(tradeID, correlationID string, pl float64) {
-		tradeRecorder.OnClose(tradeID, correlationID, pl, rm, sentimentCaches)
-	})
 
 	engines := make([]*strategy.Engine, 0, len(instruments))
 	for _, inst := range instruments {
-		engines = append(engines, strategy.NewEngine(cfg, inst, client, exec, rm, notifier, sentimentCaches[inst]))
+		eng := strategy.NewEngine(cfg, inst, client, exec, rm, notifier, sentimentCaches[inst])
+		eng.SetPerformanceStore(Meta.ID, tradeDB)
+		engines = append(engines, eng)
 	}
+
+	posMon.SetOnTradeClosed(func(tradeID, correlationID string, pl float64) {
+		tradeRecorder.OnClose(tradeID, correlationID, pl, rm, sentimentCaches)
+
+		meta, hasMeta := metaStore.Take(tradeID)
+		row := store.ClosedTradeRow(meta.Instrument, tradeID, correlationID, pl, meta, hasMeta)
+		if err := tradeDB.InsertTrade(row); err != nil {
+			slog.Warn("sqlite insert trade failed", "bot", Meta.ID, "error", err)
+		}
+	})
 	posMon.SetOnTradeOpened(func(t oanda.Trade) {
+		metaStore.Put(t.ID, store.MetaFromTrade(t))
 		for _, eng := range engines {
 			if eng.Instrument() == t.Instrument {
 				eng.CancelAllPendingNow(context.Background(), "position_opened")

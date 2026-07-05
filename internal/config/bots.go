@@ -93,6 +93,34 @@ func StateFileForBot(basePath, botID string) string {
 	return dir + name + "-" + botID + ext
 }
 
+func TradesDBForBot(botID string) string {
+	botID = NormalizeBotID(botID)
+	switch botID {
+	case BotBtcCfd:
+		return "data/btc_cfd/trades.db"
+	case BotFxSentiment:
+		return "data/fx_sentiment/trades.db"
+	case BotUniverseScanner:
+		return "data/universe_scanner/trades.db"
+	default:
+		return "data/" + botID + "/trades.db"
+	}
+}
+
+func JournalDirForBot(botID string) string {
+	botID = NormalizeBotID(botID)
+	switch botID {
+	case BotBtcCfd:
+		return "logs/btc_cfd"
+	case BotFxSentiment:
+		return "logs/fx_sentiment"
+	case BotUniverseScanner:
+		return "logs/universe_scanner"
+	default:
+		return "logs/" + botID
+	}
+}
+
 func HaltFileForBot(basePath, botID string) string {
 	if basePath == "" {
 		basePath = DefaultHaltFile

@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	tradesPath := flag.String("trades", "logs/trades/trades.jsonl", "path to trades.jsonl")
+	tradesPath := flag.String("trades", "logs/fx_sentiment/trades.jsonl", "path to trades.jsonl")
 	flag.Parse()
 
 	trades, err := journal.ReadTrades(*tradesPath)

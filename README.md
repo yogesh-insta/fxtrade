@@ -84,7 +84,24 @@ Expect `"ok": true`, `"stream_connected": true`, and `"ticks_received"` increasi
 
 ```bash
 tail -f logs/sentiment/$(date +%Y-%m-%d).jsonl   # fx_sentiment LLM audit
-tail -f logs/trades/journal.jsonl                 # fx_sentiment strategy journal
+tail -f logs/fx_sentiment/journal.jsonl          # fx_sentiment strategy journal + signals
+tail -f logs/universe_scanner/trades.jsonl       # universe_scanner closed trades (JSONL)
+```
+
+**Performance data (SQLite, for fine-tuning):**
+
+| Bot | Trades DB | Journal / signals |
+|-----|-----------|-------------------|
+| `btc_cfd` | `data/btc_cfd/trades.db` | `logs/btc_cfd/` |
+| `fx_sentiment` | `data/fx_sentiment/trades.db` | `logs/fx_sentiment/` + `signals` table |
+| `universe_scanner` | `data/universe_scanner/trades.db` | `logs/universe_scanner/` + `signals` table |
+
+Query closed-trade metrics:
+
+```bash
+go run ./cmd/bot-metrics -bot universe_scanner
+go run ./cmd/bot-metrics -bot fx_sentiment
+go run ./cmd/btc-metrics   # alias for btc_cfd defaults
 ```
 
 **Email:** alerts go to `email.alert_to` when SMTP is configured.
@@ -100,10 +117,11 @@ tail -f logs/trades/journal.jsonl                 # fx_sentiment strategy journa
 | `go run ./cmd/scanner-test` | One universe_scanner scan (defaults to `-dry-run`) |
 | `go run ./cmd/order-test -count 2 -units 100` | Place and close tiny practice orders |
 | `go run ./cmd/backtest -days 200` | Replay history through fx_sentiment quant gates |
-| `go run ./cmd/expectancy` | Win rate / expectancy from closed fx_sentiment trades |
+| `go run ./cmd/expectancy` | Win rate / expectancy from closed fx_sentiment trades (`logs/fx_sentiment/trades.jsonl`) |
 | `go run ./cmd/email-test` | Verify SMTP from `.credentials` |
 | `go run ./cmd/afl-train`, `go run ./cmd/afl-backtest` | Train / holdout-test AFL models |
 | `go run ./cmd/btc-metrics` | BTC CFD stats from `data/btc_cfd/trades.db` |
+| `go run ./cmd/bot-metrics -bot fx_sentiment` | Closed-trade stats from any bot SQLite store |
 
 **Unit tests:**
 
@@ -131,7 +149,7 @@ All binaries live under `cmd/`. On **fxtrade-vm**, `install.sh` installs scanner
 | `nifty-pulse.timer` | Daily NSE scan (Sun–Fri 18:00 Sydney) |
 | `afl-pulse.timer` | Weekly AFL round scan (Thu 18:00 Melbourne) |
 | `afl-pulse-pregame.timer` | Pregame poll (every 15 min) |
-| `/etc/cron.d/fxtrade-watch` | `health-watch` every 5 min; timer failure checks; `btc-daily-email` at 12:00 UTC |
+| `/etc/cron.d/fxtrade-watch` | `health-watch` every 5 min; timer failure checks; `btc-daily-email` at 12:00 UTC; `bot-weekly-email` Mon 07:00 UTC |
 
 ### Platform bots (long-running, OANDA orders)
 
@@ -164,6 +182,7 @@ Local: `go run ./cmd/nifty-pulse`, `go run ./cmd/afl-pulse`, `go run ./cmd/afl-p
 |---------|------|-------------|
 | `health-watch` | Polls `/health`; emails on daemon failure, stale ticks, failed timer jobs | Cron via `run-health-watch.sh` |
 | `btc-daily-email` | BTC CFD daily P&L summary (prior UTC day) | Cron 12:00 UTC via `run-btc-daily-email.sh` |
+| `bot-weekly-email` | Combined weekly P&L for all platform bots | Cron Mon 07:00 UTC via `run-bot-weekly-email.sh` |
 
 ---
 
@@ -209,9 +228,9 @@ Risk limits live under `"risk"` and per-bot sections in `.credentials` (daily/we
 - **TREND mode:** occasional market entries on pullbacks.
 - **Emails** on decisions, orders, and sentiment updates.
 
-Before live trading: run on practice for **4+ weeks**, then `go run ./cmd/expectancy` — aim for **positive expectancy over 30+ trades**.
+Before live trading: run on practice for **4+ weeks**, then `go run ./cmd/bot-metrics -bot fx_sentiment` (or `go run ./cmd/expectancy -trades logs/fx_sentiment/trades.jsonl`) — aim for **positive expectancy over 30+ trades**.
 
-Other bots have their own journals under `data/` and `logs/`; see `docs/btc_cfd_bot_spec.md` for BTC CFD.
+Other bots persist closed trades and decision signals under `data/<bot_id>/trades.db`; see `docs/btc_cfd_bot_spec.md` for BTC CFD details.
 
 ---
 
@@ -226,8 +245,9 @@ fxtrade/
 ├── cmd/afl-pulse-pregame/    # AFL T-30 pregame scanner
 ├── cmd/health-watch/         # VM watchdog
 ├── cmd/btc-daily-email/      # BTC daily summary email
+├── cmd/bot-weekly-email/     # Combined weekly bot performance email
 ├── cmd/*-test/               # one-shot dev CLIs (sentiment, strategy, scanner, order, …)
-├── data/                     # bot state, AFL stats, btc_cfd trades.db
+├── data/                     # bot state, AFL stats, per-bot trades.db
 ├── deploy/gcp/               # systemd units, install.sh, Terraform
 ├── logs/                     # sentiment audit, trade journal, daemon logs
 ├── docs/                     # bot specs (e.g. btc_cfd)

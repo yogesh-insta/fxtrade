@@ -172,6 +172,36 @@ scp health-watch user@VM:/tmp/ && sudo install -m 755 /tmp/health-watch /opt/fxt
 
 The `/health` endpoint returns HTTP 503 with `"ok": false` when unhealthy (stream down, stale ticks, etc.).
 
+## 2c. Scheduled performance emails
+
+Cron jobs in `/etc/cron.d/fxtrade-watch` send plain-text summaries via the same SMTP block in `.credentials`.
+
+| Job | Schedule | Binary | Log |
+|-----|----------|--------|-----|
+| BTC daily summary | 12:00 UTC daily | `btc-daily-email` | `/opt/fxtrade/logs/btc-daily-email.log` |
+| Combined weekly bot summary | **Monday 07:00 UTC** | `bot-weekly-email` | `/opt/fxtrade/logs/bot-weekly-email.log` |
+
+The weekly email covers all three platform bots (`universe_scanner`, `fx_sentiment`, `btc_cfd`) for the **previous seven UTC calendar days** ending Sunday (inclusive).
+
+Manual test on the VM:
+
+```bash
+# Print without sending
+sudo -u fxtrade /opt/fxtrade/bin/bot-weekly-email -credentials /opt/fxtrade/.credentials -print
+
+# Send for real
+sudo -u fxtrade /opt/fxtrade/scripts/run-bot-weekly-email.sh
+```
+
+Build/deploy the weekly email binary:
+
+```bash
+GOOS=linux GOARCH=amd64 go build -o bot-weekly-email ./cmd/bot-weekly-email
+scp bot-weekly-email user@VM:/tmp/ && sudo install -m 755 /tmp/bot-weekly-email /opt/fxtrade/bin/bot-weekly-email
+sudo install -m 755 deploy/gcp/run-bot-weekly-email.sh /opt/fxtrade/scripts/run-bot-weekly-email.sh
+sudo install -m 644 deploy/gcp/fxtrade-watch.cron /etc/cron.d/fxtrade-watch
+```
+
 ## 3. Place `.credentials`
 
 **Option A — copy from laptop (simplest):**

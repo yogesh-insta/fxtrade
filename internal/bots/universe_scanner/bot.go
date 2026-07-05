@@ -10,10 +10,13 @@ import (
 	"github.com/ym/fxtrade/internal/bot"
 	"github.com/ym/fxtrade/internal/config"
 	"github.com/ym/fxtrade/internal/execution"
+	"github.com/ym/fxtrade/internal/journal"
 	"github.com/ym/fxtrade/internal/monitor"
 	"github.com/ym/fxtrade/internal/risk"
 	"github.com/ym/fxtrade/internal/scanner"
 	"github.com/ym/fxtrade/internal/state"
+	"github.com/ym/fxtrade/internal/store"
+	"github.com/ym/fxtrade/internal/store/sqlite"
 )
 
 var Meta = bot.Meta{
@@ -48,6 +51,15 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 		slog.Info("state restored", "bot", Meta.ID, "saved_at", persisted.SavedAt)
 	}
 
+	tradeJournal := journal.New(cfg.Scanner.JournalDir)
+	tradeRecorder := state.NewTradeRecorder(stateStore, tradeJournal)
+	metaStore := store.NewMetaStore()
+
+	tradeDB, err := sqlite.Open(cfg.Scanner.DBPath)
+	if err != nil {
+		return nil, fmt.Errorf("open trade db: %w", err)
+	}
+
 	universe, err := scanner.ResolveUniverse(ctx, cfg, client)
 	if err != nil {
 		return nil, fmt.Errorf("resolve universe: %w", err)
@@ -58,16 +70,26 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	exec.SetDryRun(deps.DryRun)
 	posMon := monitor.New(client, rm, notifier, 30*time.Second)
 	exec.SetTradeAccounting(posMon)
+	posMon.SetOnTradeClosed(func(tradeID, correlationID string, pl float64) {
+		tradeRecorder.OnClose(tradeID, correlationID, pl, rm, nil)
+
+		meta, hasMeta := metaStore.Take(tradeID)
+		row := store.ClosedTradeRow(meta.Instrument, tradeID, correlationID, pl, meta, hasMeta)
+		if err := tradeDB.InsertTrade(row); err != nil {
+			slog.Warn("sqlite insert trade failed", "bot", Meta.ID, "error", err)
+		}
+	})
 
 	engine := scanner.NewEngine(cfg, client, exec, rm, scannerNotifier, universe)
 	engine.SetBotID(Meta.ID)
+	engine.SetPerformanceStore(tradeDB, metaStore)
 
 	startedAt := time.Now()
 	var running bool
 	var mu sync.RWMutex
 
 	saveState := func() error {
-		snap := state.Snapshot{Risk: rm.ExportState(), SavedAt: time.Now().UTC()}
+		snap := state.BuildSnapshot(rm, nil, tradeRecorder.LastTrade())
 		return stateStore.Save(snap)
 	}
 
