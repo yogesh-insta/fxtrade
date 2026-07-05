@@ -1,8 +1,11 @@
 package config
 
 const (
-	StrategyModeRangeTrend      = "range_trend"
+	StrategyModeFxSentiment     = "fx_sentiment"
 	StrategyModeUniverseScanner = "universe_scanner"
+
+	// Deprecated: use StrategyModeFxSentiment.
+	StrategyModeRangeTrend = "range_trend"
 
 	UniverseModeWatchlist = "watchlist"
 	UniverseModePreset    = "preset"

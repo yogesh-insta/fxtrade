@@ -108,7 +108,7 @@ Runs `fxtrade` with no `--bot` flag; bots come from `"bots": { "enabled": [...] 
 
 ```bash
 sudo ./deploy/gcp/install.sh --enable-bot universe_scanner
-sudo ./deploy/gcp/install.sh --enable-bot range_trend
+sudo ./deploy/gcp/install.sh --enable-bot fx_sentiment
 ```
 
 Or manually:
@@ -122,7 +122,7 @@ Per-bot health ports (set by `install.sh --enable-bot`):
 | Bot | Health port |
 |-----|-------------|
 | `universe_scanner` | `:8081` |
-| `range_trend` | `:8082` |
+| `fx_sentiment` | `:8082` |
 | `fxtrade.service` (all) | `:8080` |
 
 ## 2b. Email alerts when bots fail (free)

@@ -54,7 +54,7 @@ Restart after credential edits: `sudo systemctl restart fxtrade@btc_cfd`.
 
 ### Reused platform modules
 
-`internal/oanda`, `risk`, `execution`, `monitor`, `journal`, `state`, `notify`, `health`, `bot` platform — same patterns as `universe_scanner` / `range_trend`.
+`internal/oanda`, `risk`, `execution`, `monitor`, `journal`, `state`, `notify`, `health`, `bot` platform — same patterns as `universe_scanner` / `fx_sentiment`.
 
 ### Implementation status
 
