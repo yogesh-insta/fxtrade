@@ -5,6 +5,7 @@ import "fmt"
 const (
 	BotUniverseScanner = "universe_scanner"
 	BotRangeTrend      = "range_trend"
+	BotBtcCfd          = "btc_cfd"
 )
 
 type BotsConfig struct {
@@ -29,6 +30,7 @@ func (c *Config) ValidateBots() error {
 	known := map[string]struct{}{
 		BotUniverseScanner: {},
 		BotRangeTrend:      {},
+		BotBtcCfd:          {},
 	}
 	seen := make(map[string]struct{}, len(c.Bots.Enabled))
 	for _, id := range c.Bots.Enabled {
@@ -36,7 +38,7 @@ func (c *Config) ValidateBots() error {
 			return fmt.Errorf("bots.enabled must not contain empty strings")
 		}
 		if _, ok := known[id]; !ok {
-			return fmt.Errorf("unknown bot %q (known: %s, %s)", id, BotUniverseScanner, BotRangeTrend)
+			return fmt.Errorf("unknown bot %q (known: %s, %s, %s)", id, BotUniverseScanner, BotRangeTrend, BotBtcCfd)
 		}
 		if _, dup := seen[id]; dup {
 			return fmt.Errorf("duplicate bot %q in bots.enabled", id)

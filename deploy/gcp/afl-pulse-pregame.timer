@@ -1,9 +1,9 @@
 [Unit]
-Description=AFLPulse pregame poll timer (every 5 minutes)
+Description=AFLPulse pregame poll timer (every 15 minutes; LLM runs at most once per fixture)
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=5min
+OnUnitActiveSec=15min
 Persistent=true
 Unit=afl-pulse-pregame.service
 

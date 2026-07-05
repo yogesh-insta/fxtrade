@@ -144,13 +144,20 @@ func TestMatchSquiggleToOdds(t *testing.T) {
 }
 
 func TestPregameStateDedup(t *testing.T) {
-	st := &PregameState{Sent: make(map[string]time.Time)}
+	st := &PregameState{Sent: make(map[string]time.Time), LLMAttempted: make(map[string]time.Time)}
 	if st.WasSent(7) {
 		t.Fatal("should not be sent initially")
 	}
 	st.MarkSent(7)
 	if !st.WasSent(7) {
 		t.Fatal("should be sent after mark")
+	}
+	if st.WasLLMAttempted(7) {
+		t.Fatal("should not show LLM attempted until marked")
+	}
+	st.MarkLLMAttempted(7)
+	if !st.WasLLMAttempted(7) {
+		t.Fatal("should show LLM attempted after mark")
 	}
 }
 
