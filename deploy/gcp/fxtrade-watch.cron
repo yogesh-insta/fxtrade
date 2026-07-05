@@ -14,3 +14,7 @@ CRON_TZ=Australia/Melbourne
 
 # AFL pregame: check for failed runs every 20 minutes
 */20 * * * * fxtrade /opt/fxtrade/scripts/run-health-watch.sh -check-timers pregame >> /opt/fxtrade/logs/health-watch.log 2>&1
+
+# BTC CFD daily summary — align with notifications.daily_summary_utc (default 12:00 UTC).
+# Reports trades closed during the previous UTC calendar day.
+0 12 * * * fxtrade /opt/fxtrade/scripts/run-btc-daily-email.sh >> /opt/fxtrade/logs/btc-daily-email.log 2>&1
