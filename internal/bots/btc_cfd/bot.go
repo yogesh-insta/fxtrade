@@ -12,6 +12,7 @@ import (
 	"github.com/ym/fxtrade/internal/execution"
 	"github.com/ym/fxtrade/internal/journal"
 	"github.com/ym/fxtrade/internal/monitor"
+	"github.com/ym/fxtrade/internal/oanda"
 	"github.com/ym/fxtrade/internal/risk"
 	"github.com/ym/fxtrade/internal/state"
 	"github.com/ym/fxtrade/internal/store/sqlite"
@@ -52,6 +53,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 
 	tradeJournal := journal.New(bc.JournalDir)
 	tradeRecorder := state.NewTradeRecorder(stateStore, tradeJournal)
+	metaStore := newTradeMetaStore()
 
 	tradeDB, err := sqlite.Open(bc.DBPath)
 	if err != nil {
@@ -64,13 +66,37 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	exec.SetTradeAccounting(posMon)
 	posMon.SetOnTradeClosed(func(tradeID, correlationID string, pl float64) {
 		tradeRecorder.OnClose(tradeID, correlationID, pl, rm, nil)
-		if err := tradeDB.InsertTrade(sqlite.Trade{
+
+		meta, hasMeta := metaStore.Take(tradeID)
+		if correlationID == "" && hasMeta {
+			correlationID = meta.CorrelationID
+		}
+
+		swapCost := lookupSwapCost(context.Background(), client, tradeID, meta.OpenedAt)
+		netPL := pl - swapCost
+		if swapCost != 0 {
+			slog.Info("btc_cfd swap cost", "trade_id", tradeID, "swap", swapCost, "gross_pl", pl, "net_pl", netPL)
+		}
+
+		row := sqlite.Trade{
 			ClosedAt:      time.Now().UTC(),
 			Instrument:    bc.Instrument,
 			TradeID:       tradeID,
 			CorrelationID: correlationID,
 			RealizedPL:    pl,
-		}); err != nil {
+			SwapCost:      swapCost,
+			NetPL:         netPL,
+		}
+		if hasMeta {
+			row.Direction = meta.Direction
+			row.SignalPrice = meta.SignalPrice
+			row.FillPrice = meta.FillPrice
+			row.StopLoss = meta.StopLoss
+			row.TakeProfit = meta.TakeProfit
+			row.Units = meta.Units
+			row.SlippagePct = slippagePct(meta.SignalPrice, meta.FillPrice)
+		}
+		if err := tradeDB.InsertTrade(row); err != nil {
 			slog.Warn("sqlite insert trade failed", "bot", Meta.ID, "error", err)
 		}
 	})
@@ -107,6 +133,9 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 		bc:        bc,
 		exec:      exec,
 		rm:        rm,
+		notifier:  notifier,
+		posMon:    posMon,
+		meta:      metaStore,
 		lastCycle: &lastCycle,
 		mu:        &mu,
 	}
@@ -122,6 +151,15 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	}()
 
 	detail := fmt.Sprintf("%s %s mean reversion", instrument, bc.Granularity)
+
+	halt := func() error {
+		if err := rm.ActivateKillSwitch(); err != nil {
+			return err
+		}
+		notifier.Send(context.Background(), "fxtrade: kill switch activated",
+			fmt.Sprintf("bot=%s\nhalt_file=%s\n", Meta.ID, rm.HaltFile()))
+		return nil
+	}
 
 	return &bot.Handle{
 		Meta:        Meta,
@@ -144,10 +182,25 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 				StartedAt:     startedAt,
 			}
 		},
-		Halt:          rm.ActivateKillSwitch,
+		Halt:          halt,
 		OpenPositions: posMon.OpenCount,
 		SaveState:     saveState,
 	}, nil
+}
+
+func lookupSwapCost(ctx context.Context, client *oanda.Client, tradeID string, since time.Time) float64 {
+	if since.IsZero() {
+		since = time.Now().Add(-7 * 24 * time.Hour)
+	}
+	txs, err := client.TransactionsSince(ctx, since)
+	if err != nil {
+		return 0
+	}
+	cost := oanda.FinancingCost(txs.Transactions, tradeID)
+	if cost < 0 {
+		return -cost
+	}
+	return cost
 }
 
 func btcRisk(cfg *config.Config) config.RiskConfig {

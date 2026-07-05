@@ -14,6 +14,9 @@ type EntryLimits struct {
 	DailyPnL        float64
 	AccountBalance  float64
 	SpreadUSD       float64
+	Tradeable       bool
+	M15Close        float64
+	M15EMA200       float64
 }
 
 // SignalResult is the strategy output for one M5 cycle.
@@ -24,8 +27,10 @@ type SignalResult struct {
 }
 
 // EvaluateSignal applies spec §4 entry/hold rules on the latest indicator snapshot.
-// Phase-2 gaps: M15 confirmation, tradable-hours window, idempotent client order IDs.
 func EvaluateSignal(ind IndicatorSnapshot, cfg config.BtcCfdConfig, lim EntryLimits) SignalResult {
+	if !lim.Tradeable {
+		return SignalResult{Hold: true, Reason: "instrument not tradeable (OANDA schedule/liquidity)"}
+	}
 	if lim.HasOpenPosition {
 		return SignalResult{Hold: true, Reason: "open position"}
 	}
@@ -61,6 +66,18 @@ func EvaluateSignal(ind IndicatorSnapshot, cfg config.BtcCfdConfig, lim EntryLim
 	shortOK := shortCross &&
 		ind.SignalPrice < ind.EMA200 &&
 		ind.Deviation >= cfg.DeviationATR
+
+	if cfg.M15Confirmation && lim.M15EMA200 > 0 {
+		if longOK && lim.M15Close <= lim.M15EMA200 {
+			longOK = false
+		}
+		if shortOK && lim.M15Close >= lim.M15EMA200 {
+			shortOK = false
+		}
+		if !longOK && !shortOK && (longCross || shortCross) {
+			return SignalResult{Hold: true, Reason: "M15 EMA200 bias disagrees"}
+		}
+	}
 
 	switch {
 	case longOK:

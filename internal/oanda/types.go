@@ -73,6 +73,12 @@ type CreateOrderRequest struct {
 	Order OrderSpec `json:"order"`
 }
 
+type ClientExtensions struct {
+	ID      string `json:"id,omitempty"`
+	Tag     string `json:"tag,omitempty"`
+	Comment string `json:"comment,omitempty"`
+}
+
 type OrderSpec struct {
 	Type             string            `json:"type"`
 	Instrument       string            `json:"instrument"`
@@ -80,6 +86,7 @@ type OrderSpec struct {
 	Price            string            `json:"price,omitempty"`
 	TimeInForce      string            `json:"timeInForce"`
 	PositionFill     string            `json:"positionFill"`
+	ClientExtensions *ClientExtensions `json:"clientExtensions,omitempty"`
 	StopLossOnFill   *OnFillStopLoss   `json:"stopLossOnFill,omitempty"`
 	TakeProfitOnFill *OnFillTakeProfit `json:"takeProfitOnFill,omitempty"`
 }
@@ -130,12 +137,13 @@ type OpenTradesResponse struct {
 }
 
 type Trade struct {
-	ID            string `json:"id"`
-	Instrument    string `json:"instrument"`
-	CurrentUnits  string `json:"currentUnits"`
-	Price         string `json:"price"`
-	UnrealizedPL  string `json:"unrealizedPL"`
-	OpenTime      string `json:"openTime"`
+	ID               string            `json:"id"`
+	Instrument       string            `json:"instrument"`
+	CurrentUnits     string            `json:"currentUnits"`
+	Price            string            `json:"price"`
+	UnrealizedPL     string            `json:"unrealizedPL"`
+	OpenTime         string            `json:"openTime"`
+	ClientExtensions *ClientExtensions `json:"clientExtensions,omitempty"`
 	StopLossOrder *struct {
 		ID    string `json:"id"`
 		Price string `json:"price"`
@@ -184,13 +192,14 @@ type PendingOrdersResponse struct {
 }
 
 type PendingOrder struct {
-	ID         string `json:"id"`
-	Type       string `json:"type"`
-	Instrument string `json:"instrument"`
-	Units      string `json:"units"`
-	Price      string `json:"price"`
-	State      string `json:"state"`
-	CreateTime string `json:"createTime"`
+	ID               string            `json:"id"`
+	Type             string            `json:"type"`
+	Instrument       string            `json:"instrument"`
+	Units            string            `json:"units"`
+	Price            string            `json:"price"`
+	State            string            `json:"state"`
+	CreateTime       string            `json:"createTime"`
+	ClientExtensions *ClientExtensions `json:"clientExtensions,omitempty"`
 }
 
 type CancelOrderResponse struct {

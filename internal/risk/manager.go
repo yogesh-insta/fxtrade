@@ -35,6 +35,7 @@ type State struct {
 	MonthKey              string    `json:"month_key"`
 	LastLossAt            time.Time `json:"last_loss_at,omitempty"`
 	TradesOpened          int       `json:"trades_opened"`
+	TradesToday           int       `json:"trades_today"`
 	WeeklyProfitNotified  bool      `json:"weekly_profit_notified,omitempty"`
 }
 
@@ -118,6 +119,7 @@ func (m *Manager) RecordTradeOpened() {
 	defer m.mu.Unlock()
 	m.rollPeriods(time.Now())
 	m.state.TradesOpened++
+	m.state.TradesToday++
 	m.state.TradesThisMonth++
 }
 
@@ -175,6 +177,7 @@ func (m *Manager) rollPeriods(now time.Time) {
 	if day.After(m.state.DayStart) {
 		m.state.DayStart = day
 		m.state.DailyPnL = 0
+		m.state.TradesToday = 0
 	}
 	week := startOfWeek(now)
 	if week.After(m.state.WeekStart) {
