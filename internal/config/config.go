@@ -18,6 +18,7 @@ type Config struct {
 	Email         EmailConfig           `json:"email"`
 	Notifications NotificationsConfig   `json:"notifications"`
 	Scanner       ScannerConfig         `json:"scanner"`
+	BtcCfd        BtcCfdConfig          `json:"btc_cfd"`
 	Bots          BotsConfig            `json:"bots"`
 	Risk          RiskConfig            `json:"risk"`
 	Finnhub   FinnhubConfig   `json:"finnhub"`
@@ -260,6 +261,7 @@ func (c *Config) applyDefaults() {
 
 	applyStrategyDefaults(c)
 	applyScannerDefaults(c)
+	applyBtcCfdDefaults(c)
 	applyNotificationsDefaults(c)
 	applyStateDefaults(c)
 
