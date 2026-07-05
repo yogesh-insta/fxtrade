@@ -12,6 +12,11 @@ import (
 	"github.com/ym/fxtrade/internal/config"
 )
 
+// newGeminiClient builds the Gemini client for pregame LLM calls (overridable in tests).
+var newGeminiClient = func(apiKey, model string) *gemini.Client {
+	return gemini.NewClient(apiKey, model)
+}
+
 // PregameLLMSystemPrompt instructs Gemini to return structured JSON for T-30 emails.
 const PregameLLMSystemPrompt = `You are an elite AFL sports analytics AI with live web search.
 
@@ -388,7 +393,7 @@ func RunPregameLLM(ctx context.Context, cfg config.AFLConfig, game SquiggleFixtu
 	}
 
 	retries := cfg.ResolvedPregameLLMRetries()
-	client := gemini.NewClient(cfg.GeminiAPIKey, cfg.ResolvedGeminiModel())
+	client := newGeminiClient(cfg.GeminiAPIKey, cfg.ResolvedGeminiModel())
 
 	var lastErr error
 	var lastPartial PregameLLMResponse
