@@ -1,4 +1,4 @@
-package range_trend
+package fx_sentiment
 
 import (
 	"context"
@@ -21,9 +21,9 @@ import (
 )
 
 var Meta = bot.Meta{
-	ID:          config.BotRangeTrend,
-	Name:        "Range / Trend",
-	Description: "Legacy 2-pair range/trend strategy with Finnhub sentiment gate",
+	ID:          config.BotFxSentiment,
+	Name:        "FX Sentiment Strategy",
+	Description: "FX range/trend strategy with Finnhub headlines and Groq sentiment gate",
 }
 
 type Bot struct {

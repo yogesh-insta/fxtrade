@@ -29,7 +29,7 @@ Options:
   --btc-daily-email PATH  Linux amd64 btc-daily-email binary (BTC daily summary)
   --credentials PATH    Local .credentials to install (default: skip; use fetch-credentials.sh)
   --enable-all          Enable fxtrade.service (all bots from .credentials)
-  --enable-bot ID       Enable fxtrade@ID.service (e.g. universe_scanner, range_trend)
+  --enable-bot ID       Enable fxtrade@ID.service (e.g. universe_scanner, fx_sentiment)
   --dry-run             Set FXTRADE_DRY_RUN=--dry-run in /etc/fxtrade/fxtrade.env
   -h, --help            Show this help
 
@@ -179,13 +179,13 @@ elif [[ -n "$ENABLE_BOT" ]]; then
   # Per-bot units need unique health ports if more than one runs at once.
   case "$ENABLE_BOT" in
     universe_scanner) port=":8081" ;;
-    range_trend) port=":8082" ;;
+    fx_sentiment|range_trend) port=":8082" ;;
     btc_cfd) port=":8083" ;;
     *) port=":8080" ;;
   esac
   extra_env=""
-  if [[ "$ENABLE_BOT" == "btc_cfd" ]]; then
-    # Override global FXTRADE_DRY_RUN so btc_cfd can trade on demo while other bots stay dry.
+  if [[ "$ENABLE_BOT" == "btc_cfd" || "$ENABLE_BOT" == "fx_sentiment" ]]; then
+    # Override global FXTRADE_DRY_RUN so demo-order bots trade while others stay dry.
     extra_env=$'FXTRADE_DRY_RUN=\n'
   fi
   cat >"/etc/fxtrade/fxtrade@${ENABLE_BOT}.env" <<EOF

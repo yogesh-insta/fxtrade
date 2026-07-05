@@ -8,7 +8,7 @@ import (
 
 func TestEnabledBotsExplicit(t *testing.T) {
 	cfg := &config.Config{
-		Bots: config.BotsConfig{Enabled: []string{config.BotUniverseScanner, config.BotRangeTrend}},
+		Bots: config.BotsConfig{Enabled: []string{config.BotUniverseScanner, config.BotFxSentiment}},
 	}
 	got := cfg.EnabledBots()
 	if len(got) != 2 || got[0] != config.BotUniverseScanner {
@@ -23,6 +23,22 @@ func TestEnabledBotsLegacyScannerMode(t *testing.T) {
 	got := cfg.EnabledBots()
 	if len(got) != 1 || got[0] != config.BotUniverseScanner {
 		t.Fatalf("unexpected: %v", got)
+	}
+}
+
+func TestEnabledBotsLegacyStrategyEnabled(t *testing.T) {
+	cfg := &config.Config{
+		Strategy: config.StrategyConfig{Enabled: true},
+	}
+	got := cfg.EnabledBots()
+	if len(got) != 1 || got[0] != config.BotFxSentiment {
+		t.Fatalf("unexpected: %v", got)
+	}
+}
+
+func TestNormalizeBotID(t *testing.T) {
+	if got := config.NormalizeBotID(config.BotRangeTrend); got != config.BotFxSentiment {
+		t.Fatalf("got %q want %q", got, config.BotFxSentiment)
 	}
 }
 

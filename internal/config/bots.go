@@ -4,24 +4,39 @@ import "fmt"
 
 const (
 	BotUniverseScanner = "universe_scanner"
-	BotRangeTrend      = "range_trend"
+	BotFxSentiment     = "fx_sentiment"
 	BotBtcCfd          = "btc_cfd"
+
+	// Deprecated: use BotFxSentiment. Accepted as alias for one release.
+	BotRangeTrend = "range_trend"
 )
 
 type BotsConfig struct {
 	Enabled []string `json:"enabled"`
 }
 
+// NormalizeBotID maps deprecated bot IDs to their canonical form.
+func NormalizeBotID(id string) string {
+	if id == BotRangeTrend {
+		return BotFxSentiment
+	}
+	return id
+}
+
 func (c *Config) EnabledBots() []string {
 	if len(c.Bots.Enabled) > 0 {
-		return append([]string(nil), c.Bots.Enabled...)
+		out := make([]string, 0, len(c.Bots.Enabled))
+		for _, id := range c.Bots.Enabled {
+			out = append(out, NormalizeBotID(id))
+		}
+		return out
 	}
 	// Backward compatibility with strategy.mode switch.
 	if c.ScannerEnabled() {
 		return []string{BotUniverseScanner}
 	}
 	if c.Strategy.Enabled {
-		return []string{BotRangeTrend}
+		return []string{BotFxSentiment}
 	}
 	return nil
 }
@@ -29,8 +44,9 @@ func (c *Config) EnabledBots() []string {
 func (c *Config) ValidateBots() error {
 	known := map[string]struct{}{
 		BotUniverseScanner: {},
-		BotRangeTrend:      {},
+		BotFxSentiment:     {},
 		BotBtcCfd:          {},
+		BotRangeTrend:      {}, // deprecated alias
 	}
 	seen := make(map[string]struct{}, len(c.Bots.Enabled))
 	for _, id := range c.Bots.Enabled {
@@ -38,12 +54,13 @@ func (c *Config) ValidateBots() error {
 			return fmt.Errorf("bots.enabled must not contain empty strings")
 		}
 		if _, ok := known[id]; !ok {
-			return fmt.Errorf("unknown bot %q (known: %s, %s, %s)", id, BotUniverseScanner, BotRangeTrend, BotBtcCfd)
+			return fmt.Errorf("unknown bot %q (known: %s, %s, %s)", id, BotUniverseScanner, BotFxSentiment, BotBtcCfd)
 		}
-		if _, dup := seen[id]; dup {
-			return fmt.Errorf("duplicate bot %q in bots.enabled", id)
+		normalized := NormalizeBotID(id)
+		if _, dup := seen[normalized]; dup {
+			return fmt.Errorf("duplicate bot %q in bots.enabled", normalized)
 		}
-		seen[id] = struct{}{}
+		seen[normalized] = struct{}{}
 	}
 	return nil
 }
@@ -52,6 +69,7 @@ func StateFileForBot(basePath, botID string) string {
 	if basePath == "" {
 		basePath = "data/state.json"
 	}
+	botID = NormalizeBotID(botID)
 	if botID == "" {
 		return basePath
 	}
@@ -79,6 +97,7 @@ func HaltFileForBot(basePath, botID string) string {
 	if basePath == "" {
 		basePath = DefaultHaltFile
 	}
+	botID = NormalizeBotID(botID)
 	if botID == "" {
 		return basePath
 	}
