@@ -100,7 +100,7 @@ func TestParsePregameLLMResponse_EmptyMainBet(t *testing.T) {
 		Context: MatchDayContext{HomeTeam: "PORT", AwayTeam: "NMFC"},
 		Score:   ScoreProjection{PredictedWinner: "PORT", HomeScore: 90, AwayScore: 80, Margin: 10, TotalScore: 170},
 	}
-	body := FormatPregameEmail(game, report, resp)
+	body := FormatPregameEmail(game, report, resp, 45)
 	if strings.Contains(body, "[]") {
 		t.Fatalf("email must not print empty slice for empty main bet:\n%s", body)
 	}
@@ -175,7 +175,7 @@ func TestRunPregameLLM_ValidJSONReturnsSelection(t *testing.T) {
 		t.Fatalf("selection = %q", resp.MainBet.Selection)
 	}
 
-	body := FormatPregameEmail(game, report, resp)
+	body := FormatPregameEmail(game, report, resp, 45)
 	if !strings.Contains(body, "Main bet: STK H2H (high)") {
 		t.Fatalf("email missing selection:\n%s", body)
 	}

@@ -24,9 +24,10 @@ type SquiggleFixture struct {
 
 // PregameState tracks pre-game emails sent by Squiggle game ID.
 type PregameState struct {
-	Sent         map[string]time.Time `json:"sent"`
-	LLMAttempted map[string]time.Time `json:"llm_attempted,omitempty"`
-	SavedAt      time.Time            `json:"saved_at"`
+	Sent            map[string]time.Time `json:"sent"`
+	LLMAttempted    map[string]time.Time `json:"llm_attempted,omitempty"`
+	FailureAlerted  map[string]time.Time `json:"failure_alerted,omitempty"`
+	SavedAt         time.Time            `json:"saved_at"`
 }
 
 // LoadPregameState reads dedup state from disk. Missing files start empty.
@@ -35,8 +36,9 @@ func LoadPregameState(path string) (*PregameState, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &PregameState{
-				Sent:         make(map[string]time.Time),
-				LLMAttempted: make(map[string]time.Time),
+				Sent:           make(map[string]time.Time),
+				LLMAttempted:   make(map[string]time.Time),
+				FailureAlerted: make(map[string]time.Time),
 			}, nil
 		}
 		return nil, err
@@ -51,6 +53,9 @@ func LoadPregameState(path string) (*PregameState, error) {
 	if st.LLMAttempted == nil {
 		st.LLMAttempted = make(map[string]time.Time)
 	}
+	if st.FailureAlerted == nil {
+		st.FailureAlerted = make(map[string]time.Time)
+	}
 	return &st, nil
 }
 
@@ -61,6 +66,9 @@ func (s *PregameState) Save(path string) error {
 	}
 	if s.LLMAttempted == nil {
 		s.LLMAttempted = make(map[string]time.Time)
+	}
+	if s.FailureAlerted == nil {
+		s.FailureAlerted = make(map[string]time.Time)
 	}
 	s.SavedAt = time.Now().UTC()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -112,6 +120,23 @@ func (s *PregameState) MarkLLMAttempted(id int) {
 	s.LLMAttempted[strconv.Itoa(id)] = time.Now().UTC()
 }
 
+// WasFailureAlertSent reports whether a Gemini failure alert was already emailed for this fixture.
+func (s *PregameState) WasFailureAlertSent(id int) bool {
+	if s == nil || s.FailureAlerted == nil {
+		return false
+	}
+	_, ok := s.FailureAlerted[strconv.Itoa(id)]
+	return ok
+}
+
+// MarkFailureAlertSent records a Gemini failure alert for this fixture (at most one per game).
+func (s *PregameState) MarkFailureAlertSent(id int) {
+	if s.FailureAlerted == nil {
+		s.FailureAlerted = make(map[string]time.Time)
+	}
+	s.FailureAlerted[strconv.Itoa(id)] = time.Now().UTC()
+}
+
 // Prune removes entries older than cutoff to keep the state file small.
 func (s *PregameState) Prune(cutoff time.Time) {
 	if s == nil {
@@ -128,6 +153,13 @@ func (s *PregameState) Prune(cutoff time.Time) {
 		for id, at := range s.LLMAttempted {
 			if at.Before(cutoff) {
 				delete(s.LLMAttempted, id)
+			}
+		}
+	}
+	if s.FailureAlerted != nil {
+		for id, at := range s.FailureAlerted {
+			if at.Before(cutoff) {
+				delete(s.FailureAlerted, id)
 			}
 		}
 	}

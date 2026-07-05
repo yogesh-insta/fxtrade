@@ -16,7 +16,7 @@ func TestFormatPregameEmail_EmptyLLMResponse(t *testing.T) {
 		},
 		Score: ScoreProjection{PredictedWinner: "STK", HomeScore: 79, AwayScore: 88, Margin: 9, TotalScore: 167},
 	}
-	body := FormatPregameEmail(game, report, PregameLLMResponse{})
+	body := FormatPregameEmail(game, report, PregameLLMResponse{}, 45)
 
 	if strings.Contains(body, "[]") {
 		t.Fatalf("must not print [] for empty LLM:\n%s", body)
@@ -58,7 +58,7 @@ func TestFormatPregameEmail_FullLLMResponse(t *testing.T) {
 	llm.RiskNote = "Essendon midfield rotation"
 	llm.ModelAgreement = "aligns"
 
-	body := FormatPregameEmail(game, report, llm)
+	body := FormatPregameEmail(game, report, llm, 45)
 	for _, want := range []string{
 		"T-45",
 		"MODEL BASELINE",
@@ -93,7 +93,7 @@ func TestFormatPregameEmail_ModelOnlyAfterGeminiFailure(t *testing.T) {
 		},
 		Score: ScoreProjection{PredictedWinner: "STK", HomeScore: 78, AwayScore: 92, Margin: 14, TotalScore: 170},
 	}
-	body := FormatPregameEmail(game, report, PregameLLMResponse{})
+	body := FormatPregameEmail(game, report, PregameLLMResponse{}, 45)
 
 	if strings.Contains(body, "[]") {
 		t.Fatalf("model-only email must not print Go zero values:\n%s", body)
@@ -131,18 +131,22 @@ func TestPregameOrchestration_Gemini403(t *testing.T) {
 	}
 	llmErr := errTest("gemini status 403 Forbidden: PERMISSION_DENIED")
 
-	st := &PregameState{Sent: make(map[string]time.Time), LLMAttempted: make(map[string]time.Time)}
+	st := &PregameState{Sent: make(map[string]time.Time), LLMAttempted: make(map[string]time.Time), FailureAlerted: make(map[string]time.Time)}
 	st.MarkLLMAttempted(game.ID)
 
-	body := FormatPregameEmail(game, report, PregameLLMResponse{})
+	body := FormatPregameEmail(game, report, PregameLLMResponse{}, 45)
 	alertBody := FormatPregameFailureAlert(game, "ESS", "STK", game.Venue, llmErr, "/opt/fxtrade/logs/afl-pulse-pregame.log")
 	subject := FormatPregameFailureSubject("[AFLPulse PRE]", "ESS", "STK")
+	pregameSubject := FormatPregameSubject("[AFLPulse PRE]", 45, "ESS", "STK")
 
 	if strings.Contains(body, "[]") {
 		t.Fatalf("pregame body must not contain [] after 403:\n%s", body)
 	}
 	if subject != "[AFLPulse PRE] ALERT · Gemini failed · ESS vs STK" {
 		t.Fatalf("failure subject = %q", subject)
+	}
+	if pregameSubject != "[AFLPulse PRE] T-45 · ESS vs STK" {
+		t.Fatalf("pregame subject = %q", pregameSubject)
 	}
 	for _, want := range []string{"Gemini failed", "403", "PERMISSION_DENIED", "Squiggle ID: 55"} {
 		if !strings.Contains(alertBody, want) {
