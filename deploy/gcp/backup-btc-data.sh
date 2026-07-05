@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Nightly backup of btc_cfd SQLite trade DB and journal to GCS.
-# Stub: configure bucket and enable via cron after VM setup.
+# OPTIONAL manual backup of btc_cfd SQLite + journal to GCS.
+# Not installed or scheduled by default — avoids paid bucket/cron setup.
+# Primary store is local SQLite on the VM (free). Run manually when a bucket exists.
 set -euo pipefail
 
 INSTALL_ROOT="${INSTALL_ROOT:-/opt/fxtrade}"
