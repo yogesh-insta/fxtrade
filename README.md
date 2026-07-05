@@ -1,6 +1,6 @@
 # fxtrade
 
-Multi-instrument forex trading daemon for **OANDA practice** (default: AUD/USD + EUR/USD, set via `"instruments"` in `.credentials`). It streams live prices, runs a per-instrument sentiment pipeline every 30 minutes, and trades when range/trend rules pass. Account-wide 1-position cap and a correlation guard prevent doubled USD exposure across pairs.
+Multi-bot trading platform for **OANDA practice** (and optional email-only scanners). Long-running **platform bots** share one daemon (`cmd/fxtrade`): opening-range FX scanner, FX sentiment range/trend strategy, and BTC/USD CFD mean reversion. Separate **scheduled scanners** email NSE swing picks and AFL round reports. Deploy locally, on macOS via launchd, or on a GCP e2-micro VM with systemd.
 
 ---
 
@@ -9,11 +9,19 @@ Multi-instrument forex trading daemon for **OANDA practice** (default: AUD/USD +
 | Requirement | Notes |
 |-------------|--------|
 | **Go 1.22+** | `go version` |
-| **macOS** | For optional `launchd` auto-start |
-| **OANDA practice account** | [oanda.com](https://www.oanda.com) demo + API token |
-| **Finnhub key** | Free at [finnhub.io](https://finnhub.io) |
-| **Groq key** | Free at [console.groq.com](https://console.groq.com) |
-| **Gmail app password** | Optional, for email alerts |
+| **OANDA practice account** | Required for all platform bots — [oanda.com](https://www.oanda.com) demo + API token |
+| **Gmail app password** | Optional; used for alerts across bots |
+| **macOS** | Optional; for `launchd` auto-start |
+
+**Per-bot API keys** (only when that bot/scanner is enabled):
+
+| Bot / program | Keys in `.credentials` |
+|---------------|------------------------|
+| `fx_sentiment` | `finnhub.api_key`, `llm.api_key` (Groq) |
+| `universe_scanner`, `btc_cfd` | OANDA only |
+| `nifty-pulse` | Email; OANDA keys required for `config.Load`; optional `llm.api_key` for sentiment gate |
+| `afl-pulse` | `afl.odds_api_key` |
+| `afl-pulse-pregame` | `afl.odds_api_key`, `afl.gemini_api_key` |
 
 ---
 
@@ -29,9 +37,10 @@ chmod 600 .credentials
 Edit `.credentials`:
 
 - **Required:** `oanda.account_id`, `oanda.token`
-- **Sentiment:** `finnhub.api_key`, `llm.api_key`
-- **Email (optional):** Gmail SMTP + app password
-- **Trading:** set `"strategy": { "enabled": true }` when ready to paper-trade
+- **Which bots run:** set `"bots": { "enabled": ["universe_scanner"] }` (see below)
+- **Paper-trade vs observe:** run with `--dry-run` locally, or set `FXTRADE_DRY_RUN=--dry-run` on the VM (Terraform default for `universe_scanner`)
+
+Legacy fallback if `"bots.enabled"` is empty: `"strategy": { "mode": "universe_scanner" }` enables the scanner; `"strategy": { "enabled": true }` enables `fx_sentiment`. Prefer `"bots.enabled"` for new configs.
 
 ```bash
 go mod download
@@ -39,62 +48,46 @@ go mod download
 
 ---
 
-## Run the main application
+## Run locally
 
 ```bash
+# All bots in bots.enabled (default health :8080)
 go run ./cmd/fxtrade
-```
 
-Leave this terminal open. The daemon runs:
+# One bot, unique health port (matches GCP per-bot units)
+go run ./cmd/fxtrade -bot fx_sentiment -health-addr :8082
 
-| Component | What it does |
-|-----------|----------------|
-| Price stream | Live ticks from OANDA for all configured instruments |
-| Sentiment | News + LLM every 30 min |
-| Strategy | Mode detection + orders every 30 min (if enabled) |
-| Health API | `http://localhost:8080/health` |
-| State | Saves to `data/state.json` every 5 min |
-
-**Stop:** `Ctrl+C` in that terminal.
-
----
-
-## Local testing (dry-run)
-
-Run the full daemon without placing or closing OANDA orders:
-
-```bash
+# Full daemon, no OANDA orders
 go run ./cmd/fxtrade --dry-run
 ```
 
-Health still works (`/health` shows `"dry_run": true`). Use this to validate streaming, sentiment, and strategy cycles on practice credentials before enabling live order flow.
+**Stop:** `Ctrl+C`.
+
+| Flag | Purpose |
+|------|---------|
+| `-credentials PATH` | Credentials file (default `.credentials`) |
+| `-bot ID` | Run one bot (`universe_scanner`, `fx_sentiment`, `btc_cfd`; `range_trend` is a deprecated alias for `fx_sentiment`) |
+| `-health-addr ADDR` | Health HTTP listen address (default `:8080`) |
+| `--dry-run` | Stream and strategy cycles run; no place/close orders |
 
 ---
 
 ## Verify it's working
 
-**Health check:**
-
 ```bash
 curl http://localhost:8080/health | python3 -m json.tool
 ```
 
-You want:
-
-- `"ok": true`
-- `"stream_connected": true`
-- `"ticks_received"` increasing
-- `"sentiment_direction"` e.g. `"LONG"` / `"FLAT"`
-- `"trading_mode"` e.g. `"STAND_ASIDE"` / `"RANGE"` / `"TREND"`
+Expect `"ok": true`, `"stream_connected": true`, and `"ticks_received"` increasing. Multi-bot responses include `"active_bots"` and a `"bots"` array with per-bot `"detail"`. When `fx_sentiment` is active, top-level `"sentiment_direction"` and `"trading_mode"` are also populated.
 
 **Logs:**
 
 ```bash
-tail -f logs/sentiment/$(date +%Y-%m-%d).jsonl   # LLM signals
-tail -f logs/trades/journal.jsonl                 # strategy decisions
+tail -f logs/sentiment/$(date +%Y-%m-%d).jsonl   # fx_sentiment LLM audit
+tail -f logs/trades/journal.jsonl                 # fx_sentiment strategy journal
 ```
 
-**Email:** alerts go to the address in `email.alert_to`.
+**Email:** alerts go to `email.alert_to` when SMTP is configured.
 
 ---
 
@@ -102,17 +95,15 @@ tail -f logs/trades/journal.jsonl                 # strategy decisions
 
 | Command | Purpose |
 |---------|---------|
-| `go run ./cmd/sentiment-test` | One sentiment cycle (news → LLM → JSON) |
-| `go run ./cmd/strategy-test` | One strategy cycle (mode + gates) |
-| `go run ./cmd/order-test -count 2 -units 100` | Place & close 2 tiny practice orders |
-| `go run ./cmd/backtest -days 200` | Replay history through quant gates |
-| `go run ./cmd/expectancy` | Win rate / expectancy from closed trades |
-
-**Integration tests** (requires `.credentials`):
-
-```bash
-go test -tags=integration ./internal/integration/...
-```
+| `go run ./cmd/sentiment-test` | One fx_sentiment cycle (news → Groq → JSON) |
+| `go run ./cmd/strategy-test` | One fx_sentiment strategy cycle (mode + gates) |
+| `go run ./cmd/scanner-test` | One universe_scanner scan (defaults to `-dry-run`) |
+| `go run ./cmd/order-test -count 2 -units 100` | Place and close tiny practice orders |
+| `go run ./cmd/backtest -days 200` | Replay history through fx_sentiment quant gates |
+| `go run ./cmd/expectancy` | Win rate / expectancy from closed fx_sentiment trades |
+| `go run ./cmd/email-test` | Verify SMTP from `.credentials` |
+| `go run ./cmd/afl-train`, `go run ./cmd/afl-backtest` | Train / holdout-test AFL models |
+| `go run ./cmd/btc-metrics` | BTC CFD stats from `data/btc_cfd/trades.db` |
 
 **Unit tests:**
 
@@ -120,80 +111,67 @@ go test -tags=integration ./internal/integration/...
 go test ./...
 ```
 
----
+**Integration tests** (requires `.credentials`):
 
-## Deploy on GCP (e2-micro)
-
-Production-style deploy on a single Ubuntu VM (bare binary, systemd, optional GitHub Actions CD).
-
-**Full guide:** [deploy/gcp/DEPLOY.md](deploy/gcp/DEPLOY.md)
-
-Quick outline:
-
-1. Create an **e2-micro** in `us-east1` (free tier).
-2. Run `sudo ./deploy/gcp/install.sh --enable-all` on the VM.
-3. Place `/opt/fxtrade/.credentials` (SCP or GCP Secret Manager).
-4. Deploy the binary manually or via `.github/workflows/deploy.yml` (configure `GCP_VM_HOST`, `GCP_VM_USER`, `GCP_SSH_KEY`).
-
-One systemd unit runs all enabled bots; use `fxtrade@BOT.service` for one bot per process (`--bot` flag).
+```bash
+go test -tags=integration ./internal/integration/...
+```
 
 ---
 
 ## Services & programs
 
-All binaries live under `cmd/`. On **fxtrade-vm**, `install.sh` enables the three scanner timers and installs cron watchdog jobs; long-running bots are enabled separately (`--enable-all` or `--enable-bot`).
+All binaries live under `cmd/`. On **fxtrade-vm**, `install.sh` installs scanner timers and cron watchdog jobs; enable long-running bots with `--enable-all` or `--enable-bot ID`. Terraform startup uses `install.sh --enable-bot universe_scanner --dry-run`.
 
-**Typical concurrent layout on fxtrade-vm:**
+**Typical layout on fxtrade-vm:**
 
-| Always on | Notes |
-|-----------|--------|
-| `fxtrade@BOT.service` or `fxtrade.service` | One or more platform bots (Terraform default: `universe_scanner` in dry-run) |
+| Always on / scheduled | Notes |
+|-----------------------|--------|
+| `fxtrade@BOT.service` or `fxtrade.service` | Platform bots (OANDA orders when not in dry-run) |
 | `nifty-pulse.timer` | Daily NSE scan (Sun–Fri 18:00 Sydney) |
 | `afl-pulse.timer` | Weekly AFL round scan (Thu 18:00 Melbourne) |
 | `afl-pulse-pregame.timer` | Pregame poll (every 15 min) |
 | `/etc/cron.d/fxtrade-watch` | `health-watch` every 5 min; timer failure checks; `btc-daily-email` at 12:00 UTC |
 
-### Platform bots (long-running)
+### Platform bots (long-running, OANDA orders)
 
-Run locally with `go run ./cmd/fxtrade` (optional `-bot ID`, `-dry-run`). On the VM: `fxtrade.service` (all bots in `.credentials`) or `fxtrade@ID.service`. Legacy id **`range_trend`** is a deprecated alias for **`fx_sentiment`**.
+Run locally with `go run ./cmd/fxtrade` (optional `-bot`, `-health-addr`, `--dry-run`). On the VM: `fxtrade.service` (all entries in `"bots.enabled"`) or `fxtrade@ID.service`.
 
-| Bot ID | What | Unit / local | Health | Orders |
-|--------|------|--------------|--------|--------|
-| `universe_scanner` | OANDA opening-range breakout scanner; one FX trade at a time | `fxtrade@universe_scanner.service` | `:8081` | OANDA |
-| `fx_sentiment` | FX range/trend strategy with Finnhub + Groq sentiment gate | `fxtrade@fx_sentiment.service` | `:8082` | OANDA |
-| `btc_cfd` | BTC/USD M5 mean reversion on OANDA CFD (demo first) | `fxtrade@btc_cfd.service` | `:8083` | OANDA |
-| *(all enabled)* | Every bot listed in `"bots.enabled"` in one process | `fxtrade.service` | `:8080` | OANDA |
+| Bot ID | What | Systemd unit | Health port |
+|--------|------|--------------|-------------|
+| `universe_scanner` | Opening-range breakout scanner; one FX trade at a time | `fxtrade@universe_scanner.service` | `:8081` |
+| `fx_sentiment` | FX range/trend + Finnhub/Groq sentiment gate | `fxtrade@fx_sentiment.service` | `:8082` |
+| `btc_cfd` | BTC/USD M5 mean reversion (demo first) | `fxtrade@btc_cfd.service` | `:8083` |
+| *(all enabled)* | Every bot in `"bots.enabled"` in one process | `fxtrade.service` | `:8080` |
 
-Enable per-bot units: `sudo ./deploy/gcp/install.sh --enable-bot ID`. Details: [deploy/gcp/DEPLOY.md](deploy/gcp/DEPLOY.md).
+Legacy id **`range_trend`** is a deprecated alias for **`fx_sentiment`** (still accepted in CLI/systemd for one release).
 
-### Scheduled scanners (oneshot)
+Enable per-bot units: `sudo ./deploy/gcp/install.sh --enable-bot ID`.
 
-| Program | What | Schedule | Orders |
-|---------|------|----------|--------|
-| `nifty-pulse` | NSE watchlist swing scan; emails one pick if found | `nifty-pulse.timer` → `nifty-pulse.service` | Email only |
-| `afl-pulse` | AFL round odds, projections, and value bets | `afl-pulse.timer` → `afl-pulse.service` | Email only |
-| `afl-pulse-pregame` | T-30 pregame report (Gemini + Google Search) | `afl-pulse-pregame.timer` → `afl-pulse-pregame.service` | Email only |
+### Scheduled scanners (email only, no OANDA orders)
+
+| Program | What | Schedule |
+|---------|------|----------|
+| `nifty-pulse` | NSE watchlist swing scan; emails one pick if found | `nifty-pulse.timer` |
+| `afl-pulse` | AFL round odds, projections, value bets | `afl-pulse.timer` |
+| `afl-pulse-pregame` | T-30 pregame report (Gemini + Google Search) | `afl-pulse-pregame.timer` |
 
 Local: `go run ./cmd/nifty-pulse`, `go run ./cmd/afl-pulse`, `go run ./cmd/afl-pulse-pregame` (add `-dry-run` to skip email).
 
 ### Ops & monitoring
 
-| Program | What | How it runs | Orders |
-|---------|------|-------------|--------|
-| `health-watch` | Polls `/health`; emails on daemon failure, stale ticks, or failed timer jobs | Cron `/etc/cron.d/fxtrade-watch` via `run-health-watch.sh` | — |
-| `btc-daily-email` | BTC CFD daily P&L summary (prior UTC day) | Cron 12:00 UTC via `run-btc-daily-email.sh` | Email only |
-| `btc-metrics` | Win rate, drawdown, headroom from `data/btc_cfd/trades.db` | Manual: `go run ./cmd/btc-metrics` | — |
+| Program | What | How it runs |
+|---------|------|-------------|
+| `health-watch` | Polls `/health`; emails on daemon failure, stale ticks, failed timer jobs | Cron via `run-health-watch.sh` |
+| `btc-daily-email` | BTC CFD daily P&L summary (prior UTC day) | Cron 12:00 UTC via `run-btc-daily-email.sh` |
 
-### Test & dev CLIs
+---
 
-One-shot local tools (no systemd). See **Test commands** above for common invocations.
+## Deploy on GCP
 
-| Command | Purpose |
-|---------|---------|
-| `sentiment-test`, `strategy-test`, `order-test`, `scanner-test` | Single cycle of sentiment, strategy, OANDA order, or ORB scanner |
-| `backtest`, `expectancy` | Historical gate replay; closed-trade performance |
-| `afl-train`, `afl-backtest` | Train / holdout-test AFL models |
-| `email-test` | Verify SMTP from `.credentials` |
+Bare-metal **e2-micro** VM (systemd, optional GitHub Actions CD). **Full guide:** [deploy/gcp/DEPLOY.md](deploy/gcp/DEPLOY.md). **Terraform (preferred):** [deploy/gcp/terraform/README.md](deploy/gcp/terraform/README.md).
+
+Quick path: provision VM → `sudo ./deploy/gcp/install.sh --enable-bot universe_scanner --dry-run` → place `/opt/fxtrade/.credentials` → deploy Linux binaries (manual `scp` or push to `main` with `GCP_VM_HOST`, `GCP_VM_USER`, `GCP_SSH_KEY` secrets).
 
 ---
 
@@ -203,18 +181,12 @@ One-shot local tools (no systemd). See **Test commands** above for common invoca
 ./deploy/install-launchd.sh
 ```
 
-Check status:
-
 ```bash
 launchctl list | grep fxtrade
 tail -f logs/daemon.stdout.log
 ```
 
-**Uninstall:**
-
-```bash
-launchctl unload ~/Library/LaunchAgents/com.fxtrade.daemon.plist
-```
+**Uninstall:** `launchctl unload ~/Library/LaunchAgents/com.fxtrade.daemon.plist`
 
 ---
 
@@ -222,28 +194,24 @@ launchctl unload ~/Library/LaunchAgents/com.fxtrade.daemon.plist
 
 | Action | Command |
 |--------|---------|
-| **Emergency stop** | `curl -X POST http://localhost:8080/kill` or `touch .halt` |
-| **Resume trading** | `rm .halt` and restart daemon |
-| **Disable orders only** | Set `"strategy": { "enabled": false }` in `.credentials` |
+| **Emergency stop** | `curl -X POST http://localhost:8080/kill` or `touch .halt` (per-bot: `.halt.<bot_id>`) |
+| **Resume trading** | Remove halt file(s) and restart |
+| **Disable orders only** | `--dry-run`, or remove bot from `"bots.enabled"` and restart |
 
-Risk limits: max 4 trades/month, 1 open position, 2% daily / 5% weekly loss halt.
+Risk limits live under `"risk"` and per-bot sections in `.credentials` (daily/weekly loss caps, max open positions, etc.).
 
 ---
 
-## What to expect
+## What to expect (`fx_sentiment`)
 
 - **Most of the time:** `STAND_ASIDE` — no trades (normal).
 - **RANGE mode:** resting buy/sell limits at range edges (can sit for days).
 - **TREND mode:** occasional market entries on pullbacks.
 - **Emails** on decisions, orders, and sentiment updates.
 
-Before live trading: run on practice for **4+ weeks**, then check:
+Before live trading: run on practice for **4+ weeks**, then `go run ./cmd/expectancy` — aim for **positive expectancy over 30+ trades**.
 
-```bash
-go run ./cmd/expectancy
-```
-
-Aim for **positive expectancy over 30+ trades**.
+Other bots have their own journals under `data/` and `logs/`; see `docs/btc_cfd_bot_spec.md` for BTC CFD.
 
 ---
 
@@ -251,31 +219,38 @@ Aim for **positive expectancy over 30+ trades**.
 
 ```
 fxtrade/
-├── .credentials          # secrets (local only, gitignored)
-├── cmd/fxtrade/          # main daemon
-├── cmd/sentiment-test/   # test sentiment
-├── cmd/strategy-test/    # test strategy
-├── cmd/nifty-pulse/      # NSE swing scanner (NiftyPulse)
-├── cmd/afl-pulse/        # AFL value betting scanner (AFLPulse)
-├── data/afl/             # AFL seed stats, model coefficients, aliases
-├── cmd/backtest/         # historical gate replay
-├── cmd/expectancy/       # performance report
-├── deploy/               # macOS launchd + GCP systemd (deploy/gcp/)
-├── .github/workflows/    # CI (test/build) + GCP deploy
-├── logs/sentiment/       # LLM audit trail
-├── logs/trades/          # journal + trade P&L
-├── data/state.json       # persisted daemon state
-└── plan.md               # full strategy spec
+├── .credentials              # secrets (gitignored)
+├── cmd/fxtrade/              # multi-bot platform daemon
+├── cmd/nifty-pulse/          # NSE swing scanner
+├── cmd/afl-pulse/            # AFL weekly round scanner
+├── cmd/afl-pulse-pregame/    # AFL T-30 pregame scanner
+├── cmd/health-watch/         # VM watchdog
+├── cmd/btc-daily-email/      # BTC daily summary email
+├── cmd/*-test/               # one-shot dev CLIs (sentiment, strategy, scanner, order, …)
+├── data/                     # bot state, AFL stats, btc_cfd trades.db
+├── deploy/gcp/               # systemd units, install.sh, Terraform
+├── logs/                     # sentiment audit, trade journal, daemon logs
+├── docs/                     # bot specs (e.g. btc_cfd)
+└── plan.md                   # fx_sentiment strategy spec
 ```
 
 ---
 
 ## Typical first run
 
+With `"bots": { "enabled": ["fx_sentiment"] }` and Finnhub + Groq keys filled in:
+
 ```bash
-go run ./cmd/sentiment-test      # confirm LLM works
-go run ./cmd/strategy-test       # see current mode
-go run ./cmd/fxtrade             # run 24/7
+go run ./cmd/sentiment-test
+go run ./cmd/strategy-test
+go run ./cmd/fxtrade --dry-run
+```
+
+With `"bots": { "enabled": ["universe_scanner"] }` (matches `.credentials.example`):
+
+```bash
+go run ./cmd/scanner-test
+go run ./cmd/fxtrade --dry-run
 ```
 
 In another terminal:
@@ -298,20 +273,13 @@ watch -n 10 'curl -s http://localhost:8080/health | python3 -m json.tool'
 
 Weekly AFL round scanner (Thursday 18:00 Australia/Melbourne on GCP via `afl-pulse.timer`): fetches AU bookmaker h2h + totals odds via [The Odds API](https://the-odds-api.com), builds match context (form, venue, weather, travel, player availability), projects scores, and emails a full round report with value bets highlighted.
 
-**Prerequisites:** `afl.odds_api_key` in `.credentials` (free tier at the-odds-api.com). OANDA keys are still required for `config.Load` when using the shared credentials file.
+**Requires:** `afl.odds_api_key` in `.credentials`. OANDA keys are still required for `config.Load` when using the shared credentials file.
 
 ```bash
-# Safe test — log predictions, no email
-go run ./cmd/afl-pulse -credentials .credentials -dry-run
-
-# Live run — email full round report
-go run ./cmd/afl-pulse -credentials .credentials
-
-# Optional match-day injuries override
-go run ./cmd/afl-pulse -credentials .credentials -injuries data/afl/injuries.example.json -dry-run
-
-# Legacy: email only when value bets exist
-go run ./cmd/afl-pulse -credentials .credentials -value-only
+go run ./cmd/afl-pulse -dry-run                              # log only
+go run ./cmd/afl-pulse                                       # email full round report
+go run ./cmd/afl-pulse -injuries data/afl/injuries.example.json -dry-run
+go run ./cmd/afl-pulse -value-only                           # legacy: email only when value bets exist
 ```
 
 Seed stats live in `data/afl/` (`venues.json`, `teams.json`, `team_aliases.json`, `model_coefficients.json`). Refresh these periodically; odds are live from the API.
