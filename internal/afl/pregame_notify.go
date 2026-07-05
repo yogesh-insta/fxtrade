@@ -10,12 +10,15 @@ import (
 	"github.com/ym/fxtrade/internal/notify"
 )
 
-// FormatPregameSubject builds the T-45 pregame email subject.
-func FormatPregameSubject(prefix string, home, away TeamID) string {
+// FormatPregameSubject builds the pregame email subject using configured lead minutes.
+func FormatPregameSubject(prefix string, leadMinutes int, home, away TeamID) string {
 	if prefix == "" {
 		prefix = "[AFLPulse PRE]"
 	}
-	return fmt.Sprintf("%s T-45 · %s vs %s", prefix, home, away)
+	if leadMinutes <= 0 {
+		leadMinutes = 45
+	}
+	return fmt.Sprintf("%s T-%d · %s vs %s", prefix, leadMinutes, home, away)
 }
 
 // FormatPregameFailureSubject builds the Gemini failure alert subject.
@@ -26,12 +29,15 @@ func FormatPregameFailureSubject(prefix string, home, away TeamID) string {
 	return fmt.Sprintf("%s ALERT · Gemini failed · %s vs %s", prefix, home, away)
 }
 
-// FormatPregameEmail renders the T-45 pregame body from model report and LLM JSON.
+// FormatPregameEmail renders the pregame body from model report and LLM JSON.
 // Empty or partial LLM content never prints Go zero values (e.g. "[]"); it notes incompleteness.
-func FormatPregameEmail(game SquiggleFixture, report MatchReport, llm PregameLLMResponse) string {
+func FormatPregameEmail(game SquiggleFixture, report MatchReport, llm PregameLLMResponse, leadMinutes int) string {
+	if leadMinutes <= 0 {
+		leadMinutes = 45
+	}
 	var b strings.Builder
 	ctx := report.Context
-	b.WriteString("AFLPulse Pre-Game (T-45)\n")
+	fmt.Fprintf(&b, "AFLPulse Pre-Game (T-%d)\n", leadMinutes)
 	for _, line := range FormatFixtureHeaderLines(ctx) {
 		b.WriteString(line)
 		b.WriteString("\n")
@@ -182,13 +188,13 @@ func FormatPregameFailureAlert(game SquiggleFixture, home, away TeamID, venue st
 	return b.String()
 }
 
-// SendPregameEmail sends the T-45 pregame report.
-func SendPregameEmail(n notify.Notifier, ctx context.Context, notif config.NotificationsConfig, home, away TeamID, body string) {
+// SendPregameEmail sends the pregame report.
+func SendPregameEmail(n notify.Notifier, ctx context.Context, notif config.NotificationsConfig, leadMinutes int, home, away TeamID, body string) {
 	prefix := notif.EffectiveAFLPrefix()
 	if !strings.Contains(prefix, "PRE") {
 		prefix = strings.TrimSpace(prefix) + " PRE"
 	}
-	subject := FormatPregameSubject(prefix, home, away)
+	subject := FormatPregameSubject(prefix, leadMinutes, home, away)
 	n.Send(ctx, subject, body)
 }
 

@@ -69,15 +69,13 @@ jobs:
           sudo install -m 755 /tmp/run-btc-daily-email.sh "${INSTALL_ROOT}/scripts/run-btc-daily-email.sh"
           sudo install -m 755 /tmp/run-bot-weekly-email.sh "${INSTALL_ROOT}/scripts/run-bot-weekly-email.sh"
           sudo install -m 644 /tmp/fxtrade-watch.cron /etc/cron.d/fxtrade-watch
-          if [[ ! -f /etc/systemd/system/afl-pulse-pregame.service ]]; then
-            sudo install -m 644 /tmp/afl-pulse-pregame.service /etc/systemd/system/afl-pulse-pregame.service
-            sudo install -m 644 /tmp/afl-pulse-pregame.timer /etc/systemd/system/afl-pulse-pregame.timer
-            sudo systemctl daemon-reload
-            if systemctl is-enabled afl-pulse-pregame.timer &>/dev/null; then
-              :
-            elif systemctl list-unit-files afl-pulse-pregame.timer --no-legend 2>/dev/null | grep -q afl-pulse-pregame.timer; then
-              sudo systemctl enable --now afl-pulse-pregame.timer || true
-            fi
+          sudo install -m 644 /tmp/afl-pulse-pregame.service /etc/systemd/system/afl-pulse-pregame.service
+          sudo install -m 644 /tmp/afl-pulse-pregame.timer /etc/systemd/system/afl-pulse-pregame.timer
+          sudo systemctl daemon-reload
+          if systemctl is-enabled afl-pulse-pregame.timer &>/dev/null; then
+            sudo systemctl restart afl-pulse-pregame.timer
+          elif systemctl list-unit-files afl-pulse-pregame.timer --no-legend 2>/dev/null | grep -q afl-pulse-pregame.timer; then
+            sudo systemctl enable --now afl-pulse-pregame.timer || true
           fi
           sudo install -o fxtrade -g fxtrade -m 644 /tmp/watchlist.txt "${INSTALL_ROOT}/watchlist.txt"
           sudo mkdir -p "${INSTALL_ROOT}/data/afl"

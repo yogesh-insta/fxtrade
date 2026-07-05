@@ -61,6 +61,10 @@ func main() {
 
 	lead := cfg.AFL.ResolvedPregameLead()
 	window := cfg.AFL.ResolvedPregamePollWindow()
+	leadMinutes := cfg.AFL.PregameLeadMinutes
+	if leadMinutes <= 0 {
+		leadMinutes = 45
+	}
 	now := time.Now().UTC()
 
 	year := cfg.AFL.StatsSeasonYear
@@ -90,15 +94,33 @@ func main() {
 	}
 	state.Prune(now.Add(-7 * 24 * time.Hour))
 
+	stateDirty := false
 	var pending []stats.UpcomingGame
 	for _, g := range inWindow {
 		if state.WasSent(g.ID) {
 			slog.Info("pregame already sent", "squiggle_id", g.ID, "match", fmt.Sprintf("%s vs %s", g.HomeTeam, g.AwayTeam))
 			continue
 		}
+		if state.WasLLMAttempted(g.ID) {
+			// Prior run invoked Gemini but did not persist WasSent (crash or save race).
+			// Suppress duplicate model-only emails on every poll within the window.
+			slog.Warn("pregame LLM already attempted without sent record; suppressing duplicate",
+				"squiggle_id", g.ID,
+				"match", fmt.Sprintf("%s vs %s", g.HomeTeam, g.AwayTeam),
+			)
+			state.MarkSent(g.ID)
+			stateDirty = true
+			continue
+		}
 		pending = append(pending, g)
 	}
 	if len(pending) == 0 {
+		if stateDirty && !*dryRun {
+			if err := state.Save(statePath); err != nil {
+				slog.Error("save pregame state", "path", statePath, "error", err)
+				os.Exit(1)
+			}
+		}
 		slog.Info("all in-window fixtures already sent; exiting")
 		return
 	}
@@ -152,8 +174,6 @@ func main() {
 		notifier = notify.New(cfg.Email)
 	}
 
-	sentAny := false
-	attemptedAny := false
 	for _, game := range pending {
 		sfix := squiggleFixtureFrom(game)
 		fixture, h2h, totals, ok := afl.MatchSquiggleToOdds(sfix, fetched.H2H, fetched.Totals, repo.ResolveTeam)
@@ -180,30 +200,20 @@ func main() {
 		llmFailed := false
 		var llmErr error
 		if cfg.AFL.GeminiAPIKey != "" {
-			if state.WasLLMAttempted(game.ID) {
-				// Prior attempt already burned the Gemini budget for this fixture.
-				// Still send model baseline with an explicit incomplete note.
-				slog.Info("pregame LLM already attempted; model-only email",
+			state.MarkLLMAttempted(game.ID)
+			stateDirty = true
+			llmResp, llmErr = afl.RunPregameLLM(ctx, cfg.AFL, sfix, report)
+			if llmErr != nil {
+				llmFailed = true
+				slog.Error("pregame gemini failed",
 					"squiggle_id", game.ID,
 					"match", fmt.Sprintf("%s vs %s", fixture.HomeTeam, fixture.AwayTeam),
+					"error", llmErr,
 				)
-				llmFailed = true
-			} else {
-				state.MarkLLMAttempted(game.ID)
-				attemptedAny = true
-				llmResp, llmErr = afl.RunPregameLLM(ctx, cfg.AFL, sfix, report)
-				if llmErr != nil {
-					llmFailed = true
-					slog.Error("pregame gemini failed",
-						"squiggle_id", game.ID,
-						"match", fmt.Sprintf("%s vs %s", fixture.HomeTeam, fixture.AwayTeam),
-						"error", llmErr,
-					)
-				} else if llmResp.Incomplete() {
-					slog.Warn("pregame gemini incomplete; sending partial live analytics",
-						"squiggle_id", game.ID,
-					)
-				}
+			} else if llmResp.Incomplete() {
+				slog.Warn("pregame gemini incomplete; sending partial live analytics",
+					"squiggle_id", game.ID,
+				)
 			}
 		} else {
 			llmFailed = true
@@ -212,12 +222,14 @@ func main() {
 			)
 		}
 
-		body := afl.FormatPregameEmail(sfix, report, llmResp)
-		if llmFailed && cfg.AFL.PregameLLMRequiredEnabled() && llmErr != nil && !*dryRun {
+		body := afl.FormatPregameEmail(sfix, report, llmResp, leadMinutes)
+		if llmFailed && cfg.AFL.PregameLLMRequiredEnabled() && llmErr != nil && !*dryRun && !state.WasFailureAlertSent(game.ID) {
 			alertBody := afl.FormatPregameFailureAlert(
 				sfix, fixture.HomeTeam, fixture.AwayTeam, game.Venue, llmErr, *logPath,
 			)
 			afl.SendPregameFailureAlert(notifier, ctx, cfg.Notifications, fixture.HomeTeam, fixture.AwayTeam, alertBody)
+			state.MarkFailureAlertSent(game.ID)
+			stateDirty = true
 		}
 		if *dryRun {
 			fmt.Println(body)
@@ -228,13 +240,11 @@ func main() {
 			continue
 		}
 
-		afl.SendPregameEmail(notifier, ctx, cfg.Notifications, fixture.HomeTeam, fixture.AwayTeam, body)
 		state.MarkSent(game.ID)
-		sentAny = true
+		stateDirty = true
+		afl.SendPregameEmail(notifier, ctx, cfg.Notifications, leadMinutes, fixture.HomeTeam, fixture.AwayTeam, body)
 		slog.Info("pregame email sent", "squiggle_id", game.ID)
-	}
 
-	if (sentAny || attemptedAny) && !*dryRun {
 		if err := state.Save(statePath); err != nil {
 			slog.Error("save pregame state", "path", statePath, "error", err)
 			os.Exit(1)
