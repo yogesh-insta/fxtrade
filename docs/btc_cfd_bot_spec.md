@@ -29,33 +29,50 @@ Standalone bot in the fxtrade monorepo; runs as its own systemd unit on the GCP 
 }
 ```
 
-### Demo → live switch
+### Storage (free tier — no paid GCP data services)
 
-No code changes. Set `oanda.environment` in `.credentials`:
+| Layer | Cost | Notes |
+|-------|------|-------|
+| **Primary P&L / trades** | Free | SQLite on VM disk: `data/btc_cfd/trades.db` (`internal/store/sqlite`). No Cloud SQL, Postgres, AlloyDB, or Spanner. |
+| **Journal** | Free | JSONL on VM: `logs/btc_cfd/` (`journal.jsonl`, `trades.jsonl`). |
+| **State** | Free | JSON on VM: `data/state-btc_cfd.json`. |
+| **Alerts** | Free | Existing Gmail SMTP in `.credentials` — no Telegram or paid monitoring. |
+| **GCS backup** | Optional / later | Stub script only; do **not** provision a bucket or cron by default. |
 
-- `"practice"` — OANDA demo (default; use for paper trading)
-- `"live"` — production API (`api-fxtrade.oanda.com`)
+- **Primary:** SQLite `trades` table on the VM; enriched rows on position close (signal/fill/slippage, SL/TP, swap cost, net PnL).
+- **Backup (optional, manual):** `deploy/gcp/backup-btc-data.sh` can copy `trades.db` and `logs/btc_cfd/` to GCS when you choose to create a bucket. Not required for demo trading.
 
-Restart the unit after editing credentials: `sudo systemctl restart fxtrade@btc_cfd`.
+### Demo account (required for now)
 
-### Storage: SQLite + GCS backup
+Use OANDA **practice** only — set `"environment": "practice"` in `.credentials` → `oanda`. No live trading setup.
 
-- **Primary:** SQLite `trades` table on the VM (`internal/store/sqlite`); `InsertTrade` on position close (wired via monitor close hook).
-- **Backup (documented stub):** `deploy/gcp/backup-btc-data.sh` copies `trades.db` and `logs/btc_cfd/` to `gs://BUCKET/btc_cfd/YYYYMMDD/` via `gsutil`. Schedule nightly cron after bucket is provisioned (e.g. `0 3 * * * fxtrade /opt/fxtrade/deploy/gcp/backup-btc-data.sh`).
+### Demo → live switch (deferred)
+
+When ready for production capital, set `oanda.environment` to `"live"` and restart. Not part of current free demo rollout.
+
+Restart after credential edits: `sudo systemctl restart fxtrade@btc_cfd`.
 
 ### Reused platform modules
 
 `internal/oanda`, `risk`, `execution`, `monitor`, `journal`, `state`, `notify`, `health`, `bot` platform — same patterns as `universe_scanner` / `range_trend`.
 
-### Implementation status (foundation)
+### Implementation status
 
 | Component | Status |
 |-----------|--------|
-| Bot registration + `Start()` skeleton | Done |
-| M5 cycle loop (candle fetch, log tick) | Done |
-| Risk / state / monitor / health wiring | Done |
-| SQLite trade store on close | Done (minimal fields; strategy fields stubbed) |
-| Signal engine, indicators, orders | **Not yet** — see §4–§7 |
+| Bot registration + M5 cycle (candle-aligned) | Done |
+| Indicators: RSI(21), EMA50/200, ATR(14), ATR SMA(20) | Done |
+| Signal engine §4 (cross-back, deviation, filters) | Done |
+| Risk §5 (0.5%/trade, ATR SL/TP, daily caps) | Done |
+| Execution §7–§8 (MARKET + SL/TP, idempotency key) | Done |
+| Startup reconciliation §6 | Done |
+| SQLite enriched trade rows §9/§11 | Done |
+| Email alerts (kill-switch, API failures, fills) | Done |
+| `cmd/btc-metrics` win-rate / drawdown query | Done |
+| M15 confirmation | Config flag, **default off** (zero cost) |
+| GCS nightly backup | Optional stub only — not enabled by default |
+| Phase 2 LLM/Gemini sentiment | **Deferred** (paid API) |
+| Live OANDA account | **Deferred** (use practice demo) |
 
 ---
 
