@@ -54,7 +54,7 @@ func RunPlatform(cfg *config.Config, opts Options) error {
 
 	client := oanda.NewClient(cfg.OANDA.RESTBaseURL(), cfg.OANDA.AccountID, cfg.OANDA.Token)
 	stream := oanda.NewStream(cfg.OANDA.StreamBaseURL(), cfg.OANDA.AccountID, cfg.OANDA.Token)
-	notifier := notify.New(cfg.Email)
+	notifier := notify.WithTradeOnly(notify.New(cfg.Email), cfg.Notifications.TradeOnlyEmail())
 	deps := &Deps{CFG: cfg, Client: client, Stream: stream, Notifier: notifier, DryRun: opts.DryRun}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -176,7 +176,7 @@ func RunPlatform(cfg *config.Config, opts Options) error {
 					}
 				}
 			}
-			notifier.Send(ctx, "fxtrade: platform stopping", fmt.Sprintf("graceful shutdown\nactive_bots: %s\n", strings.Join(enabled, ", ")))
+			notify.SendRoutine(notifier, ctx, "fxtrade: platform stopping", fmt.Sprintf("graceful shutdown\nactive_bots: %s\n", strings.Join(enabled, ", ")))
 			slog.Info("shutting down")
 			return nil
 		case tick := <-ticks:
@@ -211,7 +211,7 @@ func startupChecks(ctx context.Context, client *oanda.Client, notifier notify.No
 		"nav", summary.Account.NAV,
 	)
 
-	notifier.Send(ctx, "fxtrade: platform started",
+	notify.SendRoutine(notifier, ctx, "fxtrade: platform started",
 		fmt.Sprintf("fxtrade platform started.\n\nEnvironment: %s\nActive bots: %s\nRegistered: %s\n",
 			cfg.OANDA.Environment, strings.Join(enabled, ", "), strings.Join(RegisteredIDs(), ", ")))
 	return nil

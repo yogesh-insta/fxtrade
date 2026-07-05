@@ -99,3 +99,18 @@ func TestEffectiveNSEPrefixFallback(t *testing.T) {
 		t.Fatalf("nse default = %q", got)
 	}
 }
+
+func TestTradeOnlyEmailDefaultTrue(t *testing.T) {
+	n := config.NotificationsConfig{}
+	if !n.TradeOnlyEmail() {
+		t.Fatal("expected trade-only email default true")
+	}
+}
+
+func TestTradeOnlyEmailExplicitFalse(t *testing.T) {
+	f := false
+	n := config.NotificationsConfig{EmailOnTradeOnly: &f}
+	if n.TradeOnlyEmail() {
+		t.Fatal("expected trade-only email false when explicitly set")
+	}
+}

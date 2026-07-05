@@ -173,6 +173,6 @@ func (w *Worker) auditError(at time.Time, instrument string, err error) {
 	if label == "" {
 		label = "all instruments"
 	}
-	w.notifier.Send(context.Background(), "fxtrade: sentiment failed",
+	notify.SendRoutine(w.notifier, context.Background(), "fxtrade: sentiment failed",
 		fmt.Sprintf("Sentiment cycle failed for %s at %s\n\nError: %v\n\nThe daemon will retry on the next scheduled cycle.\n", label, at.Format(time.RFC3339), err))
 }

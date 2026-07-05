@@ -12,6 +12,7 @@ import (
 	"github.com/ym/fxtrade/internal/execution"
 	"github.com/ym/fxtrade/internal/journal"
 	"github.com/ym/fxtrade/internal/monitor"
+	"github.com/ym/fxtrade/internal/notify"
 	"github.com/ym/fxtrade/internal/oanda"
 	"github.com/ym/fxtrade/internal/risk"
 	"github.com/ym/fxtrade/internal/state"
@@ -156,7 +157,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 		if err := rm.ActivateKillSwitch(); err != nil {
 			return err
 		}
-		notifier.Send(context.Background(), "fxtrade: kill switch activated",
+		notify.SendRoutine(notifier, context.Background(), "fxtrade: kill switch activated",
 			fmt.Sprintf("bot=%s\nhalt_file=%s\n", Meta.ID, rm.HaltFile()))
 		return nil
 	}
