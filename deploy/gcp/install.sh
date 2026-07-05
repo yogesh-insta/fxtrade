@@ -171,9 +171,14 @@ elif [[ -n "$ENABLE_BOT" ]]; then
     btc_cfd) port=":8083" ;;
     *) port=":8080" ;;
   esac
+  extra_env=""
+  if [[ "$ENABLE_BOT" == "btc_cfd" ]]; then
+    # Override global FXTRADE_DRY_RUN so btc_cfd can trade on demo while other bots stay dry.
+    extra_env=$'FXTRADE_DRY_RUN=\n'
+  fi
   cat >"/etc/fxtrade/fxtrade@${ENABLE_BOT}.env" <<EOF
 FXTRADE_HEALTH_ADDR=$port
-EOF
+${extra_env}EOF
   systemctl daemon-reload
   systemctl enable --now "fxtrade@${ENABLE_BOT}.service"
   echo "Enabled fxtrade@${ENABLE_BOT}.service (health $port)"
