@@ -102,17 +102,26 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	}()
 
 	go posMon.Run(ctx)
+	engine := &cycleEngine{
+		client:    client,
+		bc:        bc,
+		exec:      exec,
+		rm:        rm,
+		lastCycle: &lastCycle,
+		mu:        &mu,
+	}
+
 	go func() {
 		mu.Lock()
 		running = true
 		mu.Unlock()
-		runCycle(ctx, client, bc, &lastCycle, &mu)
+		runCycle(ctx, engine)
 		mu.Lock()
 		running = false
 		mu.Unlock()
 	}()
 
-	detail := fmt.Sprintf("%s %s (skeleton)", instrument, bc.Granularity)
+	detail := fmt.Sprintf("%s %s mean reversion", instrument, bc.Granularity)
 
 	return &bot.Handle{
 		Meta:        Meta,
@@ -156,5 +165,7 @@ func btcRisk(cfg *config.Config) config.RiskConfig {
 	if rc.RiskPerTradePctBase == 0 {
 		rc.RiskPerTradePctBase = 0.5
 	}
+	// Spread gate uses MaxSpreadUSD in strategy; avoid FX pip cap blocking BTC.
+	rc.MaxSpreadPips = 99999
 	return rc
 }
