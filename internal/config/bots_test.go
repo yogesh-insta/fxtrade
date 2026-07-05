@@ -57,6 +57,13 @@ func TestHaltFileForBot(t *testing.T) {
 	}
 }
 
+func TestTradesDBForBot(t *testing.T) {
+	got := config.TradesDBForBot(config.BotUniverseScanner)
+	if got != "data/universe_scanner/trades.db" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestValidateBotsUnknown(t *testing.T) {
 	cfg := &config.Config{
 		Bots: config.BotsConfig{Enabled: []string{"unknown_bot"}},

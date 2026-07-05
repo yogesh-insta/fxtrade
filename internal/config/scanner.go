@@ -42,6 +42,8 @@ type ScannerConfig struct {
 	MinSetupScore            float64               `json:"min_setup_score"`
 	MinRangeSpreadRatio      float64               `json:"min_range_spread_ratio"`
 	RuntimeMode              string                `json:"runtime_mode"`
+	JournalDir               string                `json:"journal_dir"`
+	DBPath                   string                `json:"db_path"`
 	AssetClasses             map[string]AssetClassConfig `json:"asset_classes"`
 }
 
@@ -84,6 +86,8 @@ func DefaultScannerConfig() ScannerConfig {
 		MinSetupScore:           0.65,
 		MinRangeSpreadRatio:     3.0,
 		RuntimeMode:             RuntimeModeAlwaysOn,
+		JournalDir:              "logs/universe_scanner",
+		DBPath:                  "data/universe_scanner/trades.db",
 		UniverseFilters: UniverseFiltersConfig{
 			Types:                  []string{"CURRENCY", "METAL", "CFD"},
 			ExcludeExotics:         true,
@@ -168,6 +172,12 @@ func applyScannerDefaults(c *Config) {
 	}
 	if c.Scanner.RuntimeMode == "" {
 		c.Scanner.RuntimeMode = def.RuntimeMode
+	}
+	if c.Scanner.JournalDir == "" {
+		c.Scanner.JournalDir = def.JournalDir
+	}
+	if c.Scanner.DBPath == "" {
+		c.Scanner.DBPath = def.DBPath
 	}
 	if len(c.Scanner.AssetClasses) == 0 {
 		c.Scanner.AssetClasses = def.AssetClasses

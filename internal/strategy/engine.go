@@ -17,6 +17,7 @@ import (
 	"github.com/ym/fxtrade/internal/risk"
 	"github.com/ym/fxtrade/internal/schedule"
 	"github.com/ym/fxtrade/internal/sentiment"
+	"github.com/ym/fxtrade/internal/store/sqlite"
 )
 
 type Engine struct {
@@ -28,6 +29,8 @@ type Engine struct {
 	notify     notify.Notifier
 	sentiment  *sentiment.Cache
 	journal    *journal.Writer
+	perfStore  *sqlite.Store
+	botID      string
 	modeMu           sync.RWMutex
 	lastMode         string
 	lastTrendAttempt time.Time
@@ -52,6 +55,12 @@ func NewEngine(cfg *config.Config, instrument string, client *oanda.Client, exec
 
 func (e *Engine) Instrument() string {
 	return e.instrument
+}
+
+// SetPerformanceStore records strategy decisions to SQLite for later analysis.
+func (e *Engine) SetPerformanceStore(botID string, s *sqlite.Store) {
+	e.botID = botID
+	e.perfStore = s
 }
 
 // RunAll runs all engines on a shared ticker, cycling them sequentially each
@@ -554,6 +563,17 @@ func (e *Engine) logDecision(mode, action, reason string, details map[string]any
 		Reason:     reason,
 		Details:    details,
 	})
+	if e.perfStore != nil && e.botID != "" {
+		_ = e.perfStore.InsertSignal(sqlite.Signal{
+			At:         time.Now().UTC(),
+			BotID:      e.botID,
+			Instrument: e.instrument,
+			Mode:       mode,
+			Action:     action,
+			Reason:     reason,
+			Details:    details,
+		})
+	}
 }
 
 func (e *Engine) LastMode() string {

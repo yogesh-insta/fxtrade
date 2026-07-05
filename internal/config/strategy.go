@@ -6,6 +6,7 @@ type StrategyConfig struct {
 	CycleMinutes int    `json:"cycle_minutes"`
 	PollSeconds  int    `json:"poll_seconds"`
 	JournalDir   string `json:"journal_dir"`
+	DBPath       string `json:"db_path"`
 }
 
 type RangeModeConfig struct {
@@ -47,7 +48,8 @@ func DefaultStrategyConfig() StrategyConfig {
 	return StrategyConfig{
 		Enabled:      false,
 		CycleMinutes: 30,
-		JournalDir:   "logs/trades",
+		JournalDir:   "logs/fx_sentiment",
+		DBPath:       "data/fx_sentiment/trades.db",
 	}
 }
 
@@ -99,6 +101,9 @@ func applyStrategyDefaults(c *Config) {
 	}
 	if c.Strategy.JournalDir == "" {
 		c.Strategy.JournalDir = defStrat.JournalDir
+	}
+	if c.Strategy.DBPath == "" {
+		c.Strategy.DBPath = defStrat.DBPath
 	}
 
 	defRange := DefaultRangeModeConfig()

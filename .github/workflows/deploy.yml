@@ -28,6 +28,7 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -o afl-pulse-pregame ./cmd/afl-pulse-pregame
           GOOS=linux GOARCH=amd64 go build -o health-watch ./cmd/health-watch
           GOOS=linux GOARCH=amd64 go build -o btc-daily-email ./cmd/btc-daily-email
+          GOOS=linux GOARCH=amd64 go build -o bot-weekly-email ./cmd/bot-weekly-email
 
       - name: Configure SSH
         env:
@@ -49,9 +50,9 @@ jobs:
           INSTALL_ROOT="$(dirname "$(dirname "$VM_PATH")")"
           REMOTE="${GCP_VM_USER}@${GCP_VM_HOST}"
 
-          scp -i ~/.ssh/deploy_key -o BatchMode=yes fxtrade nifty-pulse afl-pulse afl-pulse-pregame health-watch btc-daily-email watchlist.txt "${REMOTE}:/tmp/"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes fxtrade nifty-pulse afl-pulse afl-pulse-pregame health-watch btc-daily-email bot-weekly-email watchlist.txt "${REMOTE}:/tmp/"
           scp -i ~/.ssh/deploy_key -o BatchMode=yes deploy/gcp/afl-pulse-pregame.service deploy/gcp/afl-pulse-pregame.timer "${REMOTE}:/tmp/"
-          scp -i ~/.ssh/deploy_key -o BatchMode=yes deploy/gcp/check-scheduled-jobs.sh deploy/gcp/run-health-watch.sh deploy/gcp/run-btc-daily-email.sh deploy/gcp/fxtrade-watch.cron "${REMOTE}:/tmp/"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes deploy/gcp/check-scheduled-jobs.sh deploy/gcp/run-health-watch.sh deploy/gcp/run-btc-daily-email.sh deploy/gcp/run-bot-weekly-email.sh deploy/gcp/fxtrade-watch.cron "${REMOTE}:/tmp/"
           scp -i ~/.ssh/deploy_key -o BatchMode=yes -r data/afl "${REMOTE}:/tmp/"
 
           ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$REMOTE" bash -s <<EOF
@@ -62,9 +63,11 @@ jobs:
           sudo install -m 755 /tmp/afl-pulse-pregame "${INSTALL_ROOT}/bin/afl-pulse-pregame"
           sudo install -m 755 /tmp/health-watch "${INSTALL_ROOT}/bin/health-watch"
           sudo install -m 755 /tmp/btc-daily-email "${INSTALL_ROOT}/bin/btc-daily-email"
+          sudo install -m 755 /tmp/bot-weekly-email "${INSTALL_ROOT}/bin/bot-weekly-email"
           sudo install -m 755 /tmp/check-scheduled-jobs.sh "${INSTALL_ROOT}/scripts/check-scheduled-jobs.sh"
           sudo install -m 755 /tmp/run-health-watch.sh "${INSTALL_ROOT}/scripts/run-health-watch.sh"
           sudo install -m 755 /tmp/run-btc-daily-email.sh "${INSTALL_ROOT}/scripts/run-btc-daily-email.sh"
+          sudo install -m 755 /tmp/run-bot-weekly-email.sh "${INSTALL_ROOT}/scripts/run-bot-weekly-email.sh"
           sudo install -m 644 /tmp/fxtrade-watch.cron /etc/cron.d/fxtrade-watch
           if [[ ! -f /etc/systemd/system/afl-pulse-pregame.service ]]; then
             sudo install -m 644 /tmp/afl-pulse-pregame.service /etc/systemd/system/afl-pulse-pregame.service
@@ -80,8 +83,8 @@ jobs:
           sudo mkdir -p "${INSTALL_ROOT}/data/afl"
           sudo cp -f /tmp/afl/*.json "${INSTALL_ROOT}/data/afl/"
           sudo chown -R fxtrade:fxtrade "${INSTALL_ROOT}/data/afl"
-          rm -f /tmp/fxtrade /tmp/nifty-pulse /tmp/afl-pulse /tmp/afl-pulse-pregame /tmp/health-watch /tmp/btc-daily-email /tmp/watchlist.txt
-          rm -f /tmp/check-scheduled-jobs.sh /tmp/run-health-watch.sh /tmp/run-btc-daily-email.sh /tmp/fxtrade-watch.cron
+          rm -f /tmp/fxtrade /tmp/nifty-pulse /tmp/afl-pulse /tmp/afl-pulse-pregame /tmp/health-watch /tmp/btc-daily-email /tmp/bot-weekly-email /tmp/watchlist.txt
+          rm -f /tmp/check-scheduled-jobs.sh /tmp/run-health-watch.sh /tmp/run-btc-daily-email.sh /tmp/run-bot-weekly-email.sh /tmp/fxtrade-watch.cron
           rm -f /tmp/afl-pulse-pregame.service /tmp/afl-pulse-pregame.timer
           rm -rf /tmp/afl
           restarted=0

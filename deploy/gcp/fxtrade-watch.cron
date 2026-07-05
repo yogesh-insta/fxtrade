@@ -18,3 +18,6 @@ CRON_TZ=Australia/Melbourne
 # BTC CFD daily summary — align with notifications.daily_summary_utc (default 12:00 UTC).
 # Reports trades closed during the previous UTC calendar day.
 0 12 * * * fxtrade /opt/fxtrade/scripts/run-btc-daily-email.sh >> /opt/fxtrade/logs/btc-daily-email.log 2>&1
+
+# Combined weekly bot summary — Monday 07:00 UTC (previous 7 UTC days ending Sunday).
+0 7 * * 1 fxtrade /opt/fxtrade/scripts/run-bot-weekly-email.sh >> /opt/fxtrade/logs/bot-weekly-email.log 2>&1

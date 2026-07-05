@@ -12,6 +12,8 @@ import (
 	"github.com/ym/fxtrade/internal/execution"
 	"github.com/ym/fxtrade/internal/oanda"
 	"github.com/ym/fxtrade/internal/risk"
+	"github.com/ym/fxtrade/internal/store"
+	"github.com/ym/fxtrade/internal/store/sqlite"
 )
 
 type Engine struct {
@@ -30,6 +32,8 @@ type Engine struct {
 	tradesToday      int
 	dayKey           string
 	sessionEntered   map[string]time.Time
+	perfStore        *sqlite.Store
+	metaStore        *store.MetaStore
 }
 
 func NewEngine(cfg *config.Config, client *oanda.Client, exec *execution.Executor, rm *risk.Manager, n *Notifier, universe Universe) *Engine {
@@ -47,6 +51,11 @@ func NewEngine(cfg *config.Config, client *oanda.Client, exec *execution.Executo
 
 func (e *Engine) SetBotID(id string) {
 	e.botID = id
+}
+
+func (e *Engine) SetPerformanceStore(s *sqlite.Store, meta *store.MetaStore) {
+	e.perfStore = s
+	e.metaStore = meta
 }
 
 func (e *Engine) Run(ctx context.Context) {
@@ -109,6 +118,7 @@ func (e *Engine) cycle(ctx context.Context) {
 	ranked := RankSetups(setups, e.cfg.Scanner.MinSetupScore)
 	if len(ranked) == 0 {
 		slog.Debug("scanner: no setups above threshold")
+		e.recordSignal("no_setup", "", "", 0, nil)
 		return
 	}
 
@@ -122,12 +132,16 @@ func (e *Engine) cycle(ctx context.Context) {
 		top.BreakoutDirection = DetectBreakout(top, tick.Bid, tick.Ask)
 	}
 	if top.BreakoutDirection == "" {
+		e.recordSignal("await_breakout", top.Instrument, "", top.Score, map[string]any{
+			"setup_score": top.Score,
+		})
 		return
 	}
 
 	e.mu.Lock()
 	if at, ok := e.sessionEntered[top.Instrument]; ok && at.Equal(top.Range.SessionOpen) {
 		e.mu.Unlock()
+		e.recordSignal("session_already_traded", top.Instrument, top.BreakoutDirection, top.Score, nil)
 		return
 	}
 	e.mu.Unlock()
@@ -200,14 +214,39 @@ func (e *Engine) enter(ctx context.Context, setup Setup, runnersUp []Setup, bala
 
 	e.notify.TradeEntry(ctx, setup, runnersUp, balance, units, stop, tp)
 
-	_, err := e.exec.PlaceMarket(ctx, req, execution.MarketOrderParams{
+	result, err := e.exec.PlaceMarket(ctx, req, execution.MarketOrderParams{
 		Instrument: setup.Instrument,
 		Direction:  setup.BreakoutDirection,
 		Units:      units,
 		StopLoss:   stop,
 		TakeProfit: &tp,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if e.metaStore != nil && result.TradeID != "" {
+		e.metaStore.Put(result.TradeID, store.TradeMeta{
+			Instrument:    setup.Instrument,
+			CorrelationID: corrID,
+			Direction:     setup.BreakoutDirection,
+			SignalPrice:   entry,
+			FillPrice:     result.FillPrice,
+			StopLoss:      stop,
+			TakeProfit:    tp,
+			Units:         result.Units,
+			SetupScore:    setup.Score,
+			OpenedAt:      time.Now().UTC(),
+		})
+	}
+	e.recordSignal("entry_taken", setup.Instrument, setup.BreakoutDirection, setup.Score, map[string]any{
+		"correlation_id": corrID,
+		"trade_id":       result.TradeID,
+		"units":          result.Units,
+		"stop_loss":      stop,
+		"take_profit":    tp,
+		"runners_up":     len(runnersUp),
+	})
+	return nil
 }
 
 func (e *Engine) maybeForceFlat(ctx context.Context) error {
@@ -259,6 +298,21 @@ func (e *Engine) maybeScheduledSummaries(ctx context.Context, balance float64) {
 		e.notify.WeeklySummary(ctx, snap.WeeklyPnL, balance, e.tradesToday)
 		e.lastWeeklyNotify = now
 	}
+}
+
+func (e *Engine) recordSignal(action, instrument, direction string, score float64, details map[string]any) {
+	if e.perfStore == nil || e.botID == "" {
+		return
+	}
+	_ = e.perfStore.InsertSignal(sqlite.Signal{
+		At:         time.Now().UTC(),
+		BotID:      e.botID,
+		Instrument: instrument,
+		Action:     action,
+		Direction:  direction,
+		SetupScore: score,
+		Details:    details,
+	})
 }
 
 func stopDistanceForClass(cfg config.ScannerConfig, cls string, pipSize float64) float64 {
