@@ -90,13 +90,23 @@ jobs:
           restarted=0
           if systemctl is-enabled fxtrade.service &>/dev/null; then
             sudo systemctl restart fxtrade.service
+            echo "Restarted fxtrade.service"
             restarted=1
           fi
+          # Template instances (fxtrade@bot) show as "indirect" in list-unit-files,
+          # not "enabled", so also pick up active units and indirect/enabled instances.
           while IFS= read -r unit; do
             [[ -z "\$unit" ]] && continue
             sudo systemctl restart "\$unit"
+            echo "Restarted \$unit"
             restarted=1
-          done < <(systemctl list-unit-files --type=service --no-legend 2>/dev/null | awk '\$1 ~ /^fxtrade@.+\\.service\$/ && \$2 == "enabled" {print \$1}')
+          done < <(
+            {
+              systemctl list-units 'fxtrade@*.service' --type=service --state=active --no-legend --plain 2>/dev/null | awk '{print \$1}'
+              systemctl list-unit-files 'fxtrade@*.service' --type=service --no-legend 2>/dev/null \
+                | awk '\$1 ~ /^fxtrade@.+\\.service\$/ && (\$2 == "enabled" || \$2 == "indirect") {print \$1}'
+            } | sort -u
+          )
           if [[ \$restarted -eq 0 ]]; then
             echo "No enabled fxtrade units — binary updated at ${VM_PATH}"
             echo "Enable with: sudo systemctl enable --now fxtrade.service"
