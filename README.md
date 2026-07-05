@@ -172,7 +172,7 @@ Enable per-bot units: `sudo ./deploy/gcp/install.sh --enable-bot ID`.
 |---------|------|----------|
 | `nifty-pulse` | NSE watchlist swing scan; emails one pick if found | `nifty-pulse.timer` |
 | `afl-pulse` | AFL round odds, projections, value bets | `afl-pulse.timer` |
-| `afl-pulse-pregame` | T-30 pregame report (Gemini + Google Search) | `afl-pulse-pregame.timer` |
+| `afl-pulse-pregame` | T-45 pregame report (Gemini + Google Search) | `afl-pulse-pregame.timer` |
 
 Local: `go run ./cmd/nifty-pulse`, `go run ./cmd/afl-pulse`, `go run ./cmd/afl-pulse-pregame` (add `-dry-run` to skip email).
 
@@ -242,7 +242,7 @@ fxtrade/
 ├── cmd/fxtrade/              # multi-bot platform daemon
 ├── cmd/nifty-pulse/          # NSE swing scanner
 ├── cmd/afl-pulse/            # AFL weekly round scanner
-├── cmd/afl-pulse-pregame/    # AFL T-30 pregame scanner
+├── cmd/afl-pulse-pregame/    # AFL T-45 pregame scanner
 ├── cmd/health-watch/         # VM watchdog
 ├── cmd/btc-daily-email/      # BTC daily summary email
 ├── cmd/bot-weekly-email/     # Combined weekly bot performance email

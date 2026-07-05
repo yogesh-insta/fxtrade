@@ -182,7 +182,7 @@ systemctl enable --now afl-pulse.timer
 echo "Enabled afl-pulse.timer (18:00 Australia/Melbourne, Thursday)"
 
 systemctl enable --now afl-pulse-pregame.timer
-echo "Enabled afl-pulse-pregame.timer (every 5 minutes, T-30 pregame)"
+echo "Enabled afl-pulse-pregame.timer (every 5 minutes, T-45 pregame)"
 
 if $ENABLE_ALL; then
   systemctl enable --now fxtrade.service

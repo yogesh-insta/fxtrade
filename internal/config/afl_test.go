@@ -49,7 +49,7 @@ func TestAFLConfigLLMAnalyticsEnabled(t *testing.T) {
 
 func TestAFLConfigPregameDefaults(t *testing.T) {
 	cfg := DefaultAFLConfig()
-	if cfg.PregameLeadMinutes != 30 {
+	if cfg.PregameLeadMinutes != 45 {
 		t.Fatalf("lead = %d", cfg.PregameLeadMinutes)
 	}
 	if cfg.PregamePollWindowMinutes != 5 {

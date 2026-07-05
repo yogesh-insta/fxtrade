@@ -10,12 +10,12 @@ import (
 	"github.com/ym/fxtrade/internal/notify"
 )
 
-// FormatPregameSubject builds the T-30 pregame email subject.
+// FormatPregameSubject builds the T-45 pregame email subject.
 func FormatPregameSubject(prefix string, home, away TeamID) string {
 	if prefix == "" {
 		prefix = "[AFLPulse PRE]"
 	}
-	return fmt.Sprintf("%s T-30 · %s vs %s", prefix, home, away)
+	return fmt.Sprintf("%s T-45 · %s vs %s", prefix, home, away)
 }
 
 // FormatPregameFailureSubject builds the Gemini failure alert subject.
@@ -26,12 +26,12 @@ func FormatPregameFailureSubject(prefix string, home, away TeamID) string {
 	return fmt.Sprintf("%s ALERT · Gemini failed · %s vs %s", prefix, home, away)
 }
 
-// FormatPregameEmail renders the T-30 pregame body from model report and LLM JSON.
+// FormatPregameEmail renders the T-45 pregame body from model report and LLM JSON.
 // Empty or partial LLM content never prints Go zero values (e.g. "[]"); it notes incompleteness.
 func FormatPregameEmail(game SquiggleFixture, report MatchReport, llm PregameLLMResponse) string {
 	var b strings.Builder
 	ctx := report.Context
-	b.WriteString("AFLPulse Pre-Game (T-30)\n")
+	b.WriteString("AFLPulse Pre-Game (T-45)\n")
 	for _, line := range FormatFixtureHeaderLines(ctx) {
 		b.WriteString(line)
 		b.WriteString("\n")
@@ -182,7 +182,7 @@ func FormatPregameFailureAlert(game SquiggleFixture, home, away TeamID, venue st
 	return b.String()
 }
 
-// SendPregameEmail sends the T-30 pregame report.
+// SendPregameEmail sends the T-45 pregame report.
 func SendPregameEmail(n notify.Notifier, ctx context.Context, notif config.NotificationsConfig, home, away TeamID, body string) {
 	prefix := notif.EffectiveAFLPrefix()
 	if !strings.Contains(prefix, "PRE") {

@@ -18,7 +18,7 @@ import (
 	"github.com/ym/fxtrade/internal/notify"
 )
 
-// AFLPulse pregame — T-30 fixture alerts with Gemini + Google Search.
+// AFLPulse pregame — T-45 fixture alerts with Gemini + Google Search.
 //
 // Scheduled on GCP via afl-pulse-pregame.timer (every 15 min).
 // LLM (Gemini) runs at most once per fixture; see PregameState.LLMAttempted.

@@ -230,7 +230,8 @@ func (c *SquiggleClient) FetchUpcomingGames(ctx context.Context, year int) ([]Up
 	return out, nil
 }
 
-// GamesInPregameWindow filters upcoming games whose kickoff is lead..lead+window before now.
+// GamesInPregameWindow filters upcoming games whose kickoff is lead..lead+window before now
+// (e.g. lead=45m, window=5m → fixtures 45–50 minutes before kickoff).
 func GamesInPregameWindow(games []UpcomingGame, now time.Time, lead, window time.Duration) []UpcomingGame {
 	if window <= 0 {
 		window = lead

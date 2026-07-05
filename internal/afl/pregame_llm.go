@@ -17,7 +17,7 @@ var newGeminiClient = func(apiKey, model string) *gemini.Client {
 	return gemini.NewClient(apiKey, model)
 }
 
-// PregameLLMSystemPrompt instructs Gemini to return structured JSON for T-30 emails.
+// PregameLLMSystemPrompt instructs Gemini to return structured JSON for T-45 emails.
 const PregameLLMSystemPrompt = `You are an elite AFL sports analytics AI with live web search.
 
 The user message is compact JSON describing one upcoming AFL fixture and an AFLPulse model baseline.
