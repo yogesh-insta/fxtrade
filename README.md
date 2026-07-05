@@ -139,6 +139,64 @@ One systemd unit runs all enabled bots; use `fxtrade@BOT.service` for one bot pe
 
 ---
 
+## Services & programs
+
+All binaries live under `cmd/`. On **fxtrade-vm**, `install.sh` enables the three scanner timers and installs cron watchdog jobs; long-running bots are enabled separately (`--enable-all` or `--enable-bot`).
+
+**Typical concurrent layout on fxtrade-vm:**
+
+| Always on | Notes |
+|-----------|--------|
+| `fxtrade@BOT.service` or `fxtrade.service` | One or more platform bots (Terraform default: `universe_scanner` in dry-run) |
+| `nifty-pulse.timer` | Daily NSE scan (Sun–Fri 18:00 Sydney) |
+| `afl-pulse.timer` | Weekly AFL round scan (Thu 18:00 Melbourne) |
+| `afl-pulse-pregame.timer` | Pregame poll (every 15 min) |
+| `/etc/cron.d/fxtrade-watch` | `health-watch` every 5 min; timer failure checks; `btc-daily-email` at 12:00 UTC |
+
+### Platform bots (long-running)
+
+Run locally with `go run ./cmd/fxtrade` (optional `-bot ID`, `-dry-run`). On the VM: `fxtrade.service` (all bots in `.credentials`) or `fxtrade@ID.service`. Legacy id **`range_trend`** is a deprecated alias for **`fx_sentiment`**.
+
+| Bot ID | What | Unit / local | Health | Orders |
+|--------|------|--------------|--------|--------|
+| `universe_scanner` | OANDA opening-range breakout scanner; one FX trade at a time | `fxtrade@universe_scanner.service` | `:8081` | OANDA |
+| `fx_sentiment` | FX range/trend strategy with Finnhub + Groq sentiment gate | `fxtrade@fx_sentiment.service` | `:8082` | OANDA |
+| `btc_cfd` | BTC/USD M5 mean reversion on OANDA CFD (demo first) | `fxtrade@btc_cfd.service` | `:8083` | OANDA |
+| *(all enabled)* | Every bot listed in `"bots.enabled"` in one process | `fxtrade.service` | `:8080` | OANDA |
+
+Enable per-bot units: `sudo ./deploy/gcp/install.sh --enable-bot ID`. Details: [deploy/gcp/DEPLOY.md](deploy/gcp/DEPLOY.md).
+
+### Scheduled scanners (oneshot)
+
+| Program | What | Schedule | Orders |
+|---------|------|----------|--------|
+| `nifty-pulse` | NSE watchlist swing scan; emails one pick if found | `nifty-pulse.timer` → `nifty-pulse.service` | Email only |
+| `afl-pulse` | AFL round odds, projections, and value bets | `afl-pulse.timer` → `afl-pulse.service` | Email only |
+| `afl-pulse-pregame` | T-30 pregame report (Gemini + Google Search) | `afl-pulse-pregame.timer` → `afl-pulse-pregame.service` | Email only |
+
+Local: `go run ./cmd/nifty-pulse`, `go run ./cmd/afl-pulse`, `go run ./cmd/afl-pulse-pregame` (add `-dry-run` to skip email).
+
+### Ops & monitoring
+
+| Program | What | How it runs | Orders |
+|---------|------|-------------|--------|
+| `health-watch` | Polls `/health`; emails on daemon failure, stale ticks, or failed timer jobs | Cron `/etc/cron.d/fxtrade-watch` via `run-health-watch.sh` | — |
+| `btc-daily-email` | BTC CFD daily P&L summary (prior UTC day) | Cron 12:00 UTC via `run-btc-daily-email.sh` | Email only |
+| `btc-metrics` | Win rate, drawdown, headroom from `data/btc_cfd/trades.db` | Manual: `go run ./cmd/btc-metrics` | — |
+
+### Test & dev CLIs
+
+One-shot local tools (no systemd). See **Test commands** above for common invocations.
+
+| Command | Purpose |
+|---------|---------|
+| `sentiment-test`, `strategy-test`, `order-test`, `scanner-test` | Single cycle of sentiment, strategy, OANDA order, or ORB scanner |
+| `backtest`, `expectancy` | Historical gate replay; closed-trade performance |
+| `afl-train`, `afl-backtest` | Train / holdout-test AFL models |
+| `email-test` | Verify SMTP from `.credentials` |
+
+---
+
 ## Auto-start on boot (macOS, optional)
 
 ```bash
