@@ -112,6 +112,7 @@ func (e *cycleEngine) tick(ctx context.Context) error {
 		return err
 	}
 	balance, _ := oanda.ParsePrice(summary.Account.Balance)
+	balance = risk.EffectiveCapital(e.bc.AllocatedCapitalUSD, balance)
 	riskSnap := e.rm.Snapshot()
 
 	lim := EntryLimits{
