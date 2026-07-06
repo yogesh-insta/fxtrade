@@ -196,8 +196,8 @@ elif [[ -n "$ENABLE_BOT" ]]; then
     *) port=":8080" ;;
   esac
   extra_env=""
-  if [[ "$ENABLE_BOT" == "btc_cfd" || "$ENABLE_BOT" == "fx_sentiment" ]]; then
-    # Override global FXTRADE_DRY_RUN so demo-order bots trade while others stay dry.
+  if [[ "$ENABLE_BOT" == "btc_cfd" || "$ENABLE_BOT" == "fx_sentiment" || "$ENABLE_BOT" == "universe_scanner" ]]; then
+    # Override global FXTRADE_DRY_RUN so OANDA practice orders are placed.
     extra_env=$'FXTRADE_DRY_RUN=\n'
   fi
   cat >"/etc/fxtrade/fxtrade@${ENABLE_BOT}.env" <<EOF

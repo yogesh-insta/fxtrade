@@ -98,7 +98,7 @@ func DefaultScannerConfig() ScannerConfig {
 		AssetClasses: map[string]AssetClassConfig{
 			"FX":     {MaxSpreadPips: 2.5, SessionUTC: "08:00-17:00"},
 			"JPY":    {MaxSpreadPips: 3.0, SessionUTC: "00:00-17:00"},
-			"METAL":  {MaxSpreadPips: 50, SessionUTC: "13:00-21:00"},
+			"METAL":  {MaxSpreadPips: 80, SessionUTC: "13:00-21:00"},
 			"CRYPTO": {Instruments: []string{"BTC_USD"}, MaxSpreadUSD: 80, SessionUTC: "24/7"},
 			"INDEX":  {MaxSpreadPoints: 2.0, SessionUTC: "13:30-20:00"},
 		},

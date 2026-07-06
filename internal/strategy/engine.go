@@ -252,6 +252,7 @@ func (e *Engine) runRangeMode(ctx context.Context, snap market.Snapshot, band Ra
 		return
 	}
 	balance, _ := oanda.ParsePrice(summary.Account.Balance)
+	balance = risk.EffectiveCapital(e.cfg.Risk.AllocatedCapitalUSD, balance)
 	stopDist := snap.ATR14Daily * e.cfg.RangeMode.StopATRBeyondBoundary
 	conf := SentimentConfidence("LONG", sig, hasSig, e.cfg.LLMGate)
 	units, sizeErr := e.entryUnits(balance, stopDist, conf)
@@ -379,6 +380,7 @@ func (e *Engine) runTrendMode(ctx context.Context, snap market.Snapshot, band Ra
 		return
 	}
 	balance, _ := oanda.ParsePrice(summary.Account.Balance)
+	balance = risk.EffectiveCapital(e.cfg.Risk.AllocatedCapitalUSD, balance)
 	stopDist := snap.ATR14Daily * e.cfg.TrendMode.ATRStopMultiplier
 	conf := SentimentConfidence(direction, sig, hasSig, e.cfg.LLMGate)
 	units, sizeErr := e.entryUnits(balance, stopDist, conf)

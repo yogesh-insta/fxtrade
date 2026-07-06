@@ -71,6 +71,8 @@ type SentimentConfig struct {
 }
 
 type RiskConfig struct {
+	// AllocatedCapitalUSD caps position sizing and loss limits when > 0 (per-bot slice of account).
+	AllocatedCapitalUSD     float64 `json:"allocated_capital_usd"`
 	RiskPerTradePctBase     float64 `json:"risk_per_trade_pct_base"`
 	RiskPerTradePctHighConf float64 `json:"risk_per_trade_pct_high_conf"`
 	HighConfThreshold       float64 `json:"high_conf_threshold"`

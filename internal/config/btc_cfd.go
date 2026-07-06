@@ -1,6 +1,8 @@
 package config
 
 type BtcCfdConfig struct {
+	// AllocatedCapitalUSD caps position sizing and daily loss when > 0 (per-bot slice of account).
+	AllocatedCapitalUSD     float64 `json:"allocated_capital_usd"`
 	Instrument              string  `json:"instrument"`
 	Granularity             string  `json:"granularity"`
 	CandleCount             int     `json:"candle_count"`
