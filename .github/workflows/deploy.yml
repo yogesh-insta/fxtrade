@@ -29,6 +29,7 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -o health-watch ./cmd/health-watch
           GOOS=linux GOARCH=amd64 go build -o btc-daily-email ./cmd/btc-daily-email
           GOOS=linux GOARCH=amd64 go build -o bot-weekly-email ./cmd/bot-weekly-email
+          GOOS=linux GOARCH=amd64 go build -o bot-analyze ./cmd/bot-analyze
 
       - name: Configure SSH
         env:
@@ -50,7 +51,7 @@ jobs:
           INSTALL_ROOT="$(dirname "$(dirname "$VM_PATH")")"
           REMOTE="${GCP_VM_USER}@${GCP_VM_HOST}"
 
-          scp -i ~/.ssh/deploy_key -o BatchMode=yes fxtrade nifty-pulse afl-pulse afl-pulse-pregame health-watch btc-daily-email bot-weekly-email watchlist.txt "${REMOTE}:/tmp/"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes fxtrade nifty-pulse afl-pulse afl-pulse-pregame health-watch btc-daily-email bot-weekly-email bot-analyze watchlist.txt "${REMOTE}:/tmp/"
           scp -i ~/.ssh/deploy_key -o BatchMode=yes deploy/gcp/afl-pulse-pregame.service deploy/gcp/afl-pulse-pregame.timer "${REMOTE}:/tmp/"
           scp -i ~/.ssh/deploy_key -o BatchMode=yes deploy/gcp/check-scheduled-jobs.sh deploy/gcp/run-health-watch.sh deploy/gcp/run-btc-daily-email.sh deploy/gcp/run-bot-weekly-email.sh deploy/gcp/fxtrade-watch.cron "${REMOTE}:/tmp/"
           scp -i ~/.ssh/deploy_key -o BatchMode=yes -r data/afl "${REMOTE}:/tmp/"
@@ -64,6 +65,7 @@ jobs:
           sudo install -m 755 /tmp/health-watch "${INSTALL_ROOT}/bin/health-watch"
           sudo install -m 755 /tmp/btc-daily-email "${INSTALL_ROOT}/bin/btc-daily-email"
           sudo install -m 755 /tmp/bot-weekly-email "${INSTALL_ROOT}/bin/bot-weekly-email"
+          sudo install -m 755 /tmp/bot-analyze "${INSTALL_ROOT}/bin/bot-analyze"
           sudo install -m 755 /tmp/check-scheduled-jobs.sh "${INSTALL_ROOT}/scripts/check-scheduled-jobs.sh"
           sudo install -m 755 /tmp/run-health-watch.sh "${INSTALL_ROOT}/scripts/run-health-watch.sh"
           sudo install -m 755 /tmp/run-btc-daily-email.sh "${INSTALL_ROOT}/scripts/run-btc-daily-email.sh"
@@ -81,7 +83,7 @@ jobs:
           sudo mkdir -p "${INSTALL_ROOT}/data/afl"
           sudo cp -f /tmp/afl/*.json "${INSTALL_ROOT}/data/afl/"
           sudo chown -R fxtrade:fxtrade "${INSTALL_ROOT}/data/afl"
-          rm -f /tmp/fxtrade /tmp/nifty-pulse /tmp/afl-pulse /tmp/afl-pulse-pregame /tmp/health-watch /tmp/btc-daily-email /tmp/bot-weekly-email /tmp/watchlist.txt
+          rm -f /tmp/fxtrade /tmp/nifty-pulse /tmp/afl-pulse /tmp/afl-pulse-pregame /tmp/health-watch /tmp/btc-daily-email /tmp/bot-weekly-email /tmp/bot-analyze /tmp/watchlist.txt
           rm -f /tmp/check-scheduled-jobs.sh /tmp/run-health-watch.sh /tmp/run-btc-daily-email.sh /tmp/run-bot-weekly-email.sh /tmp/fxtrade-watch.cron
           rm -f /tmp/afl-pulse-pregame.service /tmp/afl-pulse-pregame.timer
           rm -rf /tmp/afl
@@ -110,4 +112,35 @@ jobs:
             echo "Enable with: sudo systemctl enable --now fxtrade.service"
             echo "  or: sudo ./deploy/gcp/install.sh --enable-bot BOT_ID"
           fi
+
+          echo ""
+          echo "======== fxtrade trade analysis ========"
+          YEST=\$(date -u -d 'yesterday' +%Y-%m-%d)
+          NEXT=\$(date -u -d 'yesterday + 1 day' +%Y-%m-%d)
+          echo "yesterday_utc=\$YEST"
+          if [[ -f "${INSTALL_ROOT}/.credentials" ]]; then
+            "${INSTALL_ROOT}/bin/bot-analyze" -credentials "${INSTALL_ROOT}/.credentials" -root "${INSTALL_ROOT}" || true
+          fi
+          for bot in universe_scanner fx_sentiment btc_cfd; do
+            db="${INSTALL_ROOT}/data/\$bot/trades.db"
+            echo ""
+            echo "── sqlite \$bot ──"
+            if [[ ! -f "\$db" ]]; then
+              echo "(no database)"
+              continue
+            fi
+            sqlite3 -header -column "\$db" \
+              "SELECT COUNT(*) AS trades,
+                      ROUND(SUM(CASE WHEN COALESCE(net_pl, realized_pl) > 0 THEN 1 ELSE 0 END)*100.0/COUNT(*),1) AS win_pct,
+                      ROUND(SUM(COALESCE(net_pl, realized_pl)),2) AS net_pl
+               FROM trades;" || true
+            sqlite3 -header -column "\$db" \
+              "SELECT closed_at, instrument, direction,
+                      ROUND(COALESCE(net_pl, realized_pl),2) AS net_pl,
+                      correlation_id
+               FROM trades
+               WHERE closed_at >= '\${YEST}T00:00:00Z' AND closed_at < '\${NEXT}T00:00:00Z'
+               ORDER BY closed_at;" || true
+          done
+          echo "======== end trade analysis ========"
           EOF
