@@ -118,8 +118,32 @@ jobs:
           YEST=\$(date -u -d 'yesterday' +%Y-%m-%d)
           NEXT=\$(date -u -d 'yesterday + 1 day' +%Y-%m-%d)
           echo "yesterday_utc=\$YEST"
+          echo ""
+          echo "── data layout ──"
+          ls -la "${INSTALL_ROOT}/data/" 2>/dev/null || echo "(no data dir)"
+          find "${INSTALL_ROOT}/data" -name '*.db' -o -name 'state*.json' 2>/dev/null | head -30 || true
+          echo ""
+          echo "── bot env (dry-run?) ──"
+          for envfile in /etc/fxtrade/fxtrade@*.env /etc/fxtrade/fxtrade.env; do
+            [[ -f "\$envfile" ]] || continue
+            echo "# \$envfile"
+            grep -E 'DRY|FXTRADE' "\$envfile" 2>/dev/null || true
+          done
+          echo ""
+          echo "── trade journals (jsonl) ──"
+          for j in "${INSTALL_ROOT}/logs/universe_scanner/trades.jsonl" "${INSTALL_ROOT}/logs/fx_sentiment/trades.jsonl" "${INSTALL_ROOT}/logs/btc_cfd/trades.jsonl"; do
+            echo "# \$j"
+            if [[ -f "\$j" ]]; then
+              wc -l "\$j" || true
+              grep "\$YEST" "\$j" | tail -20 || echo "(no rows for \$YEST)"
+            else
+              echo "(missing)"
+            fi
+          done
           if [[ -f "${INSTALL_ROOT}/.credentials" ]]; then
-            "${INSTALL_ROOT}/bin/bot-analyze" -credentials "${INSTALL_ROOT}/.credentials" -root "${INSTALL_ROOT}" || true
+            echo ""
+            echo "── bot-analyze ──"
+            "${INSTALL_ROOT}/bin/bot-analyze" -credentials "${INSTALL_ROOT}/.credentials" -root "${INSTALL_ROOT}" 2>&1 || true
           fi
           for bot in universe_scanner fx_sentiment btc_cfd; do
             db="${INSTALL_ROOT}/data/\$bot/trades.db"
