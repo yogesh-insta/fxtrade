@@ -149,7 +149,7 @@ All binaries live under `cmd/`. On **fxtrade-vm**, `install.sh` installs scanner
 | `nifty-pulse.timer` | Daily NSE scan (Sun–Fri 18:00 Sydney) |
 | `afl-pulse.timer` | Weekly AFL round scan (Thu 18:00 Melbourne) |
 | `afl-pulse-pregame.timer` | Pregame poll (every 15 min) |
-| `/etc/cron.d/fxtrade-watch` | `health-watch` every 5 min; timer failure checks; `btc-daily-email` at 12:00 UTC; `bot-weekly-email` Mon 07:00 UTC |
+| `/etc/cron.d/fxtrade-watch` | `health-watch` every 5 min; timer failure checks; `bot-daily-email` at 20:30 UTC; `bot-weekly-email` Mon 07:00 UTC |
 
 ### Platform bots (long-running, OANDA orders)
 
@@ -181,7 +181,8 @@ Local: `go run ./cmd/nifty-pulse`, `go run ./cmd/afl-pulse`, `go run ./cmd/afl-p
 | Program | What | How it runs |
 |---------|------|-------------|
 | `health-watch` | Polls `/health`; emails on daemon failure, stale ticks, failed timer jobs | Cron via `run-health-watch.sh` |
-| `btc-daily-email` | BTC CFD daily P&L summary (prior UTC day) | Cron 12:00 UTC via `run-btc-daily-email.sh` |
+| `bot-daily-email` | Combined daily P&L + analysis for all platform bots | Cron 20:30 UTC via `run-bot-daily-email.sh` |
+| `bot-analyze` | Trade analysis and tweak suggestions from SQLite history | Manual CLI |
 | `bot-weekly-email` | Combined weekly P&L for all platform bots | Cron Mon 07:00 UTC via `run-bot-weekly-email.sh` |
 
 ---
@@ -244,7 +245,8 @@ fxtrade/
 ├── cmd/afl-pulse/            # AFL weekly round scanner
 ├── cmd/afl-pulse-pregame/    # AFL T-45 pregame scanner
 ├── cmd/health-watch/         # VM watchdog
-├── cmd/btc-daily-email/      # BTC daily summary email
+├── cmd/bot-daily-email/      # Combined daily bot performance email
+├── cmd/bot-analyze/          # Trade analysis CLI
 ├── cmd/bot-weekly-email/     # Combined weekly bot performance email
 ├── cmd/*-test/               # one-shot dev CLIs (sentiment, strategy, scanner, order, …)
 ├── data/                     # bot state, AFL stats, per-bot trades.db

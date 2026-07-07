@@ -12,6 +12,8 @@ type NotificationsConfig struct {
 	// non-trade alerts when true. Omit or set true (default); set false to restore
 	// full email digests.
 	EmailOnTradeOnly      *bool  `json:"email_on_trade_only,omitempty"`
+	// DailySummaryOnly suppresses all bot emails except cron-driven daily/weekly summaries.
+	DailySummaryOnly      *bool  `json:"daily_summary_only,omitempty"`
 	OnTradeEntry          bool   `json:"on_trade_entry"`
 	OnTradeExit           bool   `json:"on_trade_exit"`
 	EntryIncludeRunnersUp int    `json:"entry_include_runners_up"`
@@ -25,6 +27,11 @@ func (n NotificationsConfig) TradeOnlyEmail() bool {
 		return true
 	}
 	return *n.EmailOnTradeOnly
+}
+
+// DailySummaryOnlyMode reports whether only scheduled summary emails should be sent.
+func (n NotificationsConfig) DailySummaryOnlyMode() bool {
+	return n.DailySummaryOnly != nil && *n.DailySummaryOnly
 }
 
 func DefaultNotificationsConfig() NotificationsConfig {

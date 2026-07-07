@@ -26,7 +26,7 @@ type digestNotifier interface {
 
 // SendDigest delivers routine status emails, respecting min_interval_minutes when configured.
 func SendDigest(n Notifier, ctx context.Context, digestKey, subject, body string) {
-	if g, ok := n.(*tradeGatedNotifier); ok && g.tradeOnly {
+	if routineEmailsSuppressed(n) {
 		slog.Info("routine email suppressed", "subject", subject, "digest_key", digestKey)
 		return
 	}
@@ -38,9 +38,9 @@ func SendDigest(n Notifier, ctx context.Context, digestKey, subject, body string
 }
 
 // SendRoutine delivers operational emails that are not tied to a trade event.
-// Suppressed when trade-only email mode is enabled.
+// Suppressed when trade-only or daily-summary-only email mode is enabled.
 func SendRoutine(n Notifier, ctx context.Context, subject, body string) {
-	if g, ok := n.(*tradeGatedNotifier); ok && g.tradeOnly {
+	if routineEmailsSuppressed(n) {
 		slog.Info("routine email suppressed", "subject", subject)
 		return
 	}
@@ -56,6 +56,15 @@ func WithTradeOnly(n Notifier, tradeOnly bool) Notifier {
 	return &tradeGatedNotifier{inner: n, tradeOnly: true}
 }
 
+// WithDailySummaryOnly wraps a notifier so all bot emails are suppressed except
+// cron-driven summaries that use an unwrapped notifier.
+func WithDailySummaryOnly(n Notifier, active bool) Notifier {
+	if !active {
+		return n
+	}
+	return &dailySummaryOnlyNotifier{inner: n, active: true}
+}
+
 type tradeGatedNotifier struct {
 	inner     Notifier
 	tradeOnly bool
@@ -67,6 +76,41 @@ func (g *tradeGatedNotifier) Send(ctx context.Context, subject, body string) {
 
 func (g *tradeGatedNotifier) SendDigest(ctx context.Context, digestKey, subject, body string) {
 	slog.Info("routine email suppressed", "subject", subject, "digest_key", digestKey)
+}
+
+type dailySummaryOnlyNotifier struct {
+	inner  Notifier
+	active bool
+}
+
+func (d *dailySummaryOnlyNotifier) Send(ctx context.Context, subject, body string) {
+	if d.active {
+		slog.Info("email suppressed (daily_summary_only)", "subject", subject)
+		return
+	}
+	d.inner.Send(ctx, subject, body)
+}
+
+func (d *dailySummaryOnlyNotifier) SendDigest(ctx context.Context, digestKey, subject, body string) {
+	if d.active {
+		slog.Info("email suppressed (daily_summary_only)", "subject", subject, "digest_key", digestKey)
+		return
+	}
+	if dig, ok := d.inner.(digestNotifier); ok {
+		dig.SendDigest(ctx, digestKey, subject, body)
+		return
+	}
+	d.inner.Send(ctx, subject, body)
+}
+
+func routineEmailsSuppressed(n Notifier) bool {
+	switch g := n.(type) {
+	case *tradeGatedNotifier:
+		return g.tradeOnly
+	case *dailySummaryOnlyNotifier:
+		return g.active
+	}
+	return false
 }
 
 type LogNotifier struct{}
