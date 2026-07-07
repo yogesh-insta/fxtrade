@@ -105,9 +105,9 @@ func FormatAccountPNL(nav, baseline float64, currency string) string {
 	}
 	total := nav - baseline
 	pct := total / baseline * 100
-	return fmt.Sprintf("Account NAV: %s%.2f %s | vs baseline %s%.2f %s | total P&L %s (%.2f%%)",
-		formatMoneySign(nav), absMoney(nav), currency,
-		formatMoneySign(baseline), absMoney(baseline), currency,
+	return fmt.Sprintf("Account NAV: %s %s | vs baseline %s %s | total P&L %s (%.2f%%)",
+		formatMoneySign(nav), currency,
+		formatMoneySign(baseline), currency,
 		formatMoney(total), pct)
 }
 
