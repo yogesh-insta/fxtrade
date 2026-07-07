@@ -162,10 +162,16 @@ func (m *PositionMonitor) poll(ctx context.Context) {
 		if _, ok := current[id]; ok {
 			continue
 		}
-		pl := m.lookupClosedPL(ctx, id)
-		slog.Info("position closed externally", "trade_id", id, "instrument", prev.Instrument, "realized_pl", pl)
-		m.notify.Send(ctx, "fxtrade: position closed externally",
-			fmt.Sprintf("trade_id=%s\ninstrument=%s\nrealized_pl=%.2f\n", id, prev.Instrument, pl))
+		pl, found := m.lookupClosedPL(ctx, id)
+		if found {
+			slog.Info("position closed externally", "trade_id", id, "instrument", prev.Instrument, "realized_pl", pl)
+			m.notify.Send(ctx, "fxtrade: position closed externally",
+				fmt.Sprintf("trade_id=%s\ninstrument=%s\nrealized_pl=%.2f\n", id, prev.Instrument, pl))
+		} else {
+			slog.Warn("position closed externally: realized P/L unavailable", "trade_id", id, "instrument", prev.Instrument)
+			m.notify.Send(ctx, "fxtrade: position closed externally",
+				fmt.Sprintf("trade_id=%s\ninstrument=%s\nrealized_pl=unknown\n", id, prev.Instrument))
+		}
 		m.NoteTradeClosed(id, pl)
 	}
 
@@ -182,17 +188,26 @@ func (m *PositionMonitor) trackInstrument(instrument string) bool {
 	return ok
 }
 
-func (m *PositionMonitor) lookupClosedPL(ctx context.Context, tradeID string) float64 {
-	since := time.Now().Add(-5 * time.Minute)
-	txs, err := m.client.TransactionsSince(ctx, since)
-	if err != nil {
-		slog.Warn("position monitor: transactions lookup failed", "trade_id", tradeID, "error", err)
-		return 0
+func (m *PositionMonitor) lookupClosedPL(ctx context.Context, tradeID string) (float64, bool) {
+	// OANDA can lag in exposing close transactions right after SL/TP fills.
+	// Retry with wider windows before declaring P/L unavailable.
+	windows := []time.Duration{
+		15 * time.Minute,
+		2 * time.Hour,
+		24 * time.Hour,
 	}
-	if pl, ok := oanda.ClosedTradePL(txs.Transactions, tradeID); ok {
-		return pl
+	for _, window := range windows {
+		since := time.Now().Add(-window)
+		txs, err := m.client.TransactionsSince(ctx, since)
+		if err != nil {
+			slog.Warn("position monitor: transactions lookup failed", "trade_id", tradeID, "window", window.String(), "error", err)
+			continue
+		}
+		if pl, ok := oanda.ClosedTradePL(txs.Transactions, tradeID); ok {
+			return pl, true
+		}
 	}
-	return 0
+	return 0, false
 }
 
 // SeedOpenTrades registers pre-existing positions after startup reconciliation
