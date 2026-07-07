@@ -68,7 +68,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	scannerNotifier := scanner.NewNotifier(cfg, notifier, deps.DryRun)
 	exec := execution.NewExecutor(client, rm, notifier)
 	exec.SetDryRun(deps.DryRun)
-	posMon := monitor.New(client, rm, notifier, 30*time.Second)
+	posMon := monitor.New(client, rm, notifier, 30*time.Second, universe.Symbols...)
 	exec.SetTradeAccounting(posMon)
 	posMon.SetOnTradeClosed(func(tradeID, correlationID string, pl float64) {
 		tradeRecorder.OnClose(tradeID, correlationID, pl, rm, nil)

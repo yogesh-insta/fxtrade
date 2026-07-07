@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,11 +24,20 @@ type PositionMonitor struct {
 	recordedCloses map[string]struct{}
 	onTradeOpened  func(oanda.Trade)
 	onTradeClosed  func(tradeID, correlationID string, pl float64)
+	instruments    map[string]struct{}
 }
 
-func New(client *oanda.Client, rm *risk.Manager, n notify.Notifier, interval time.Duration) *PositionMonitor {
+func New(client *oanda.Client, rm *risk.Manager, n notify.Notifier, interval time.Duration, instruments ...string) *PositionMonitor {
 	if interval <= 0 {
 		interval = 30 * time.Second
+	}
+	filter := make(map[string]struct{}, len(instruments))
+	for _, inst := range instruments {
+		inst = strings.ToUpper(strings.TrimSpace(inst))
+		if inst == "" {
+			continue
+		}
+		filter[inst] = struct{}{}
 	}
 	return &PositionMonitor{
 		client:         client,
@@ -37,6 +47,7 @@ func New(client *oanda.Client, rm *risk.Manager, n notify.Notifier, interval tim
 		known:          make(map[string]oanda.Trade),
 		recordedOpens:  make(map[string]struct{}),
 		recordedCloses: make(map[string]struct{}),
+		instruments:    filter,
 	}
 }
 
@@ -117,6 +128,9 @@ func (m *PositionMonitor) poll(ctx context.Context) {
 
 	current := make(map[string]oanda.Trade, len(resp.Trades))
 	for _, t := range resp.Trades {
+		if !m.trackInstrument(t.Instrument) {
+			continue
+		}
 		current[t.ID] = t
 		m.mu.RLock()
 		_, known := m.known[t.ID]
@@ -158,6 +172,14 @@ func (m *PositionMonitor) poll(ctx context.Context) {
 	m.mu.Lock()
 	m.known = current
 	m.mu.Unlock()
+}
+
+func (m *PositionMonitor) trackInstrument(instrument string) bool {
+	if len(m.instruments) == 0 {
+		return true
+	}
+	_, ok := m.instruments[strings.ToUpper(strings.TrimSpace(instrument))]
+	return ok
 }
 
 func (m *PositionMonitor) lookupClosedPL(ctx context.Context, tradeID string) float64 {
