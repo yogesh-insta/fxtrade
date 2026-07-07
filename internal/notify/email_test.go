@@ -95,3 +95,18 @@ func TestTradeOnlyDisabledAllowsDigests(t *testing.T) {
 		t.Fatalf("expected digest through when trade-only disabled, got %d", got)
 	}
 }
+
+func TestDailySummaryOnlySuppressesAllEmails(t *testing.T) {
+	base := &countingNotifier{}
+	n := WithDailySummaryOnly(base, true)
+	ctx := context.Background()
+
+	SendDigest(n, ctx, "strategy:AUD_USD", "fxtrade: AUD_USD strategy — STAND_ASIDE", "body")
+	SendRoutine(n, ctx, "fxtrade: platform started", "startup")
+	n.Send(ctx, "fxtrade: OPEN AUD_USD LONG 1000 units", "fill confirmed")
+	n.Send(ctx, "fxtrade: CLOSED AUD_USD (+$10.00)", "trade closed")
+
+	if got := base.count(); got != 0 {
+		t.Fatalf("expected 0 emails with daily_summary_only, got %d", got)
+	}
+}

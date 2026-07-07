@@ -202,6 +202,22 @@ func suggestTweaks(
 
 	var out []string
 
+	zeroPL, emptyInst := 0, 0
+	for _, t := range trades {
+		if t.NetPL == 0 && t.RealizedPL == 0 {
+			zeroPL++
+		}
+		if strings.TrimSpace(t.Instrument) == "" {
+			emptyInst++
+		}
+	}
+	if zeroPL > 0 {
+		out = append(out, fmt.Sprintf("%d trade(s) recorded $0 P/L — OANDA transaction lookup may have failed", zeroPL))
+	}
+	if emptyInst > 0 {
+		out = append(out, fmt.Sprintf("%d trade(s) missing instrument — ensure metaStore on trade open", emptyInst))
+	}
+
 	// Yesterday all-red day
 	if yesterday.TradeCount > 0 && yesterday.WinCount == 0 {
 		out = append(out, fmt.Sprintf(
@@ -479,5 +495,55 @@ func writeBucket(b *strings.Builder, title string, buckets []BucketStats) {
 		}
 		fmt.Fprintf(b, "  %-20s %2d trades  %3.0f%% win  net %s\n",
 			x.Key, x.Trades, wr, formatMoney(x.TotalNetPL))
+	}
+}
+
+// FormatDailyAnalysis renders a concise analysis block for the daily email.
+func FormatDailyAnalysis(cfg *config.Config, now time.Time) string {
+	var b strings.Builder
+	b.WriteString("── Analysis & Suggested Tweaks ──\n")
+	for _, botID := range TradingBotIDs() {
+		a := AnalyzeBot(cfg, botID, now)
+		fmt.Fprintf(&b, "\n%s\n", BotDisplayName(botID))
+		if a.Err != nil {
+			fmt.Fprintf(&b, "  (no data — %v)\n", a.Err)
+			continue
+		}
+		if a.AllTime.TradeCount == 0 {
+			b.WriteString("  No closed trades in database.\n")
+		} else {
+			fmt.Fprintf(&b, "  All-time: %d trades, win rate %s, net P&L %s\n",
+				a.AllTime.TradeCount,
+				formatWinRate(a.AllTime.TradeCount, a.AllTime.WinCount, a.AllTime.LossCount, a.AllTime.WinRate),
+				formatMoney(a.AllTime.TotalNetPL),
+			)
+			if a.Yesterday.TradeCount > 0 {
+				fmt.Fprintf(&b, "  Yesterday: %d trades, net %s\n",
+					a.Yesterday.TradeCount, formatMoney(a.Yesterday.TotalNetPL))
+			}
+			writeDailyBucket(&b, "  By exit reason", a.ByExit, 5)
+			writeDailyBucket(&b, "  By instrument", a.ByInstrument, 5)
+		}
+		if len(a.Suggestions) > 0 {
+			b.WriteString("  Suggested tweaks:\n")
+			for _, s := range a.Suggestions {
+				fmt.Fprintf(&b, "  • %s\n", s)
+			}
+		}
+	}
+	return strings.TrimRight(b.String(), "\n") + "\n"
+}
+
+func writeDailyBucket(b *strings.Builder, title string, buckets []BucketStats, limit int) {
+	if len(buckets) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "%s:\n", title)
+	if limit > len(buckets) {
+		limit = len(buckets)
+	}
+	for i := 0; i < limit; i++ {
+		x := buckets[i]
+		fmt.Fprintf(b, "    %s: %d trades, net %s\n", x.Key, x.Trades, formatMoney(x.TotalNetPL))
 	}
 }

@@ -10,7 +10,8 @@ NIFTY_PULSE_SRC=""
 AFL_PULSE_SRC=""
 AFL_PULSE_PREGAME_SRC=""
 HEALTH_WATCH_SRC=""
-BTC_DAILY_EMAIL_SRC=""
+BOT_DAILY_EMAIL_SRC=""
+BOT_ANALYZE_SRC=""
 BOT_WEEKLY_EMAIL_SRC=""
 CREDENTIALS_SRC=""
 ENABLE_ALL=false
@@ -27,7 +28,8 @@ Options:
   --afl-pulse PATH      Linux amd64 afl-pulse binary (default: deploy via CI or build manually)
   --afl-pulse-pregame PATH  Linux amd64 afl-pulse-pregame binary
   --health-watch PATH   Linux amd64 health-watch binary (watchdog alerts)
-  --btc-daily-email PATH  Linux amd64 btc-daily-email binary (BTC daily summary)
+  --bot-daily-email PATH  Linux amd64 bot-daily-email binary (all-bot daily summary)
+  --bot-analyze PATH      Linux amd64 bot-analyze binary (trade analysis CLI)
   --bot-weekly-email PATH Linux amd64 bot-weekly-email binary (weekly bot summary)
   --credentials PATH    Local .credentials to install (default: skip; use fetch-credentials.sh)
   --enable-all          Enable fxtrade.service (all bots from .credentials)
@@ -48,7 +50,8 @@ while [[ $# -gt 0 ]]; do
     --afl-pulse) AFL_PULSE_SRC="$2"; shift 2 ;;
     --afl-pulse-pregame) AFL_PULSE_PREGAME_SRC="$2"; shift 2 ;;
     --health-watch) HEALTH_WATCH_SRC="$2"; shift 2 ;;
-    --btc-daily-email) BTC_DAILY_EMAIL_SRC="$2"; shift 2 ;;
+    --bot-daily-email) BOT_DAILY_EMAIL_SRC="$2"; shift 2 ;;
+    --bot-analyze) BOT_ANALYZE_SRC="$2"; shift 2 ;;
     --bot-weekly-email) BOT_WEEKLY_EMAIL_SRC="$2"; shift 2 ;;
     --credentials) CREDENTIALS_SRC="$2"; shift 2 ;;
     --enable-all) ENABLE_ALL=true; shift ;;
@@ -126,12 +129,20 @@ elif [[ ! -x "$INSTALL_ROOT/bin/health-watch" ]]; then
   echo "  scp health-watch user@vm:/tmp/ && sudo install -m 755 /tmp/health-watch $INSTALL_ROOT/bin/health-watch"
 fi
 
-if [[ -n "$BTC_DAILY_EMAIL_SRC" ]]; then
-  install -m 755 "$BTC_DAILY_EMAIL_SRC" "$INSTALL_ROOT/bin/btc-daily-email"
-elif [[ ! -x "$INSTALL_ROOT/bin/btc-daily-email" ]]; then
-  echo "note: no binary at $INSTALL_ROOT/bin/btc-daily-email yet — build manually:"
-  echo "  GOOS=linux GOARCH=amd64 go build -o btc-daily-email ./cmd/btc-daily-email"
-  echo "  scp btc-daily-email user@vm:/tmp/ && sudo install -m 755 /tmp/btc-daily-email $INSTALL_ROOT/bin/btc-daily-email"
+if [[ -n "$BOT_DAILY_EMAIL_SRC" ]]; then
+  install -m 755 "$BOT_DAILY_EMAIL_SRC" "$INSTALL_ROOT/bin/bot-daily-email"
+elif [[ ! -x "$INSTALL_ROOT/bin/bot-daily-email" ]]; then
+  echo "note: no binary at $INSTALL_ROOT/bin/bot-daily-email yet — build manually:"
+  echo "  GOOS=linux GOARCH=amd64 go build -o bot-daily-email ./cmd/bot-daily-email"
+  echo "  scp bot-daily-email user@vm:/tmp/ && sudo install -m 755 /tmp/bot-daily-email $INSTALL_ROOT/bin/bot-daily-email"
+fi
+
+if [[ -n "$BOT_ANALYZE_SRC" ]]; then
+  install -m 755 "$BOT_ANALYZE_SRC" "$INSTALL_ROOT/bin/bot-analyze"
+elif [[ ! -x "$INSTALL_ROOT/bin/bot-analyze" ]]; then
+  echo "note: no binary at $INSTALL_ROOT/bin/bot-analyze yet — build manually:"
+  echo "  GOOS=linux GOARCH=amd64 go build -o bot-analyze ./cmd/bot-analyze"
+  echo "  scp bot-analyze user@vm:/tmp/ && sudo install -m 755 /tmp/bot-analyze $INSTALL_ROOT/bin/bot-analyze"
 fi
 
 if [[ -n "$BOT_WEEKLY_EMAIL_SRC" ]]; then
@@ -144,7 +155,7 @@ fi
 
 install -m 755 "$ROOT/deploy/gcp/check-scheduled-jobs.sh" "$INSTALL_ROOT/scripts/check-scheduled-jobs.sh"
 install -m 755 "$ROOT/deploy/gcp/run-health-watch.sh" "$INSTALL_ROOT/scripts/run-health-watch.sh"
-install -m 755 "$ROOT/deploy/gcp/run-btc-daily-email.sh" "$INSTALL_ROOT/scripts/run-btc-daily-email.sh"
+install -m 755 "$ROOT/deploy/gcp/run-bot-daily-email.sh" "$INSTALL_ROOT/scripts/run-bot-daily-email.sh"
 install -m 755 "$ROOT/deploy/gcp/run-bot-weekly-email.sh" "$INSTALL_ROOT/scripts/run-bot-weekly-email.sh"
 install -m 644 "$ROOT/deploy/gcp/fxtrade-watch.cron" /etc/cron.d/fxtrade-watch
 chmod 644 /etc/cron.d/fxtrade-watch

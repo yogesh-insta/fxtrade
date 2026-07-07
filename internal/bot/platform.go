@@ -54,7 +54,13 @@ func RunPlatform(cfg *config.Config, opts Options) error {
 
 	client := oanda.NewClient(cfg.OANDA.RESTBaseURL(), cfg.OANDA.AccountID, cfg.OANDA.Token)
 	stream := oanda.NewStream(cfg.OANDA.StreamBaseURL(), cfg.OANDA.AccountID, cfg.OANDA.Token)
-	notifier := notify.WithTradeOnly(notify.New(cfg.Email), cfg.Notifications.TradeOnlyEmail())
+	baseNotifier := notify.New(cfg.Email)
+	var notifier notify.Notifier = baseNotifier
+	if cfg.Notifications.DailySummaryOnlyMode() {
+		notifier = notify.WithDailySummaryOnly(baseNotifier, true)
+	} else if cfg.Notifications.TradeOnlyEmail() {
+		notifier = notify.WithTradeOnly(baseNotifier, true)
+	}
 	deps := &Deps{CFG: cfg, Client: client, Stream: stream, Notifier: notifier, DryRun: opts.DryRun}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

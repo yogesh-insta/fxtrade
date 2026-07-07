@@ -12,6 +12,7 @@ import (
 	"github.com/ym/fxtrade/internal/execution"
 	"github.com/ym/fxtrade/internal/journal"
 	"github.com/ym/fxtrade/internal/monitor"
+	"github.com/ym/fxtrade/internal/oanda"
 	"github.com/ym/fxtrade/internal/risk"
 	"github.com/ym/fxtrade/internal/scanner"
 	"github.com/ym/fxtrade/internal/state"
@@ -70,6 +71,9 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	exec.SetDryRun(deps.DryRun)
 	posMon := monitor.New(client, rm, notifier, 30*time.Second, universe.Symbols...)
 	exec.SetTradeAccounting(posMon)
+	posMon.SetOnTradeOpened(func(t oanda.Trade) {
+		metaStore.Put(t.ID, store.MetaFromTrade(t))
+	})
 	posMon.SetOnTradeClosed(func(tradeID, correlationID string, pl float64) {
 		tradeRecorder.OnClose(tradeID, correlationID, pl, rm, nil)
 
