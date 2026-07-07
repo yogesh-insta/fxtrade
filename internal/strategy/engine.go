@@ -449,8 +449,6 @@ func (e *Engine) handleOpenTrade(ctx context.Context, snap market.Snapshot, band
 						e.logDecision(mode, "tp1_partial", "closed 50% at range midpoint", map[string]any{
 							"trade_id": t.ID, "entry": entry, "mid": mid, "realized_pl": pl,
 						})
-						e.notify.Send(ctx, "fxtrade: TP1 partial close",
-							fmt.Sprintf("trade_id=%s\ninstrument=%s\nmid=%s\nrealized_pl=%.2f\n", t.ID, e.instrument, oanda.FormatPrice(mid), pl))
 					}
 				}
 			}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 
 	"github.com/ym/fxtrade/internal/notify"
 	"github.com/ym/fxtrade/internal/oanda"
@@ -15,6 +17,11 @@ type TradeAccounting interface {
 	NoteTradeOpened(tradeID string)
 	NoteTradeClosed(tradeID string, pl float64)
 	RecordPartialPL(pl float64)
+}
+
+// TradeSnapshotSource optionally supplies open-trade context for close emails.
+type TradeSnapshotSource interface {
+	TradeSnapshot(tradeID string) (oanda.Trade, bool)
 }
 
 type Executor struct {
@@ -67,14 +74,6 @@ func (e *Executor) PlaceMarket(ctx context.Context, req risk.EntryRequest, param
 		}, nil
 	}
 
-	subject := fmt.Sprintf("fxtrade: order submitted %s %s %d units", params.Direction, params.Instrument, params.Units)
-	body := fmt.Sprintf("correlation_id=%s\ndirection=%s\nunits=%d\nstop_loss=%s\n",
-		req.CorrelationID, params.Direction, params.Units, oanda.FormatPrice(params.StopLoss))
-	if params.TakeProfit != nil {
-		body += fmt.Sprintf("take_profit=%s\n", oanda.FormatPrice(*params.TakeProfit))
-	}
-	e.notify.Send(ctx, subject, body)
-
 	resp, err := e.client.CreateOrder(ctx, order)
 	if err != nil {
 		if params.ClientOrderID != "" {
@@ -100,9 +99,17 @@ func (e *Executor) PlaceMarket(ctx context.Context, req risk.EntryRequest, param
 	}
 
 	e.noteOpened(result.TradeID)
-	e.notify.Send(ctx, "fxtrade: order filled",
-		fmt.Sprintf("correlation_id=%s\ntrade_id=%s\nfill_price=%s\nunits=%d\n",
-			req.CorrelationID, result.TradeID, oanda.FormatPrice(result.FillPrice), result.Units))
+	open := notify.TradeOpen{
+		Instrument:    params.Instrument,
+		Direction:     params.Direction,
+		Units:         result.Units,
+		FillPrice:     result.FillPrice,
+		StopLoss:      &params.StopLoss,
+		TakeProfit:    params.TakeProfit,
+		TradeID:       result.TradeID,
+		CorrelationID: req.CorrelationID,
+	}
+	e.notify.Send(ctx, notify.TradeOpenSubject(params.Instrument, params.Direction, result.Units), notify.FormatTradeOpen(open))
 	slog.Info("order filled",
 		"correlation_id", req.CorrelationID,
 		"trade_id", result.TradeID,
@@ -161,6 +168,17 @@ func (e *Executor) PlaceLimit(ctx context.Context, req risk.EntryRequest, params
 
 	if result.TradeID != "" {
 		e.noteOpened(result.TradeID)
+		open := notify.TradeOpen{
+			Instrument:    params.Instrument,
+			Direction:     params.Direction,
+			Units:         result.Units,
+			FillPrice:     result.FillPrice,
+			StopLoss:      &params.StopLoss,
+			TakeProfit:    params.TakeProfit,
+			TradeID:       result.TradeID,
+			CorrelationID: req.CorrelationID,
+		}
+		e.notify.Send(ctx, notify.TradeOpenSubject(params.Instrument, params.Direction, result.Units), notify.FormatTradeOpen(open))
 	}
 	slog.Info("limit order placed",
 		"correlation_id", req.CorrelationID,
@@ -200,18 +218,22 @@ func (e *Executor) CloseTradeUnits(ctx context.Context, tradeID, correlationID, 
 		return 0, err
 	}
 
-	pl, err := oanda.RealizedPL(resp)
-	if err != nil {
-		slog.Warn("close trade missing P&L", "trade_id", tradeID, "error", err)
+	details := oanda.CloseFillDetails(resp)
+	pl := details.RealizedPL
+	plKnown := details.PLKnown
+	if !plKnown {
+		slog.Warn("close trade missing P&L", "trade_id", tradeID)
 	}
 
+	closeEv := e.buildCloseEvent(tradeID, correlationID, units, details, pl, plKnown)
 	if units == "ALL" {
 		e.noteClosed(tradeID, pl)
 	} else {
 		e.notePartialPL(pl)
 	}
-	e.notify.Send(ctx, "fxtrade: position closed",
-		fmt.Sprintf("correlation_id=%s\ntrade_id=%s\nunits=%s\nrealized_pl=%.2f\n", correlationID, tradeID, units, pl))
+	e.notify.Send(ctx,
+		notify.TradeCloseSubject(closeEv.Instrument, pl, plKnown, closeEv.Partial),
+		notify.FormatTradeClose(closeEv))
 	slog.Info("position closed", "correlation_id", correlationID, "trade_id", tradeID, "units", units, "pl", pl)
 
 	return pl, nil
@@ -239,4 +261,72 @@ func (e *Executor) notePartialPL(pl float64) {
 	} else if pl != 0 {
 		e.risk.RecordTradeClosed(pl)
 	}
+}
+
+func (e *Executor) buildCloseEvent(tradeID, correlationID, units string, details oanda.CloseDetails, pl float64, plKnown bool) notify.TradeClose {
+	ev := notify.TradeClose{
+		Instrument:    details.Instrument,
+		Units:         details.UnitsClosed,
+		ExitPrice:     details.ExitPrice,
+		RealizedPL:    pl,
+		PLKnown:       plKnown,
+		TradeID:       tradeID,
+		CorrelationID: correlationID,
+		Partial:       units != "ALL",
+	}
+	if ev.Units < 0 {
+		ev.Units = -ev.Units
+	}
+	if snap, ok := e.tradeSnapshot(tradeID); ok {
+		if ev.Instrument == "" {
+			ev.Instrument = snap.Instrument
+		}
+		if entry, err := oanda.ParsePrice(snap.Price); err == nil {
+			ev.EntryPrice = entry
+		}
+		if u, err := parseUnits(snap.CurrentUnits); err == nil {
+			ev.Direction = oanda.TradeDirection(u)
+			if ev.Units == 0 {
+				ev.Units = u
+				if ev.Units < 0 {
+					ev.Units = -ev.Units
+				}
+			}
+		}
+	}
+	if ev.Reason == "" {
+		ev.Reason = closeReason(correlationID, ev.Partial)
+	}
+	if strings.Contains(correlationID, "tp1-") {
+		ev.Reason = "TP1 partial close at range midpoint"
+	}
+	return ev
+}
+
+func (e *Executor) tradeSnapshot(tradeID string) (oanda.Trade, bool) {
+	if e.trades == nil {
+		return oanda.Trade{}, false
+	}
+	src, ok := e.trades.(TradeSnapshotSource)
+	if !ok {
+		return oanda.Trade{}, false
+	}
+	return src.TradeSnapshot(tradeID)
+}
+
+func closeReason(correlationID string, partial bool) string {
+	if partial {
+		return "partial close"
+	}
+	if correlationID == "" {
+		return "position closed"
+	}
+	if strings.Contains(correlationID, "force_flat") {
+		return "force flat (end of session)"
+	}
+	return correlationID
+}
+
+func parseUnits(s string) (int64, error) {
+	return strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 }
