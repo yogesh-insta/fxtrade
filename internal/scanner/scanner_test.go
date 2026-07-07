@@ -66,3 +66,28 @@ func TestPresetVolatilePhase1Count(t *testing.T) {
 		t.Fatalf("expected 19 symbols, got %d", len(syms))
 	}
 }
+
+func TestShouldForceFlatFXAt2000UTC(t *testing.T) {
+	cfg := config.DefaultScannerConfig()
+	before := time.Date(2026, 7, 7, 19, 59, 0, 0, time.UTC)
+	at := time.Date(2026, 7, 7, 20, 0, 0, 0, time.UTC)
+	after := time.Date(2026, 7, 7, 20, 1, 0, 0, time.UTC)
+
+	if ShouldForceFlat(cfg, "GBP_USD", "CURRENCY", before) {
+		t.Fatal("expected no force flat before 20:00 UTC")
+	}
+	if !ShouldForceFlat(cfg, "GBP_USD", "CURRENCY", at) {
+		t.Fatal("expected force flat at 20:00 UTC")
+	}
+	if !ShouldForceFlat(cfg, "GBP_USD", "CURRENCY", after) {
+		t.Fatal("expected force flat after 20:00 UTC")
+	}
+}
+
+func TestShouldForceFlatCryptoDisabled(t *testing.T) {
+	cfg := config.DefaultScannerConfig()
+	now := time.Date(2026, 7, 7, 23, 0, 0, 0, time.UTC)
+	if ShouldForceFlat(cfg, "BTC_USD", "CFD", now) {
+		t.Fatal("expected no force flat for crypto by default")
+	}
+}
