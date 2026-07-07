@@ -94,7 +94,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 
 	exec := execution.NewExecutor(client, rm, notifier)
 	exec.SetDryRun(deps.DryRun)
-	posMon := monitor.New(client, rm, notifier, 30*time.Second)
+	posMon := monitor.New(client, rm, notifier, 30*time.Second, instruments...)
 	exec.SetTradeAccounting(posMon)
 
 	engines := make([]*strategy.Engine, 0, len(instruments))

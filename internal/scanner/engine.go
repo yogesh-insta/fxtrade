@@ -110,7 +110,7 @@ func (e *Engine) cycle(ctx context.Context) {
 		slog.Warn("open trades", "error", err)
 		return
 	}
-	if len(open.Trades) > 0 {
+	if e.hasScannerOpenTrade(open.Trades) {
 		return
 	}
 
@@ -195,8 +195,8 @@ func (e *Engine) enter(ctx context.Context, setup Setup, runnersUp []Setup, bala
 
 	open, _ := e.client.OpenTrades(ctx)
 	openCount := 0
-	if open != nil {
-		openCount = len(open.Trades)
+	if open != nil && e.hasScannerOpenTrade(open.Trades) {
+		openCount = 1
 	}
 
 	corrID := fmt.Sprintf("scan-%s-%d", setup.Instrument, time.Now().UnixNano())
@@ -215,11 +215,13 @@ func (e *Engine) enter(ctx context.Context, setup Setup, runnersUp []Setup, bala
 	e.notify.TradeEntry(ctx, setup, runnersUp, balance, units, stop, tp)
 
 	result, err := e.exec.PlaceMarket(ctx, req, execution.MarketOrderParams{
-		Instrument: setup.Instrument,
-		Direction:  setup.BreakoutDirection,
-		Units:      units,
-		StopLoss:   stop,
-		TakeProfit: &tp,
+		Instrument:     setup.Instrument,
+		Direction:      setup.BreakoutDirection,
+		Units:          units,
+		StopLoss:       stop,
+		TakeProfit:     &tp,
+		ClientOrderID:  corrID,
+		ClientOrderTag: e.botID,
 	})
 	if err != nil {
 		return err
@@ -372,4 +374,13 @@ func AccountBalance(ctx context.Context, cfg *config.Config, client *oanda.Clien
 func (e *Engine) DryRun(ctx context.Context) []Setup {
 	setups := e.scanner.ScanAll(ctx, e.universe.Symbols)
 	return RankSetups(setups, e.cfg.Scanner.MinSetupScore)
+}
+
+func (e *Engine) hasScannerOpenTrade(trades []oanda.Trade) bool {
+	for _, t := range trades {
+		if t.ClientExtensions != nil && t.ClientExtensions.Tag == e.botID && e.botID != "" {
+			return true
+		}
+	}
+	return false
 }

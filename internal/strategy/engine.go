@@ -174,16 +174,8 @@ func (e *Engine) runCycle(ctx context.Context) {
 		return
 	}
 
-	// Account-wide cap: block when another instrument holds a position or pending order.
-	if blocked, reason := accountExposureBlocked(openTrades, pending, e.instrument, e.cfg.Risk.MaxOpenPositions); blocked {
-		e.cancelAllPending(ctx, "account_exposure_cap")
-		e.cycleSummary.Reason = reason
-		e.logDecision(mode, "no_trade", reason, nil)
-		e.sendCycleReport(ctx, snap, band, sig, hasSig)
-		return
-	}
-
-	openCount := len(openTrades)
+	// Per-bot allocation: do not block this engine on other bots' positions.
+	openCount := len(ownTrades)
 
 	switch mode {
 	case ModeStandAside:
