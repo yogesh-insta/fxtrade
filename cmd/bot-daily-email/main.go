@@ -39,24 +39,38 @@ func main() {
 		reportDate = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 	}
 
+	ctx := context.Background()
+	var client *oanda.Client
+	accountPNL := ""
+	var accountTotalPL float64
+	reconcileNote := ""
+	if cfg.OANDA.Token != "" {
+		client = oanda.NewClient(cfg.OANDA.RESTBaseURL(), cfg.OANDA.AccountID, cfg.OANDA.Token)
+		if summary := report.ReconcileAllBots(ctx, cfg, client); summary.TotalReconciled > 0 {
+			reconcileNote = fmt.Sprintf("Reconciled %d trade(s) from OANDA before this report.", summary.TotalReconciled)
+			slog.Info("reconciled trades before daily email", "count", summary.TotalReconciled)
+		}
+		if cfg.OANDA.InitialCapitalAUD > 0 {
+			if navSummary, err := client.AccountSummary(ctx); err == nil {
+				nav, _ := oanda.ParsePrice(navSummary.Account.NAV)
+				currency := navSummary.Account.Currency
+				accountTotalPL = nav - cfg.OANDA.InitialCapitalAUD
+				accountPNL = report.FormatAccountPNL(nav, cfg.OANDA.InitialCapitalAUD, currency)
+			}
+		}
+	}
+
 	sections := make([]report.BotDailySection, 0, len(report.TradingBotIDs()))
 	for _, botID := range report.TradingBotIDs() {
 		sections = append(sections, loadBotSection(botID, report.BotDBPath(cfg, botID), reportDate))
 	}
 
-	accountPNL := ""
-	if cfg.OANDA.Token != "" && cfg.OANDA.InitialCapitalAUD > 0 {
-		client := oanda.NewClient(cfg.OANDA.RESTBaseURL(), cfg.OANDA.AccountID, cfg.OANDA.Token)
-		if summary, err := client.AccountSummary(context.Background()); err == nil {
-			nav, _ := oanda.ParsePrice(summary.Account.NAV)
-			currency := summary.Account.Currency
-			accountPNL = report.FormatAccountPNL(nav, cfg.OANDA.InitialCapitalAUD, currency)
-		}
+	analysis := report.FormatDailyAnalysis(cfg, now)
+	if reconcileNote != "" {
+		analysis = reconcileNote + "\n" + analysis
 	}
 
-	analysis := report.FormatDailyAnalysis(cfg, now)
-
-	subject, body := report.DailyEmail(reportDate, sections, accountPNL, analysis)
+	subject, body := report.DailyEmail(reportDate, sections, accountPNL, accountTotalPL, analysis)
 	if *printOnly {
 		fmtPrint(subject, body)
 		return
@@ -68,7 +82,7 @@ func main() {
 	}
 
 	n := notify.New(cfg.Email)
-	n.Send(context.Background(), subject, body)
+	n.Send(ctx, subject, body)
 	slog.Info("daily summary sent", "subject", subject, "to", cfg.Email.AlertTo, "date", reportDate.Format("2006-01-02"))
 }
 

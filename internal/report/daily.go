@@ -2,6 +2,7 @@ package report
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -29,15 +30,29 @@ func ReportDayUTC(now time.Time, sameDay bool) time.Time {
 }
 
 // DailyEmail formats the combined daily performance subject and body.
+// accountTotalPL is cumulative account P/L vs baseline (pass 0 when unknown).
 // analysis is optional text from FormatDailyAnalysis (may be empty).
-func DailyEmail(reportDate time.Time, sections []BotDailySection, accountPNL, analysis string) (subject, body string) {
+func DailyEmail(reportDate time.Time, sections []BotDailySection, accountPNL string, accountTotalPL float64, analysis string) (subject, body string) {
 	dateStr := reportDate.UTC().Format("2006-01-02")
 	subject = fmt.Sprintf("fxtrade: daily bot summary %s", dateStr)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "Daily Bot Performance\nDate: %s UTC\n\n", dateStr)
 	if accountPNL != "" {
-		fmt.Fprintf(&b, "%s\n\n", accountPNL)
+		fmt.Fprintf(&b, "%s\n", accountPNL)
+		var botAllTime float64
+		for _, sec := range sections {
+			if sec.Err == nil {
+				botAllTime += sec.AllTime.TotalNetPL
+			}
+		}
+		gap := accountTotalPL - botAllTime
+		fmt.Fprintf(&b, "Bots tracked (all-time net): %s | gap vs account: %s",
+			formatMoney(botAllTime), formatMoney(gap))
+		if math.Abs(gap) > 1.0 {
+			b.WriteString(" (fees, manual trades, open positions, or unreconciled rows)")
+		}
+		b.WriteString("\n\n")
 	}
 
 	var totalTrades int
@@ -67,12 +82,9 @@ func DailyEmail(reportDate time.Time, sections []BotDailySection, accountPNL, an
 		fmt.Fprintf(&b, "  Trades: %d\n", day.TradeCount)
 		fmt.Fprintf(&b, "  Win rate: %s\n", formatWinRate(day.TradeCount, day.WinCount, day.LossCount, day.WinRate))
 		fmt.Fprintf(&b, "  Net P&L: %s\n", formatMoney(day.TotalNetPL))
-		for _, t := range day.Trades {
-			dir := strings.ToUpper(strings.TrimSpace(t.Direction))
-			if dir == "" {
-				dir = "?"
-			}
-			fmt.Fprintf(&b, "    • %s  %s\n", dir, formatMoney(t.NetPL))
+		for _, line := range formatDayTradeLines(day.Trades) {
+			b.WriteString(line)
+			b.WriteByte('\n')
 		}
 		if sec.AllTime.TradeCount > 0 {
 			fmt.Fprintf(&b, "  All-time net P&L: %s (%d trades)\n", formatMoney(sec.AllTime.TotalNetPL), sec.AllTime.TradeCount)
@@ -123,4 +135,26 @@ func absMoney(v float64) float64 {
 		return -v
 	}
 	return v
+}
+
+func formatDayTradeLines(trades []sqlite.TradeBrief) []string {
+	var lines []string
+	zeroCount := 0
+	for _, t := range trades {
+		if math.Abs(t.NetPL) < 0.01 {
+			zeroCount++
+			continue
+		}
+		dir := strings.ToUpper(strings.TrimSpace(t.Direction))
+		if dir == "" {
+			dir = "?"
+		}
+		lines = append(lines, fmt.Sprintf("    • %s  %s", dir, formatMoney(t.NetPL)))
+	}
+	if zeroCount == 1 {
+		lines = append(lines, "    • 1 trade @ $0.00 (unreconciled)")
+	} else if zeroCount > 1 {
+		lines = append(lines, fmt.Sprintf("    • %d trades @ $0.00 (unreconciled)", zeroCount))
+	}
+	return lines
 }

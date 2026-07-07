@@ -49,6 +49,21 @@ func EstimateNotionalUSD(instrument string, units int64, price float64) (float64
 	}
 }
 
+// ClosedTradeInstrument returns the instrument from a trade-close transaction.
+func ClosedTradeInstrument(transactions []Transaction, tradeID string) (string, bool) {
+	for _, tx := range transactions {
+		for _, tc := range tx.TradesClosed {
+			if tc.TradeID != tradeID {
+				continue
+			}
+			if inst := strings.TrimSpace(tx.Instrument); inst != "" {
+				return inst, true
+			}
+		}
+	}
+	return "", false
+}
+
 // ClosedTradeDetails looks up close price and units from recent transactions.
 func ClosedTradeDetails(transactions []Transaction, tradeID string) (exitPrice float64, unitsClosed int64, ok bool) {
 	for _, tx := range transactions {
