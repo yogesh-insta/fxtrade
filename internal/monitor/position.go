@@ -234,17 +234,24 @@ func (m *PositionMonitor) trackInstrument(instrument string) bool {
 }
 
 func (m *PositionMonitor) lookupClosedTrade(ctx context.Context, tradeID string) (pl float64, plFound bool, exitPrice float64, units int64) {
-	pl, plFound, exitPrice, units = m.lookupClosedTradeWindows(ctx, tradeID)
-	if plFound || exitPrice > 0 {
-		return pl, plFound, exitPrice, units
+	retryDelays := []time.Duration{3 * time.Second, 8 * time.Second, 15 * time.Second}
+	for attempt, delay := range append([]time.Duration{0}, retryDelays...) {
+		if delay > 0 {
+			select {
+			case <-ctx.Done():
+				return 0, false, 0, 0
+			case <-time.After(delay):
+			}
+		}
+		pl, plFound, exitPrice, units = m.lookupClosedTradeWindows(ctx, tradeID)
+		if plFound || exitPrice > 0 {
+			return pl, plFound, exitPrice, units
+		}
+		if attempt == len(retryDelays) {
+			break
+		}
 	}
-
-	select {
-	case <-ctx.Done():
-		return 0, false, 0, 0
-	case <-time.After(3 * time.Second):
-	}
-	return m.lookupClosedTradeWindows(ctx, tradeID)
+	return 0, false, 0, 0
 }
 
 func (m *PositionMonitor) lookupClosedTradeWindows(ctx context.Context, tradeID string) (pl float64, plFound bool, exitPrice float64, units int64) {

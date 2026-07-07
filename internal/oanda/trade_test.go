@@ -25,3 +25,22 @@ func TestEstimateNotionalUSD(t *testing.T) {
 		t.Fatalf("USD base: got %.2f ok=%v", usd, ok)
 	}
 }
+
+func TestClosedTradeInstrument(t *testing.T) {
+	txs := []Transaction{
+		{
+			Instrument: "GBP_USD",
+			TradesClosed: []struct {
+				TradeID    string `json:"tradeID"`
+				Units      string `json:"units"`
+				RealizedPL string `json:"realizedPL"`
+			}{
+				{TradeID: "42", Units: "1000", RealizedPL: "1.50"},
+			},
+		},
+	}
+	inst, ok := ClosedTradeInstrument(txs, "42")
+	if !ok || inst != "GBP_USD" {
+		t.Fatalf("got %q ok=%v", inst, ok)
+	}
+}

@@ -27,6 +27,7 @@ Bots size from per-bot `allocated_capital_usd` (5000), not full NAV. Account P/L
 | `go run ./cmd/bot-analyze -bot ID` | Single-bot analysis |
 | `go run ./cmd/bot-metrics -bot ID` | Detailed SQLite metrics for one bot |
 | `go run ./cmd/bot-daily-email -print` | Preview combined daily email (P/L + analysis) |
+| `go run ./cmd/reconcile-trades` | Backfill $0 P/L and missing instruments from OANDA transactions |
 | `go run ./cmd/bot-weekly-email -print` | Preview weekly rollup |
 
 On VM: binaries under `/opt/fxtrade/bin/`, credentials at `/opt/fxtrade/.credentials`, run as `fxtrade` user from `/opt/fxtrade`.
@@ -61,7 +62,7 @@ Daily email includes: per-bot day + all-time P/L, account NAV vs baseline, and *
 - **One knob at a time** — edit `.credentials`, restart affected `fxtrade@BOT.service`, wait several days
 - **Moderate changes** — demo is for learning; avoid choking trade flow (e.g. prefer `min_range_spread_ratio` 2.0 over 3.0+)
 - **Suggestions are not auto-applied** — daily email and `bot-analyze` recommend; human (or explicit agent request) applies
-- **Data quality first** — fix `$0 P/L` or missing-instrument rows before tuning (metaStore / transaction lookup)
+- **Data quality first** — fix `$0 P/L` or missing-instrument rows before tuning (`reconcile-trades` or automatic backfill in `bot-daily-email`)
 - **Target:** positive expectancy over **30+ closed trades** per bot before live
 
 ### Key knobs

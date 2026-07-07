@@ -36,6 +36,7 @@ Operational workflow for the three platform bots on the OANDA practice account.
 ```bash
 go run ./cmd/account-pnl                    # live NAV vs baseline
 go run ./cmd/bot-analyze                    # all 3 bots: metrics + tweak suggestions
+go run ./cmd/reconcile-trades               # backfill $0 P/L rows from OANDA
 go run ./cmd/bot-analyze -bot universe_scanner
 go run ./cmd/bot-metrics -bot fx_sentiment  # single-bot SQLite stats
 go run ./cmd/bot-daily-email -print         # preview today's daily email
@@ -47,6 +48,7 @@ go run ./cmd/bot-daily-email -date 2026-07-07 -print
 ```bash
 cd /opt/fxtrade
 sudo -u fxtrade /opt/fxtrade/bin/account-pnl -credentials /opt/fxtrade/.credentials
+sudo -u fxtrade /opt/fxtrade/bin/reconcile-trades -credentials /opt/fxtrade/.credentials -root /opt/fxtrade
 sudo -u fxtrade /opt/fxtrade/bin/bot-analyze -credentials /opt/fxtrade/.credentials -root /opt/fxtrade
 sudo -u fxtrade /opt/fxtrade/bin/bot-daily-email -credentials /opt/fxtrade/.credentials -print
 ```
@@ -56,13 +58,14 @@ Cron daily email: `20:30 UTC` via `/opt/fxtrade/scripts/run-bot-daily-email.sh` 
 ## Analysis workflow
 
 1. **Account level** — `account-pnl`: NAV, realized, unrealized vs `initial_capital_aud`
-2. **Per-bot SQLite** — `bot-analyze` (or `bot-metrics` for one bot)
-3. **Read dimensions** in output:
+2. **Reconcile** — `reconcile-trades` backfills $0 P/L rows (also runs before `bot-daily-email`)
+3. **Per-bot SQLite** — `bot-analyze` (or `bot-metrics` for one bot)
+4. **Read dimensions** in output:
    - By instrument (worst first)
    - By exit reason (`force_flat`, `scanner_breakout`, `tp1_partial`, `max_hold`, etc.)
    - By close hour UTC (loss clusters 19:00–21:00 → entry cutoff)
    - Win rate, all-time vs yesterday
-4. **Cross-check** — account P/L should roughly match sum of bot net P/L plus open positions; flag `$0` trades or missing instruments as data bugs
+4. **Cross-check** — account P/L should roughly match sum of bot net P/L plus open positions; run `reconcile-trades` if many `$0` trades or missing instruments
 5. **Suggest tweaks** — use built-in suggestions + judgment; see philosophy below
 6. **Optional** — preview or send daily email with `-print` / without `-print`
 

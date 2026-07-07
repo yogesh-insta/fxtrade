@@ -30,6 +30,7 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -o bot-daily-email ./cmd/bot-daily-email
           GOOS=linux GOARCH=amd64 go build -o bot-analyze ./cmd/bot-analyze
           GOOS=linux GOARCH=amd64 go build -o bot-weekly-email ./cmd/bot-weekly-email
+          GOOS=linux GOARCH=amd64 go build -o reconcile-trades ./cmd/reconcile-trades
 
       - name: Configure SSH
         env:
@@ -51,7 +52,7 @@ jobs:
           INSTALL_ROOT="$(dirname "$(dirname "$VM_PATH")")"
           REMOTE="${GCP_VM_USER}@${GCP_VM_HOST}"
 
-          scp -i ~/.ssh/deploy_key -o BatchMode=yes fxtrade nifty-pulse afl-pulse afl-pulse-pregame health-watch bot-daily-email bot-analyze bot-weekly-email watchlist.txt "${REMOTE}:/tmp/"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes fxtrade nifty-pulse afl-pulse afl-pulse-pregame health-watch bot-daily-email bot-analyze bot-weekly-email reconcile-trades watchlist.txt "${REMOTE}:/tmp/"
           scp -i ~/.ssh/deploy_key -o BatchMode=yes deploy/gcp/afl-pulse-pregame.service deploy/gcp/afl-pulse-pregame.timer "${REMOTE}:/tmp/"
           scp -i ~/.ssh/deploy_key -o BatchMode=yes deploy/gcp/check-scheduled-jobs.sh deploy/gcp/run-health-watch.sh deploy/gcp/run-bot-daily-email.sh deploy/gcp/run-bot-weekly-email.sh deploy/gcp/fxtrade-watch.cron "${REMOTE}:/tmp/"
           scp -i ~/.ssh/deploy_key -o BatchMode=yes -r data/afl "${REMOTE}:/tmp/"
@@ -66,6 +67,7 @@ jobs:
           sudo install -m 755 /tmp/bot-daily-email "${INSTALL_ROOT}/bin/bot-daily-email"
           sudo install -m 755 /tmp/bot-analyze "${INSTALL_ROOT}/bin/bot-analyze"
           sudo install -m 755 /tmp/bot-weekly-email "${INSTALL_ROOT}/bin/bot-weekly-email"
+          sudo install -m 755 /tmp/reconcile-trades "${INSTALL_ROOT}/bin/reconcile-trades"
           sudo install -m 755 /tmp/check-scheduled-jobs.sh "${INSTALL_ROOT}/scripts/check-scheduled-jobs.sh"
           sudo install -m 755 /tmp/run-health-watch.sh "${INSTALL_ROOT}/scripts/run-health-watch.sh"
           sudo install -m 755 /tmp/run-bot-daily-email.sh "${INSTALL_ROOT}/scripts/run-bot-daily-email.sh"
@@ -83,7 +85,7 @@ jobs:
           sudo mkdir -p "${INSTALL_ROOT}/data/afl"
           sudo cp -f /tmp/afl/*.json "${INSTALL_ROOT}/data/afl/"
           sudo chown -R fxtrade:fxtrade "${INSTALL_ROOT}/data/afl"
-          rm -f /tmp/fxtrade /tmp/nifty-pulse /tmp/afl-pulse /tmp/afl-pulse-pregame /tmp/health-watch /tmp/bot-daily-email /tmp/bot-analyze /tmp/bot-weekly-email /tmp/watchlist.txt
+          rm -f /tmp/fxtrade /tmp/nifty-pulse /tmp/afl-pulse /tmp/afl-pulse-pregame /tmp/health-watch /tmp/bot-daily-email /tmp/bot-analyze /tmp/bot-weekly-email /tmp/reconcile-trades /tmp/watchlist.txt
           rm -f /tmp/check-scheduled-jobs.sh /tmp/run-health-watch.sh /tmp/run-bot-daily-email.sh /tmp/run-bot-weekly-email.sh /tmp/fxtrade-watch.cron
           rm -f /tmp/afl-pulse-pregame.service /tmp/afl-pulse-pregame.timer
           rm -rf /tmp/afl
@@ -141,6 +143,9 @@ jobs:
             fi
           done
           if [[ -f "${INSTALL_ROOT}/.credentials" ]]; then
+            echo ""
+            echo "── reconcile-trades ──"
+            "${INSTALL_ROOT}/bin/reconcile-trades" -credentials "${INSTALL_ROOT}/.credentials" -root "${INSTALL_ROOT}" 2>&1 || true
             echo ""
             echo "── bot-analyze ──"
             "${INSTALL_ROOT}/bin/bot-analyze" -credentials "${INSTALL_ROOT}/.credentials" -root "${INSTALL_ROOT}" 2>&1 || true

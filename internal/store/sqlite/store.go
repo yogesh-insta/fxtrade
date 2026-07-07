@@ -181,3 +181,81 @@ FROM trades ORDER BY closed_at ASC`)
 	}
 	return out, rows.Err()
 }
+
+// ListTradesNeedingReconciliation returns rows with failed P/L lookup or missing instrument.
+func (s *Store) ListTradesNeedingReconciliation() ([]Trade, error) {
+	rows, err := s.db.Query(`
+SELECT closed_at, instrument, direction, trade_id, correlation_id,
+	signal_price, fill_price, stop_loss, take_profit, units,
+	realized_pl, swap_cost, net_pl, slippage_pct
+FROM trades
+WHERE (COALESCE(net_pl, 0) = 0 AND COALESCE(realized_pl, 0) = 0)
+   OR TRIM(COALESCE(instrument, '')) = ''
+ORDER BY closed_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("query trades needing reconciliation: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Trade
+	for rows.Next() {
+		var closedStr string
+		var instrument, direction, tradeID, corrID sql.NullString
+		var signal, fill, sl, tp, gross, swap, net, slip sql.NullFloat64
+		var units sql.NullInt64
+		if err := rows.Scan(&closedStr, &instrument, &direction, &tradeID, &corrID,
+			&signal, &fill, &sl, &tp, &units,
+			&gross, &swap, &net, &slip); err != nil {
+			return nil, err
+		}
+		closed, err := time.Parse(time.RFC3339, closedStr)
+		if err != nil {
+			return nil, fmt.Errorf("parse closed_at %q: %w", closedStr, err)
+		}
+		t := Trade{
+			ClosedAt:      closed.UTC(),
+			Instrument:    instrument.String,
+			Direction:     direction.String,
+			TradeID:       tradeID.String,
+			CorrelationID: corrID.String,
+			SignalPrice:   signal.Float64,
+			FillPrice:     fill.Float64,
+			StopLoss:      sl.Float64,
+			TakeProfit:    tp.Float64,
+			Units:         units.Int64,
+			RealizedPL:    gross.Float64,
+			SwapCost:      swap.Float64,
+			SlippagePct:   slip.Float64,
+		}
+		if net.Valid {
+			t.NetPL = net.Float64
+		} else {
+			t.NetPL = t.RealizedPL - t.SwapCost
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// UpdateTradeReconciliation patches P/L and instrument for a closed trade row.
+func (s *Store) UpdateTradeReconciliation(tradeID string, instrument string, realizedPL, netPL float64) error {
+	if tradeID == "" {
+		return fmt.Errorf("trade_id required")
+	}
+	res, err := s.db.Exec(`
+UPDATE trades SET
+	realized_pl = ?,
+	net_pl = ?,
+	instrument = CASE WHEN TRIM(COALESCE(instrument, '')) = '' AND ? != '' THEN ? ELSE instrument END
+WHERE trade_id = ?`,
+		realizedPL, netPL, instrument, instrument, tradeID,
+	)
+	if err != nil {
+		return fmt.Errorf("update trade reconciliation: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("trade_id %q not found", tradeID)
+	}
+	return nil
+}
