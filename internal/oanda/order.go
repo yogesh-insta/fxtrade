@@ -93,12 +93,38 @@ func ParseCreateOrderResult(resp *CreateOrderResponse) (OrderResult, error) {
 }
 
 func RealizedPL(resp *CloseTradeResponse) (float64, error) {
-	if resp == nil || resp.OrderFillTransaction == nil {
+	details := CloseFillDetails(resp)
+	if !details.PLKnown {
 		return 0, fmt.Errorf("no close fill transaction")
 	}
+	return details.RealizedPL, nil
+}
+
+// CloseFillDetails extracts exit price, units, and P&L from a close response.
+func CloseFillDetails(resp *CloseTradeResponse) CloseDetails {
+	var out CloseDetails
+	if resp == nil || resp.OrderFillTransaction == nil {
+		return out
+	}
 	fill := resp.OrderFillTransaction
+	out.Instrument = fill.Instrument
+	if fill.Price != "" {
+		if p, err := ParsePrice(fill.Price); err == nil {
+			out.ExitPrice = p
+			out.HasExit = true
+		}
+	}
+	if fill.Units != "" {
+		if u, err := strconv.ParseInt(fill.Units, 10, 64); err == nil {
+			out.UnitsClosed = u
+		}
+	}
 	if fill.Pl != "" {
-		return ParsePrice(fill.Pl)
+		if p, err := ParsePrice(fill.Pl); err == nil {
+			out.RealizedPL = p
+			out.PLKnown = true
+			return out
+		}
 	}
 	var total float64
 	for _, tc := range fill.TradesClosed {
@@ -107,11 +133,27 @@ func RealizedPL(resp *CloseTradeResponse) (float64, error) {
 		}
 		p, err := ParsePrice(tc.RealizedPL)
 		if err != nil {
-			return 0, err
+			continue
 		}
 		total += p
+		out.PLKnown = true
+		if out.UnitsClosed == 0 && tc.Units != "" {
+			if u, err := strconv.ParseInt(tc.Units, 10, 64); err == nil {
+				out.UnitsClosed = u
+			}
+		}
 	}
-	return total, nil
+	out.RealizedPL = total
+	return out
+}
+
+type CloseDetails struct {
+	Instrument  string
+	UnitsClosed int64
+	ExitPrice   float64
+	HasExit     bool
+	RealizedPL  float64
+	PLKnown     bool
 }
 
 // ClosedTradePL sums realized P&L from recent transactions for a closed trade.

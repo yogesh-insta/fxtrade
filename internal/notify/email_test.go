@@ -76,9 +76,9 @@ func TestTradeOnlySuppressesRoutineEmails(t *testing.T) {
 		t.Fatalf("expected 0 routine emails, got %d", got)
 	}
 
-	n.Send(ctx, "fxtrade: order filled", "fill confirmed")
-	n.Send(ctx, "fxtrade: position detected", "trade opened")
-	n.Send(ctx, "fxtrade: position closed", "trade closed")
+	n.Send(ctx, "fxtrade: OPEN AUD_USD LONG 1000 units", "fill confirmed")
+	n.Send(ctx, "fxtrade: OPEN AUD_USD LONG 1000 units", "trade opened")
+	n.Send(ctx, "fxtrade: CLOSED AUD_USD (+$10.00)", "trade closed")
 
 	if got := base.count(); got != 3 {
 		t.Fatalf("expected 3 trade emails, got %d", got)
