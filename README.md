@@ -235,6 +235,12 @@ Other bots persist closed trades and decision signals under `data/<bot_id>/trade
 
 ---
 
+## Demo P/L and algorithm tweaks
+
+Practice-account performance, daily analysis email, and config iteration are documented in **[docs/demo_trading_loop.md](docs/demo_trading_loop.md)**. Cursor agents can use the project skill **`.cursor/skills/analyze-pl-tweaks/`** when you ask to analyse P/L, review bot performance, or suggest algorithm tweaks (`bot-analyze`, `account-pnl`, daily email workflow).
+
+---
+
 ## Project layout
 
 ```
@@ -252,7 +258,8 @@ fxtrade/
 ├── data/                     # bot state, AFL stats, per-bot trades.db
 ├── deploy/gcp/               # systemd units, install.sh, Terraform
 ├── logs/                     # sentiment audit, trade journal, daemon logs
-├── docs/                     # bot specs (e.g. btc_cfd)
+├── docs/                     # bot specs, demo_trading_loop.md
+├── .cursor/skills/           # agent skills (e.g. analyze-pl-tweaks)
 └── plan.md                   # fx_sentiment strategy spec
 ```
 
