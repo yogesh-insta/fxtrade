@@ -6,9 +6,11 @@ const DefaultInstrument = "AUD_USD"
 
 type AccountSummary struct {
 	Account struct {
-		ID      string `json:"id"`
-		Balance string `json:"balance"`
-		NAV     string `json:"NAV"`
+		ID           string `json:"id"`
+		Balance      string `json:"balance"`
+		NAV          string `json:"NAV"`
+		UnrealizedPL string `json:"unrealizedPL"`
+		Currency     string `json:"currency"`
 	} `json:"account"`
 }
 

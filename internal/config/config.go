@@ -34,9 +34,11 @@ type Config struct {
 }
 
 type OANDAConfig struct {
-	AccountID   string `json:"account_id"`
-	Token       string `json:"token"`
-	Environment string `json:"environment"`
+	AccountID          string  `json:"account_id"`
+	Token              string  `json:"token"`
+	Environment        string  `json:"environment"`
+	InitialCapitalAUD  float64 `json:"initial_capital_aud,omitempty"`
+	InitialCapitalNote string  `json:"initial_capital_note,omitempty"`
 }
 
 type EmailConfig struct {
