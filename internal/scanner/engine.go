@@ -34,6 +34,7 @@ type Engine struct {
 	sessionEntered   map[string]time.Time
 	perfStore        *sqlite.Store
 	metaStore        *store.MetaStore
+	onCycleOK        func()
 }
 
 func NewEngine(cfg *config.Config, client *oanda.Client, exec *execution.Executor, rm *risk.Manager, n *Notifier, universe Universe) *Engine {
@@ -56,6 +57,10 @@ func (e *Engine) SetBotID(id string) {
 func (e *Engine) SetPerformanceStore(s *sqlite.Store, meta *store.MetaStore) {
 	e.perfStore = s
 	e.metaStore = meta
+}
+
+func (e *Engine) SetOnCycleOK(fn func()) {
+	e.onCycleOK = fn
 }
 
 func (e *Engine) Run(ctx context.Context) {
@@ -84,6 +89,13 @@ func (e *Engine) cycle(ctx context.Context) {
 		return
 	}
 
+	cycleOK := false
+	defer func() {
+		if cycleOK && e.onCycleOK != nil {
+			e.onCycleOK()
+		}
+	}()
+
 	now := time.Now().UTC()
 	e.mu.Lock()
 	if e.dayKey != now.Format("2006-01-02") {
@@ -110,6 +122,7 @@ func (e *Engine) cycle(ctx context.Context) {
 		slog.Warn("open trades", "error", err)
 		return
 	}
+	cycleOK = true
 	if e.hasScannerOpenTrade(open.Trades) {
 		return
 	}

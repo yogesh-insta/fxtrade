@@ -19,11 +19,12 @@ type Meta struct {
 // Status is the runtime snapshot exposed on /health.
 type Status struct {
 	Meta
-	Running       bool      `json:"running"`
-	Halted        bool      `json:"halted"`
-	OpenPositions int       `json:"open_positions"`
-	Detail        string    `json:"detail,omitempty"`
-	StartedAt     time.Time `json:"started_at,omitempty"`
+	Running        bool      `json:"running"`
+	Halted         bool      `json:"halted"`
+	OpenPositions  int       `json:"open_positions"`
+	Detail         string    `json:"detail,omitempty"`
+	StartedAt      time.Time `json:"started_at,omitempty"`
+	LastCycleOKAt  time.Time `json:"last_cycle_ok_at,omitempty"`
 }
 
 // Deps are shared platform services passed to every bot.

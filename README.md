@@ -180,7 +180,7 @@ Local: `go run ./cmd/nifty-pulse`, `go run ./cmd/afl-pulse`, `go run ./cmd/afl-p
 
 | Program | What | How it runs |
 |---------|------|-------------|
-| `health-watch` | Polls `/health`; emails on daemon failure, stale ticks, failed timer jobs | Cron via `run-health-watch.sh` |
+| `health-watch` | Polls `/health`; emails on daemon failure, stale ticks, stale bot cycles (`last_cycle_ok_at`), failed timer jobs | Cron via `run-health-watch.sh` |
 | `bot-daily-email` | Combined daily P&L + analysis for all platform bots | Cron 20:30 UTC via `run-bot-daily-email.sh` |
 | `bot-analyze` | Trade analysis and tweak suggestions from SQLite history | Manual CLI |
 | `reconcile-trades` | Backfill $0 P/L and missing instruments from OANDA transactions | Manual CLI; runs automatically before daily email |

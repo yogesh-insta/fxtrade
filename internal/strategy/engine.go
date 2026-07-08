@@ -65,7 +65,8 @@ func (e *Engine) SetPerformanceStore(botID string, s *sqlite.Store) {
 
 // RunAll runs all engines on a shared ticker, cycling them sequentially each
 // tick so account-wide checks (1 open position, correlation guard) cannot race.
-func RunAll(ctx context.Context, engines []*Engine, cfg *config.Config) {
+// onTickOK is called when every engine completes a successful cycle in a tick.
+func RunAll(ctx context.Context, engines []*Engine, cfg *config.Config, onTickOK func()) {
 	if len(engines) == 0 {
 		return
 	}
@@ -79,26 +80,32 @@ func RunAll(ctx context.Context, engines []*Engine, cfg *config.Config) {
 	}
 	slog.Info("strategy engines configured", "interval", interval, "enabled", cfg.Strategy.Enabled, "instruments", instruments)
 	schedule.RunPeriodic(ctx, "strategy engines", interval, func(cycleCtx context.Context) {
-		runAllOnce(cycleCtx, engines)
+		if runAllOnce(cycleCtx, engines) && onTickOK != nil {
+			onTickOK()
+		}
 	})
 }
 
-func runAllOnce(ctx context.Context, engines []*Engine) {
+func runAllOnce(ctx context.Context, engines []*Engine) bool {
+	allOK := true
 	for _, e := range engines {
 		if ctx.Err() != nil {
-			return
+			return false
 		}
-		e.runCycle(ctx)
+		if !e.runCycle(ctx) {
+			allOK = false
+		}
 	}
+	return allOK
 }
 
-func (e *Engine) RunOnce(ctx context.Context) {
-	e.runCycle(ctx)
+func (e *Engine) RunOnce(ctx context.Context) bool {
+	return e.runCycle(ctx)
 }
 
-func (e *Engine) runCycle(ctx context.Context) {
+func (e *Engine) runCycle(ctx context.Context) bool {
 	if !e.cfg.Strategy.Enabled {
-		return
+		return false
 	}
 
 	now := time.Now()
@@ -118,14 +125,14 @@ func (e *Engine) runCycle(ctx context.Context) {
 		e.cycleSummary.Reason = "kill switch active"
 		e.logDecision(ModeStandAside, "no_trade", e.cycleSummary.Reason, nil)
 		e.sendCycleReport(ctx, market.Snapshot{}, RangeBand{}, sentiment.SentimentSignal{}, false)
-		return
+		return false
 	}
 
 	snap, err := market.LoadSnapshot(ctx, e.client, e.instrument)
 	if err != nil {
 		slog.Error("strategy snapshot", "instrument", e.instrument, "error", err)
 		e.abortCycle(ctx, market.Snapshot{}, RangeBand{}, fmt.Sprintf("market data unavailable: %v", err))
-		return
+		return false
 	}
 
 	sig, hasSig, history := e.currentSentiment(now)
@@ -139,7 +146,7 @@ func (e *Engine) runCycle(ctx context.Context) {
 		e.logDecision(e.cycleSummary.Mode, "no_trade", reason, nil)
 		band := DetectRange(snap, e.cfg.RangeMode)
 		e.sendCycleReport(ctx, snap, band, sig, hasSig)
-		return
+		return true
 	}
 
 	band := DetectRange(snap, e.cfg.RangeMode)
@@ -161,7 +168,7 @@ func (e *Engine) runCycle(ctx context.Context) {
 	if err != nil {
 		slog.Error("strategy state", "instrument", e.instrument, "error", err)
 		e.abortCycle(ctx, snap, band, fmt.Sprintf("could not read open trades/orders: %v", err))
-		return
+		return false
 	}
 
 	ownTrades, _ := splitTradesByInstrument(openTrades, e.instrument)
@@ -171,7 +178,7 @@ func (e *Engine) runCycle(ctx context.Context) {
 		e.cycleSummary.Reason = fmt.Sprintf("monitoring %d open position(s)", len(ownTrades))
 		e.handleOpenTrade(ctx, snap, band, mode, ownTrades, pending)
 		e.sendCycleReport(ctx, snap, band, sig, hasSig)
-		return
+		return true
 	}
 
 	// Per-bot allocation: do not block this engine on other bots' positions.
@@ -190,6 +197,7 @@ func (e *Engine) runCycle(ctx context.Context) {
 	}
 
 	e.sendCycleReport(ctx, snap, band, sig, hasSig)
+	return true
 }
 
 func (e *Engine) sendCycleReport(ctx context.Context, snap market.Snapshot, band RangeBand, sig sentiment.SentimentSignal, hasSig bool) {
