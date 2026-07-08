@@ -72,7 +72,7 @@ func (e *cycleEngine) tick(ctx context.Context) error {
 		}
 	}
 
-	resp, err := e.client.Candles(ctx, e.bc.Instrument, e.bc.Granularity, e.bc.CandleCount)
+	resp, err := e.client.Candles(ctx, e.bc.Instrument, e.bc.Granularity, candlesRequestCount(e.bc.CandleCount))
 	if err != nil {
 		return err
 	}
@@ -227,7 +227,7 @@ func (e *cycleEngine) tick(ctx context.Context) error {
 }
 
 func (e *cycleEngine) m15Bias(ctx context.Context) (closePx, ema200 float64, err error) {
-	resp, err := e.client.Candles(ctx, e.bc.Instrument, "M15", e.bc.CandleCount)
+	resp, err := e.client.Candles(ctx, e.bc.Instrument, "M15", candlesRequestCount(e.bc.CandleCount))
 	if err != nil {
 		return 0, 0, err
 	}
@@ -324,6 +324,13 @@ func fmtDetail(bc config.BtcCfdConfig, n int, lastTime string) string {
 		return bc.Instrument + " " + bc.Granularity + " (no candles)"
 	}
 	return bc.Instrument + " " + bc.Granularity + ": " + lastTime + " (" + strconv.Itoa(n) + " candles)"
+}
+
+// candlesRequestCount returns how many bars to fetch from OANDA. The latest
+// candle in the response is usually the still-forming bar (incomplete), so we
+// request one extra to ensure CandleCount complete bars for indicators.
+func candlesRequestCount(complete int) int {
+	return complete + 1
 }
 
 func nextM5Boundary(now time.Time) time.Time {
