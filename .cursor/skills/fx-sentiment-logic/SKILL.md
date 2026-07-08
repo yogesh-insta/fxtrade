@@ -50,3 +50,7 @@ go run ./cmd/backtest -days 200
 - **P/L tuning:** `.cursor/skills/analyze-pl-tweaks/SKILL.md`
 - **ORB scanner:** `docs/universe_scanner_bot_spec.md` + `.cursor/skills/universe-scanner-logic/SKILL.md`
 - **BTC bot:** `docs/btc_cfd_bot_spec.md`
+
+## Keeping this current
+
+When strategy or sentiment logic changes, update this skill and `docs/fx_sentiment_bot_spec.md` in the same PR. See **`docs/bot_specs_maintenance.md`** and run `./scripts/verify-bot-spec-paths.sh`.

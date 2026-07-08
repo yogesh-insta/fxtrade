@@ -19,6 +19,9 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+      - name: Verify bot spec paths
+        run: bash scripts/verify-bot-spec-paths.sh
+
       - name: Build fxtrade
         run: go build -o fxtrade ./cmd/fxtrade
 

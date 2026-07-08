@@ -155,3 +155,9 @@ go run ./cmd/bot-analyze -bot universe_scanner
 # Tail closed trades
 tail -f logs/universe_scanner/trades.jsonl
 ```
+
+---
+
+## Maintenance
+
+Keep this doc aligned with code: **`docs/bot_specs_maintenance.md`**. CI runs `./scripts/verify-bot-spec-paths.sh` on every PR.

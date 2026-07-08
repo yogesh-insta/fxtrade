@@ -231,3 +231,9 @@ go run ./cmd/expectancy -trades logs/fx_sentiment/trades.jsonl
 tail -f logs/fx_sentiment/journal.jsonl
 tail -f logs/sentiment/$(date +%Y-%m-%d).jsonl
 ```
+
+---
+
+## Maintenance
+
+Keep this doc aligned with code: **`docs/bot_specs_maintenance.md`**. CI runs `./scripts/verify-bot-spec-paths.sh` on every PR.

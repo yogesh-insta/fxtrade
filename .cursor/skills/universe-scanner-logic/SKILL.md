@@ -48,3 +48,7 @@ go run ./cmd/bot-analyze -bot universe_scanner
 - **FX sentiment bot:** `docs/fx_sentiment_bot_spec.md` + `.cursor/skills/fx-sentiment-logic/SKILL.md`
 - **BTC bot spec:** `docs/btc_cfd_bot_spec.md`
 - **Email-only scanners:** `nifty-pulse`, `afl-pulse` under `cmd/` — no OANDA orders
+
+## Keeping this current
+
+When scanner logic changes, update this skill and `docs/universe_scanner_bot_spec.md` in the same PR. See **`docs/bot_specs_maintenance.md`** and run `./scripts/verify-bot-spec-paths.sh`.
