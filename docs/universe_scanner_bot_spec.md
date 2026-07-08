@@ -136,6 +136,8 @@ See `docs/demo_trading_loop.md` for tweak workflow (one knob at a time, 30+ clos
 
 Shared stack: `oanda`, `risk`, `execution`, `monitor`, `journal`, `state`, `bot`.
 
+**Deep dive:** `docs/fx_sentiment_bot_spec.md` for the sentiment/range bot.
+
 ---
 
 ## Quick inspection commands
