@@ -55,7 +55,7 @@ Daily email includes: per-bot day + all-time P/L, account NAV vs baseline, and *
 4. Read auto-generated suggestions; apply judgment (see below)
 5. Optionally `-print` daily email to see what cron sends
 
-**Agent skill:** `.cursor/skills/analyze-pl-tweaks/` — step-by-step workflow for Cursor agents.
+**Agent skill:** `.cursor/skills/analyze-pl-tweaks/` — see also `docs/skills/README.md`.
 
 ## Config tweak guidelines
 
