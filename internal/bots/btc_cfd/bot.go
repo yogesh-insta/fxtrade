@@ -106,6 +106,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	startedAt := time.Now()
 	var running bool
 	var lastCycle string
+	var lastCycleOKAt time.Time
 	var mu sync.RWMutex
 
 	saveState := func() error {
@@ -139,6 +140,11 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 		meta:      metaStore,
 		lastCycle: &lastCycle,
 		mu:        &mu,
+		markCycleOK: func() {
+			mu.Lock()
+			lastCycleOKAt = time.Now()
+			mu.Unlock()
+		},
 	}
 
 	go func() {
@@ -169,6 +175,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 			mu.RLock()
 			run := running
 			cycle := lastCycle
+			cycleOK := lastCycleOKAt
 			mu.RUnlock()
 			d := detail
 			if cycle != "" {
@@ -181,6 +188,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 				OpenPositions: posMon.OpenCount(),
 				Detail:        d,
 				StartedAt:     startedAt,
+				LastCycleOKAt: cycleOK,
 			}
 		},
 		Halt:          halt,

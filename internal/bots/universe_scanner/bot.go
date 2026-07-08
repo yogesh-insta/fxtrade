@@ -87,9 +87,15 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	engine := scanner.NewEngine(cfg, client, exec, rm, scannerNotifier, universe)
 	engine.SetBotID(Meta.ID)
 	engine.SetPerformanceStore(tradeDB, metaStore)
+	engine.SetOnCycleOK(func() {
+		mu.Lock()
+		lastCycleOKAt = time.Now()
+		mu.Unlock()
+	})
 
 	startedAt := time.Now()
 	var running bool
+	var lastCycleOKAt time.Time
 	var mu sync.RWMutex
 
 	saveState := func() error {
@@ -131,6 +137,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 		Status: func() bot.Status {
 			mu.RLock()
 			run := running
+			cycleOK := lastCycleOKAt
 			mu.RUnlock()
 			return bot.Status{
 				Meta:          Meta,
@@ -139,6 +146,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 				OpenPositions: posMon.OpenCount(),
 				Detail:        detail,
 				StartedAt:     startedAt,
+				LastCycleOKAt: cycleOK,
 			}
 		},
 		Halt:          rm.ActivateKillSwitch,

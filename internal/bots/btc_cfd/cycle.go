@@ -26,6 +26,7 @@ type cycleEngine struct {
 	meta      *tradeMetaStore
 	lastCycle *string
 	mu        *sync.RWMutex
+	markCycleOK func()
 
 	reconciled       bool
 	apiFailures      int
@@ -148,6 +149,10 @@ func (e *cycleEngine) tick(ctx context.Context) error {
 		"signal", sig.Direction,
 		"reason", sig.Reason,
 	)
+
+	if e.markCycleOK != nil {
+		e.markCycleOK()
+	}
 
 	if sig.Direction == "" {
 		return nil

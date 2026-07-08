@@ -131,7 +131,7 @@ Per-bot health ports (set by `install.sh --enable-bot`):
 
 | Check | How often | What triggers an email |
 |-------|-----------|------------------------|
-| FX daemon | Every 5 min | Process down, stream disconnected, stale ticks (FX hours only), bot not running, kill switch on |
+| FX daemon | Every 5 min | Process down, stream disconnected, stale ticks (FX hours only), bot not running, stale strategy cycle (`last_cycle_ok_at`), kill switch on |
 | NiftyPulse | Daily 18:30 Sydney (Sun–Fri) | `nifty-pulse.service` failed |
 | AFLPulse | Thu 18:30 Melbourne | `afl-pulse.service` failed |
 | AFL pregame | Every 20 min | `afl-pulse-pregame.service` failed |
