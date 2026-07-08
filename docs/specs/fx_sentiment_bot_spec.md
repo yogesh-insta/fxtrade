@@ -196,7 +196,7 @@ From shared `risk` config (bot uses `HaltFileForBot`):
 | `risk.max_open_positions` | Cap concurrent positions |
 | `instruments` | Pairs to run (one engine each) |
 
-See `docs/demo_trading_loop.md` for tweak workflow.
+See `docs/guides/demo_trading_loop.md` for tweak workflow.
 
 ---
 
@@ -236,4 +236,4 @@ tail -f logs/sentiment/$(date +%Y-%m-%d).jsonl
 
 ## Maintenance
 
-Keep this doc aligned with code: **`docs/bot_specs_maintenance.md`**. CI runs `./scripts/verify-bot-spec-paths.sh` on every PR.
+Keep this doc aligned with code: **`docs/guides/bot_specs_maintenance.md`**. CI runs `./scripts/code-quality.sh` on every PR.

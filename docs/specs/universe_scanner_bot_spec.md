@@ -122,7 +122,7 @@ Signal actions logged to SQLite `signals` table: `no_setup`, `await_breakout`, `
 | `risk_per_trade_pct` | Position size |
 | `poll_seconds` | Scan frequency |
 
-See `docs/demo_trading_loop.md` for tweak workflow (one knob at a time, 30+ closed trades before live).
+See `docs/guides/demo_trading_loop.md` for tweak workflow (one knob at a time, 30+ closed trades before live).
 
 ---
 
@@ -136,7 +136,7 @@ See `docs/demo_trading_loop.md` for tweak workflow (one knob at a time, 30+ clos
 
 Shared stack: `oanda`, `risk`, `execution`, `monitor`, `journal`, `state`, `bot`.
 
-**Deep dive:** `docs/fx_sentiment_bot_spec.md` for the sentiment/range bot.
+**Deep dive:** `docs/specs/fx_sentiment_bot_spec.md` for the sentiment/range bot.
 
 ---
 
@@ -160,4 +160,4 @@ tail -f logs/universe_scanner/trades.jsonl
 
 ## Maintenance
 
-Keep this doc aligned with code: **`docs/bot_specs_maintenance.md`**. CI runs `./scripts/verify-bot-spec-paths.sh` on every PR.
+Keep this doc aligned with code: **`docs/guides/bot_specs_maintenance.md`**. CI runs `./scripts/code-quality.sh` on every PR.

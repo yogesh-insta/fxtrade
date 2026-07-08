@@ -33,11 +33,11 @@ Use a descriptive branch name (`fix/scanner-force-flat`, `feat/fx-sentiment-cool
 
 | Change type | Also update |
 |-------------|-------------|
-| Bot behavior (`universe_scanner`, `fx_sentiment`, `btc_cfd`) | Matching `docs/*_bot_spec.md` + `.cursor/skills/*-logic/SKILL.md` |
+| Bot behavior (`universe_scanner`, `fx_sentiment`, `btc_cfd`) | Matching `docs/specs/*_bot_spec.md` + `.cursor/skills/*-logic/SKILL.md` |
 | Config defaults in `internal/config/` | Spec defaults section + skill bullets |
 | Moved/renamed Go files | Source maps in specs/skills |
 
-See **`docs/bot_specs_maintenance.md`** for the doc checklist.
+See **`docs/guides/bot_specs_maintenance.md`** for the doc checklist.
 
 **Secrets:** never commit `.credentials`, API keys, or tokens. Use `.credentials.example` for structure only.
 
@@ -99,7 +99,7 @@ Deploy to the VM is separate (`deploy.yml` on `main`); see `deploy/gcp/DEPLOY.md
 | BTC CFD bot | `internal/bots/btc_cfd/` |
 | Shared platform | `internal/oanda/`, `risk/`, `execution/`, `monitor/`, `journal/` |
 | Config | `internal/config/`, `.credentials.example` |
-| Bot logic docs | `docs/*_bot_spec.md` |
+| Bot logic docs | `docs/specs/`, `docs/README.md` |
 | Cursor skills | `.cursor/skills/` |
 | GCP deploy | `deploy/gcp/` |
 
@@ -109,15 +109,17 @@ Deploy to the VM is separate (`deploy.yml` on `main`); see `deploy/gcp/DEPLOY.md
 
 | Purpose | File |
 |---------|------|
-| How to keep specs current | `docs/bot_specs_maintenance.md` |
-| Universe scanner logic | `docs/universe_scanner_bot_spec.md` |
-| FX sentiment logic | `docs/fx_sentiment_bot_spec.md` |
-| BTC CFD spec | `docs/btc_cfd_bot_spec.md` |
+| **Documentation index** | `docs/README.md` |
+| How to keep specs current | `docs/guides/bot_specs_maintenance.md` |
+| Universe scanner logic | `docs/specs/universe_scanner_bot_spec.md` |
+| FX sentiment logic | `docs/specs/fx_sentiment_bot_spec.md` |
+| BTC CFD spec | `docs/specs/btc_cfd_bot_spec.md` |
+| Skills catalog | `docs/skills/README.md` |
 | P/L analysis workflow | `.cursor/skills/analyze-pl-tweaks/SKILL.md` |
 | Pre-PR checks | `.cursor/skills/code-quality/SKILL.md` |
 | Doc updates with code | `.cursor/skills/maintain-bot-specs/SKILL.md` |
 
-In Cursor chat, `@docs/fx_sentiment_bot_spec.md` (or the relevant spec) for logic questions instead of searching the whole repo.
+In Cursor chat, `@docs/specs/fx_sentiment_bot_spec.md` or `@docs/README.md` for logic questions instead of searching the whole repo.
 
 ---
 
@@ -159,7 +161,7 @@ Detailed steps: **`.github/BRANCH_PROTECTION.md`**
 
 - Local paper trading: `go run ./cmd/fxtrade -bot universe_scanner --dry-run`
 - VM: `FXTRADE_DRY_RUN=--dry-run` in systemd unit
-- Practice account only until validated; see `docs/demo_trading_loop.md`
+- Practice account only until validated; see `docs/guides/demo_trading_loop.md`
 
 ---
 

@@ -234,13 +234,13 @@ Risk limits live under `"risk"` and per-bot sections in `.credentials` (daily/we
 
 Before live trading: run on practice for **4+ weeks**, then `go run ./cmd/bot-metrics -bot fx_sentiment` (or `go run ./cmd/expectancy -trades logs/fx_sentiment/trades.jsonl`) — aim for **positive expectancy over 30+ trades**.
 
-Other bots persist closed trades and decision signals under `data/<bot_id>/trades.db`; see `docs/btc_cfd_bot_spec.md` for BTC CFD details.
+Other bots persist closed trades and decision signals under `data/<bot_id>/trades.db`; see `docs/specs/btc_cfd_bot_spec.md` for BTC CFD details.
 
 ---
 
 ## Demo P/L and algorithm tweaks
 
-Practice-account performance, daily analysis email, and config iteration are documented in **[docs/demo_trading_loop.md](docs/demo_trading_loop.md)**. Cursor agents can use the project skill **`.cursor/skills/analyze-pl-tweaks/`** when you ask to analyse P/L, review bot performance, or suggest algorithm tweaks (`bot-analyze`, `account-pnl`, daily email workflow).
+Practice-account performance, daily analysis email, and config iteration are documented in **[docs/guides/demo_trading_loop.md](docs/guides/demo_trading_loop.md)**. Full doc index: **[docs/README.md](docs/README.md)**. Cursor agents can use **`.cursor/skills/analyze-pl-tweaks/`** when you ask to analyse P/L, review bot performance, or suggest algorithm tweaks (`bot-analyze`, `account-pnl`, daily email workflow).
 
 ---
 
@@ -261,8 +261,8 @@ fxtrade/
 ├── data/                     # bot state, AFL stats, per-bot trades.db
 ├── deploy/gcp/               # systemd units, install.sh, Terraform
 ├── logs/                     # sentiment audit, trade journal, daemon logs
-├── docs/                     # bot specs, demo_trading_loop.md
-├── .cursor/skills/           # agent skills (e.g. analyze-pl-tweaks)
+├── docs/                     # README index, specs/, guides/, skills/
+├── .cursor/skills/           # Cursor agent skills (catalog in docs/skills/)
 └── plan.md                   # fx_sentiment strategy spec
 ```
 

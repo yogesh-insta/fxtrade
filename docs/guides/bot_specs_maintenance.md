@@ -6,7 +6,7 @@ Bot logic lives in Go; human/agent-readable summaries live in **spec docs** and 
 
 | Artifact | Role | Update when |
 |----------|------|-------------|
-| `docs/*_bot_spec.md` | Canonical logic reference (you `@` this in chat) | Behavior, defaults, config keys, or file layout changes |
+| `docs/specs/*_bot_spec.md` | Canonical logic reference (you `@` this in chat) | Behavior, defaults, config keys, or file layout changes |
 | `.cursor/skills/*-logic/SKILL.md` | Routes agents to the spec + source map | Same as spec; keep **one-paragraph summary** and **key defaults** in sync |
 | `.cursor/skills/maintain-bot-specs/SKILL.md` | Tells agents to update docs in the same PR as code | Rarely — only when the process changes |
 | `scripts/verify-bot-spec-paths.sh` | CI check: referenced paths still exist | Add paths to specs when you add modules |
@@ -21,9 +21,9 @@ Bot logic lives in Go; human/agent-readable summaries live in **spec docs** and 
 
 | Bot ID | Spec | Skill |
 |--------|------|-------|
-| `universe_scanner` | `docs/universe_scanner_bot_spec.md` | `.cursor/skills/universe-scanner-logic/SKILL.md` |
-| `fx_sentiment` | `docs/fx_sentiment_bot_spec.md` | `.cursor/skills/fx-sentiment-logic/SKILL.md` |
-| `btc_cfd` | `docs/btc_cfd_bot_spec.md` | *(no logic skill yet — add when needed)* |
+| `universe_scanner` | `docs/specs/universe_scanner_bot_spec.md` | `.cursor/skills/universe-scanner-logic/SKILL.md` |
+| `fx_sentiment` | `docs/specs/fx_sentiment_bot_spec.md` | `.cursor/skills/fx-sentiment-logic/SKILL.md` |
+| `btc_cfd` | `docs/specs/btc_cfd_bot_spec.md` | *(no logic skill yet — add when needed)* |
 | P/L / tuning ops | — | `.cursor/skills/analyze-pl-tweaks/SKILL.md` |
 
 ---
@@ -78,7 +78,7 @@ Defaults drift silently. After changing `Default*Config()` in Go, ask Cursor:
 
 ```
 Compare DefaultScannerConfig in internal/config/scanner.go with the
-"Key defaults" section in docs/universe_scanner_bot_spec.md and list mismatches.
+"Key defaults" section in docs/specs/universe_scanner_bot_spec.md and list mismatches.
 ```
 
 Same pattern for `DefaultRangeModeConfig`, `DefaultTrendModeConfig`, etc.
@@ -101,7 +101,7 @@ Same pattern for `DefaultRangeModeConfig`, `DefaultTrendModeConfig`, etc.
 Use a single message with the spec attached:
 
 ```
-@docs/fx_sentiment_bot_spec.md
+@docs/specs/fx_sentiment_bot_spec.md
 Read internal/strategy/engine.go and internal/strategy/gates.go.
 Update the spec and .cursor/skills/fx-sentiment-logic/SKILL.md for any
 logic or default changes. Run ./scripts/verify-bot-spec-paths.sh.
@@ -124,7 +124,7 @@ Attach only the files that changed in your PR to keep the diff focused.
 
 ## Adding a new bot spec
 
-1. Add `docs/<bot_id>_bot_spec.md` (copy structure from `universe_scanner_bot_spec.md`)
+1. Add `docs/specs/<bot_id>_bot_spec.md` (copy structure from `universe_scanner_bot_spec.md`)
 2. Add `.cursor/skills/<bot-id>-logic/SKILL.md` with source map + link to spec
 3. Add the new files to `scripts/verify-bot-spec-paths.sh` `SPEC_FILES` array
-4. Cross-link from sibling specs’ “vs other bots” tables
+4. Add rows to `docs/README.md` and `docs/skills/README.md`

@@ -9,7 +9,7 @@ description: Explains universe_scanner (FXPulse ORB) opening-range breakout logi
 
 ## Canonical reference
 
-Full logic write-up: **`docs/universe_scanner_bot_spec.md`** — prefer this for explanations.
+Full logic write-up: **`docs/specs/universe_scanner_bot_spec.md`** — prefer this for explanations.
 
 ## Source map (targeted reads only)
 
@@ -45,10 +45,10 @@ go run ./cmd/bot-analyze -bot universe_scanner
 ## Related (not this bot)
 
 - **P/L tuning workflow:** `.cursor/skills/analyze-pl-tweaks/SKILL.md`
-- **FX sentiment bot:** `docs/fx_sentiment_bot_spec.md` + `.cursor/skills/fx-sentiment-logic/SKILL.md`
-- **BTC bot spec:** `docs/btc_cfd_bot_spec.md`
+- **FX sentiment bot:** `docs/specs/fx_sentiment_bot_spec.md` + `.cursor/skills/fx-sentiment-logic/SKILL.md`
+- **BTC bot spec:** `docs/specs/btc_cfd_bot_spec.md`
 - **Email-only scanners:** `nifty-pulse`, `afl-pulse` under `cmd/` — no OANDA orders
 
 ## Keeping this current
 
-When scanner logic changes, update this skill and `docs/universe_scanner_bot_spec.md` in the same PR. See **`docs/bot_specs_maintenance.md`** and run `./scripts/verify-bot-spec-paths.sh`.
+When scanner logic changes, update this skill and `docs/specs/universe_scanner_bot_spec.md` in the same PR. See **`docs/guides/bot_specs_maintenance.md`** and run `./scripts/code-quality.sh`.

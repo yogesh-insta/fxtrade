@@ -9,7 +9,7 @@ description: Explains fx_sentiment range/trend strategy, Finnhub/Groq sentiment 
 
 ## Canonical reference
 
-Full logic write-up: **`docs/fx_sentiment_bot_spec.md`** — prefer this for explanations.
+Full logic write-up: **`docs/specs/fx_sentiment_bot_spec.md`** — prefer this for explanations.
 
 Historical design doc: **`plan.md`** (AUD/USD master plan; implementation now supports multiple instruments).
 
@@ -48,9 +48,9 @@ go run ./cmd/backtest -days 200
 ## Related (not this bot)
 
 - **P/L tuning:** `.cursor/skills/analyze-pl-tweaks/SKILL.md`
-- **ORB scanner:** `docs/universe_scanner_bot_spec.md` + `.cursor/skills/universe-scanner-logic/SKILL.md`
-- **BTC bot:** `docs/btc_cfd_bot_spec.md`
+- **ORB scanner:** `docs/specs/universe_scanner_bot_spec.md` + `.cursor/skills/universe-scanner-logic/SKILL.md`
+- **BTC bot:** `docs/specs/btc_cfd_bot_spec.md`
 
 ## Keeping this current
 
-When strategy or sentiment logic changes, update this skill and `docs/fx_sentiment_bot_spec.md` in the same PR. See **`docs/bot_specs_maintenance.md`** and run `./scripts/verify-bot-spec-paths.sh`.
+When strategy or sentiment logic changes, update this skill and `docs/specs/fx_sentiment_bot_spec.md` in the same PR. See **`docs/guides/bot_specs_maintenance.md`** and run `./scripts/code-quality.sh`.
