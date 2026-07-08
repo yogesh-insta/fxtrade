@@ -39,7 +39,7 @@ CODE_QUALITY_BASE=origin/main ./scripts/code-quality.sh
 | `gofmt` | `gofmt -w <file>` on listed files |
 | `go vet` / `go test` | Fix the reported issue; add tests if behavior changed |
 | `staticcheck` | Fix or justify; avoid drive-by refactors outside the PR scope |
-| `verify-bot-spec-paths` | Update spec/skill paths — see `docs/bot_specs_maintenance.md` |
+| `verify-bot-spec-paths` | Update spec/skill paths — see `docs/guides/bot_specs_maintenance.md` |
 
 ## PR workflow
 

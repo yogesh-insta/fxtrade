@@ -9,7 +9,7 @@ When you change bot **behavior**, **config defaults**, or **file layout**, updat
 
 ## Process
 
-1. Read **`docs/bot_specs_maintenance.md`** for the full checklist.
+1. Read **`docs/guides/bot_specs_maintenance.md`** for the full checklist.
 2. Identify the bot → update its **spec** and **logic skill** (see map below).
 3. Update only what changed: source map paths, cycle description, config keys, key defaults, one-paragraph skill summary.
 4. Run **`./scripts/code-quality.sh`** — must pass (includes verify-bot-spec-paths).
@@ -21,9 +21,9 @@ See **`CONTRIBUTING.md`** for the full PR workflow.
 
 | Bot | Spec | Skill |
 |-----|------|-------|
-| `universe_scanner` | `docs/universe_scanner_bot_spec.md` | `.cursor/skills/universe-scanner-logic/SKILL.md` |
-| `fx_sentiment` | `docs/fx_sentiment_bot_spec.md` | `.cursor/skills/fx-sentiment-logic/SKILL.md` |
-| `btc_cfd` | `docs/btc_cfd_bot_spec.md` | — |
+| `universe_scanner` | `docs/specs/universe_scanner_bot_spec.md` | `.cursor/skills/universe-scanner-logic/SKILL.md` |
+| `fx_sentiment` | `docs/specs/fx_sentiment_bot_spec.md` | `.cursor/skills/fx-sentiment-logic/SKILL.md` |
+| `btc_cfd` | `docs/specs/btc_cfd_bot_spec.md` | — |
 
 ## Trigger → what to edit
 

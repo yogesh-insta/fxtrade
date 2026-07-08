@@ -33,7 +33,7 @@ CREATE INDEX IF NOT EXISTS idx_trades_closed_at ON trades(closed_at);
 CREATE INDEX IF NOT EXISTS idx_trades_trade_id ON trades(trade_id);
 ` + signalsSchema
 
-// Trade is a closed-trade row for P&L tracking (see docs/btc_cfd_bot_spec.md §11).
+// Trade is a closed-trade row for P&L tracking (see docs/specs/btc_cfd_bot_spec.md §11).
 type Trade struct {
 	ClosedAt      time.Time
 	Instrument    string

@@ -142,4 +142,4 @@ Re-run bot-analyze after N days or after applying change
 ## Additional resources
 
 - Deep reference (data flow, Jul 7 example, known bugs): [reference.md](reference.md)
-- Canonical repo playbook: [docs/demo_trading_loop.md](../../../docs/demo_trading_loop.md)
+- Canonical repo playbook: [docs/guides/demo_trading_loop.md](../../../docs/guides/demo_trading_loop.md)

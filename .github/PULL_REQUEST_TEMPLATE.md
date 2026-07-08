@@ -13,7 +13,7 @@
 ## Checklist
 
 - [ ] `./scripts/code-quality.sh` passes locally (or `CODE_QUALITY_BASE=origin/main ./scripts/code-quality.sh`)
-- [ ] Bot logic changes update matching spec + skill (`docs/bot_specs_maintenance.md`)
+- [ ] Bot logic changes update matching spec + skill (`docs/guides/bot_specs_maintenance.md`)
 - [ ] No secrets or real credentials in the diff
 - [ ] Tests added/updated if behavior changed
 

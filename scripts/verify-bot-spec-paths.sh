@@ -6,9 +6,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 SPEC_FILES=(
-  docs/universe_scanner_bot_spec.md
-  docs/fx_sentiment_bot_spec.md
-  docs/bot_specs_maintenance.md
+  docs/README.md
+  docs/skills/README.md
+  docs/specs/universe_scanner_bot_spec.md
+  docs/specs/fx_sentiment_bot_spec.md
+  docs/guides/bot_specs_maintenance.md
   .cursor/skills/universe-scanner-logic/SKILL.md
   .cursor/skills/fx-sentiment-logic/SKILL.md
   .cursor/skills/maintain-bot-specs/SKILL.md
@@ -60,7 +62,7 @@ done
 if [[ $missing -gt 0 ]]; then
   echo ""
   echo "$missing path(s) missing. Update specs/skills or restore files."
-  echo "See docs/bot_specs_maintenance.md"
+  echo "See docs/guides/bot_specs_maintenance.md"
   exit 1
 fi
 
