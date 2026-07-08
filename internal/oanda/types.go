@@ -211,4 +211,5 @@ type CancelOrderResponse struct {
 
 type TransactionsResponse struct {
 	Transactions []Transaction `json:"transactions"`
+	Pages        []string      `json:"pages"`
 }

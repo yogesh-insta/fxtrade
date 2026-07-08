@@ -201,11 +201,11 @@ func lookupSwapCost(ctx context.Context, client *oanda.Client, tradeID string, s
 	if since.IsZero() {
 		since = time.Now().Add(-7 * 24 * time.Hour)
 	}
-	txs, err := client.TransactionsSince(ctx, since)
+	txs, err := client.TransactionsSinceAll(ctx, since)
 	if err != nil {
 		return 0
 	}
-	cost := oanda.FinancingCost(txs.Transactions, tradeID)
+	cost := oanda.FinancingCost(txs, tradeID)
 	if cost < 0 {
 		return -cost
 	}
