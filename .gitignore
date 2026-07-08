@@ -9,6 +9,7 @@
 /strategy-test
 .DS_Store
 .halt
+.gcloud/
 logs/
 data/*
 !data/afl/
