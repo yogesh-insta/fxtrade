@@ -10,8 +10,10 @@ Bot logic lives in Go; human/agent-readable summaries live in **spec docs** and 
 | `.cursor/skills/*-logic/SKILL.md` | Routes agents to the spec + source map | Same as spec; keep **one-paragraph summary** and **key defaults** in sync |
 | `.cursor/skills/maintain-bot-specs/SKILL.md` | Tells agents to update docs in the same PR as code | Rarely — only when the process changes |
 | `scripts/verify-bot-spec-paths.sh` | CI check: referenced paths still exist | Add paths to specs when you add modules |
+| `scripts/code-quality.sh` | Full pre-PR / CI gate | Update when adding new required checks |
+| `CONTRIBUTING.md` | Repo workflow for humans and agents | Update when process changes |
 
-**Rule of thumb:** any PR that changes **what the bot does** should update the matching spec (and skill summary/defaults if those changed). Pure refactors that move files must update path tables and pass `verify-bot-spec-paths.sh`.
+**Rule of thumb:** any PR that changes **what the bot does** should update the matching spec (and skill summary/defaults if those changed). Pure refactors that move files must update path tables and pass `./scripts/code-quality.sh`.
 
 ---
 
@@ -35,7 +37,7 @@ When you touch bot logic, walk this list before merging:
 - [ ] **Config keys** — new or renamed JSON keys documented; defaults match `internal/config/*.go` `Default*Config()`
 - [ ] **Skill summary** — one-paragraph + key defaults bullets updated (skills are what agents read first)
 - [ ] **Cross-links** — related bot specs still linked if behavior diverged
-- [ ] **Verify script** — `./scripts/verify-bot-spec-paths.sh` passes locally
+- [ ] **Verify script** — `./scripts/code-quality.sh` passes locally
 - [ ] **Runtime probe** — run the bot’s one-shot CLI and confirm output still matches the doc’s story
 
 ### Code area → spec section
@@ -65,10 +67,10 @@ When you touch bot logic, walk this list before merging:
 ### Path verification (CI)
 
 ```bash
-./scripts/verify-bot-spec-paths.sh
+./scripts/code-quality.sh
 ```
 
-Fails if a path referenced in a bot spec or logic skill does not exist (catches renames/moves). Runs on every PR in GitHub Actions (`ci.yml`).
+Fails if a path referenced in a bot spec or logic skill does not exist (catches renames/moves). Also runs `go vet`, `go test`, `gofmt` (changed files), and `staticcheck` (touched packages). Runs on every PR in GitHub Actions (`ci.yml` job `test-and-build`).
 
 ### Config default audit (manual / agent-assisted)
 

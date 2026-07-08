@@ -10,20 +10,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.22"
+          go-version-file: go.mod
           cache: true
 
-      - name: Run tests
-        run: go test ./...
-
-      - name: Verify bot spec paths
-        run: bash scripts/verify-bot-spec-paths.sh
-
-      - name: Build fxtrade
-        run: go build -o fxtrade ./cmd/fxtrade
+      - name: Code quality
+        run: bash scripts/code-quality.sh
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
 
       - name: Build linux/amd64 artifact
         run: GOOS=linux GOARCH=amd64 go build -o fxtrade-linux-amd64 ./cmd/fxtrade
