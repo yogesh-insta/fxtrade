@@ -12,8 +12,10 @@ When you change bot **behavior**, **config defaults**, or **file layout**, updat
 1. Read **`docs/bot_specs_maintenance.md`** for the full checklist.
 2. Identify the bot → update its **spec** and **logic skill** (see map below).
 3. Update only what changed: source map paths, cycle description, config keys, key defaults, one-paragraph skill summary.
-4. Run **`./scripts/verify-bot-spec-paths.sh`** — must pass.
+4. Run **`./scripts/code-quality.sh`** — must pass (includes verify-bot-spec-paths).
 5. Do not paste large code blocks into specs; describe behavior and point to files.
+
+See **`CONTRIBUTING.md`** for the full PR workflow.
 
 ## Bot map
 
@@ -36,8 +38,9 @@ When you change bot **behavior**, **config defaults**, or **file layout**, updat
 ## Verify
 
 ```bash
-chmod +x scripts/verify-bot-spec-paths.sh   # once per clone
-./scripts/verify-bot-spec-paths.sh
+./scripts/code-quality.sh
 ```
+
+For path-only check: `./scripts/verify-bot-spec-paths.sh`
 
 For default drift after config changes, diff `internal/config/*.go` defaults against the spec’s defaults section.

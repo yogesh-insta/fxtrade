@@ -2,6 +2,8 @@
 
 Multi-bot trading platform for **OANDA practice** (and optional email-only scanners). Long-running **platform bots** share one daemon (`cmd/fxtrade`): opening-range FX scanner, FX sentiment range/trend strategy, and BTC/USD CFD mean reversion. Separate **scheduled scanners** email NSE swing picks and AFL round reports. Deploy locally, on macOS via launchd, or on a GCP e2-micro VM with systemd.
 
+**Contributing:** all changes go through pull requests — see **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+
 ---
 
 ## Prerequisites
