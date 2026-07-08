@@ -41,7 +41,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	client := deps.Client
 	notifier := deps.Notifier
 
-	rm := risk.NewManager(scannerRisk(cfg))
+	rm := risk.NewManagerForEnv(scannerRisk(cfg), cfg.OANDA.Environment)
 	stateStore := state.NewStore(config.StateFileForBot(cfg.State.File, Meta.ID))
 	persisted, err := stateStore.Load()
 	if err != nil {
@@ -87,16 +87,16 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	engine := scanner.NewEngine(cfg, client, exec, rm, scannerNotifier, universe)
 	engine.SetBotID(Meta.ID)
 	engine.SetPerformanceStore(tradeDB, metaStore)
-	engine.SetOnCycleOK(func() {
-		mu.Lock()
-		lastCycleOKAt = time.Now()
-		mu.Unlock()
-	})
 
 	startedAt := time.Now()
 	var running bool
 	var lastCycleOKAt time.Time
 	var mu sync.RWMutex
+	engine.SetOnCycleOK(func() {
+		mu.Lock()
+		lastCycleOKAt = time.Now()
+		mu.Unlock()
+	})
 
 	saveState := func() error {
 		snap := state.BuildSnapshot(rm, nil, tradeRecorder.LastTrade())
