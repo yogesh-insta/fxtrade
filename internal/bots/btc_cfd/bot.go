@@ -41,7 +41,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	notifier := deps.Notifier
 	bc := cfg.BtcCfd
 
-	rm := risk.NewManager(btcRisk(cfg))
+	rm := risk.NewManagerForEnv(btcRisk(cfg), cfg.OANDA.Environment)
 	stateStore := state.NewStore(config.StateFileForBot(cfg.State.File, Meta.ID))
 	persisted, err := stateStore.Load()
 	if err != nil {

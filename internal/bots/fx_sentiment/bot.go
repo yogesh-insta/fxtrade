@@ -45,7 +45,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 
 	rc := cfg.Risk
 	rc.HaltFile = config.HaltFileForBot(rc.HaltFile, Meta.ID)
-	rm := risk.NewManager(rc)
+	rm := risk.NewManagerForEnv(rc, cfg.OANDA.Environment)
 
 	stateStore := state.NewStore(config.StateFileForBot(cfg.State.File, Meta.ID))
 	persisted, err := stateStore.Load()
