@@ -2,6 +2,8 @@
 
 Multi-bot trading platform for **OANDA practice** (and optional email-only scanners). Long-running **platform bots** share one daemon (`cmd/fxtrade`): opening-range FX scanner, FX sentiment range/trend strategy, and BTC/USD CFD mean reversion. Separate **scheduled scanners** email NSE swing picks and AFL round reports. Deploy locally, on macOS via launchd, or on a GCP e2-micro VM with systemd.
 
+**Contributing:** all changes go through pull requests — see **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+
 ---
 
 ## Prerequisites
@@ -149,7 +151,7 @@ All binaries live under `cmd/`. On **fxtrade-vm**, `install.sh` installs scanner
 | `nifty-pulse.timer` | Daily NSE scan (Sun–Fri 18:00 Sydney) |
 | `afl-pulse.timer` | Weekly AFL round scan (Thu 18:00 Melbourne) |
 | `afl-pulse-pregame.timer` | Pregame poll (every 15 min) |
-| `/etc/cron.d/fxtrade-watch` | `health-watch` every 5 min; timer failure checks; `btc-daily-email` at 12:00 UTC; `bot-weekly-email` Mon 07:00 UTC |
+| `/etc/cron.d/fxtrade-watch` | `health-watch` every 5 min; timer failure checks; `bot-daily-email` at 20:30 UTC; `bot-weekly-email` Mon 07:00 UTC |
 
 ### Platform bots (long-running, OANDA orders)
 
@@ -172,7 +174,7 @@ Enable per-bot units: `sudo ./deploy/gcp/install.sh --enable-bot ID`.
 |---------|------|----------|
 | `nifty-pulse` | NSE watchlist swing scan; emails one pick if found | `nifty-pulse.timer` |
 | `afl-pulse` | AFL round odds, projections, value bets | `afl-pulse.timer` |
-| `afl-pulse-pregame` | T-30 pregame report (Gemini + Google Search) | `afl-pulse-pregame.timer` |
+| `afl-pulse-pregame` | T-45 pregame report (Gemini + Google Search) | `afl-pulse-pregame.timer` |
 
 Local: `go run ./cmd/nifty-pulse`, `go run ./cmd/afl-pulse`, `go run ./cmd/afl-pulse-pregame` (add `-dry-run` to skip email).
 
@@ -180,8 +182,10 @@ Local: `go run ./cmd/nifty-pulse`, `go run ./cmd/afl-pulse`, `go run ./cmd/afl-p
 
 | Program | What | How it runs |
 |---------|------|-------------|
-| `health-watch` | Polls `/health`; emails on daemon failure, stale ticks, failed timer jobs | Cron via `run-health-watch.sh` |
-| `btc-daily-email` | BTC CFD daily P&L summary (prior UTC day) | Cron 12:00 UTC via `run-btc-daily-email.sh` |
+| `health-watch` | Polls `/health`; emails on daemon failure, stale ticks, stale bot cycles (`last_cycle_ok_at`), failed timer jobs | Cron via `run-health-watch.sh` |
+| `bot-daily-email` | Combined daily P&L + analysis for all platform bots | Cron 20:30 UTC via `run-bot-daily-email.sh` |
+| `bot-analyze` | Trade analysis and tweak suggestions from SQLite history | Manual CLI |
+| `reconcile-trades` | Backfill $0 P/L and missing instruments from OANDA transactions | Manual CLI; runs automatically before daily email |
 | `bot-weekly-email` | Combined weekly P&L for all platform bots | Cron Mon 07:00 UTC via `run-bot-weekly-email.sh` |
 
 ---
@@ -230,7 +234,13 @@ Risk limits live under `"risk"` and per-bot sections in `.credentials` (daily/we
 
 Before live trading: run on practice for **4+ weeks**, then `go run ./cmd/bot-metrics -bot fx_sentiment` (or `go run ./cmd/expectancy -trades logs/fx_sentiment/trades.jsonl`) — aim for **positive expectancy over 30+ trades**.
 
-Other bots persist closed trades and decision signals under `data/<bot_id>/trades.db`; see `docs/btc_cfd_bot_spec.md` for BTC CFD details.
+Other bots persist closed trades and decision signals under `data/<bot_id>/trades.db`; see `docs/specs/btc_cfd_bot_spec.md` for BTC CFD details.
+
+---
+
+## Demo P/L and algorithm tweaks
+
+Practice-account performance, daily analysis email, and config iteration are documented in **[docs/guides/demo_trading_loop.md](docs/guides/demo_trading_loop.md)**. Full doc index: **[docs/README.md](docs/README.md)**. Cursor agents can use **`.cursor/skills/analyze-pl-tweaks/`** when you ask to analyse P/L, review bot performance, or suggest algorithm tweaks (`bot-analyze`, `account-pnl`, daily email workflow).
 
 ---
 
@@ -242,15 +252,17 @@ fxtrade/
 ├── cmd/fxtrade/              # multi-bot platform daemon
 ├── cmd/nifty-pulse/          # NSE swing scanner
 ├── cmd/afl-pulse/            # AFL weekly round scanner
-├── cmd/afl-pulse-pregame/    # AFL T-30 pregame scanner
+├── cmd/afl-pulse-pregame/    # AFL T-45 pregame scanner
 ├── cmd/health-watch/         # VM watchdog
-├── cmd/btc-daily-email/      # BTC daily summary email
+├── cmd/bot-daily-email/      # Combined daily bot performance email
+├── cmd/bot-analyze/          # Trade analysis CLI
 ├── cmd/bot-weekly-email/     # Combined weekly bot performance email
 ├── cmd/*-test/               # one-shot dev CLIs (sentiment, strategy, scanner, order, …)
 ├── data/                     # bot state, AFL stats, per-bot trades.db
 ├── deploy/gcp/               # systemd units, install.sh, Terraform
 ├── logs/                     # sentiment audit, trade journal, daemon logs
-├── docs/                     # bot specs (e.g. btc_cfd)
+├── docs/                     # README index, specs/, guides/, skills/
+├── .cursor/skills/           # Cursor agent skills (catalog in docs/skills/)
 └── plan.md                   # fx_sentiment strategy spec
 ```
 

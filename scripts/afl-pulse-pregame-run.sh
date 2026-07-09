@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run AFLPulse pregame (T-30) on demand. Builds ./bin/afl-pulse-pregame if missing.
+# Run AFLPulse pregame (T-45) on demand. Builds ./bin/afl-pulse-pregame if missing.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

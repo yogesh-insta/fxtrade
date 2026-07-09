@@ -28,14 +28,15 @@ type Status struct {
 }
 
 type BotStatus struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	Description   string    `json:"description,omitempty"`
-	Running       bool      `json:"running"`
-	Halted        bool      `json:"halted"`
-	OpenPositions int       `json:"open_positions"`
-	Detail        string    `json:"detail,omitempty"`
-	StartedAt     time.Time `json:"started_at,omitempty"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Description    string    `json:"description,omitempty"`
+	Running        bool      `json:"running"`
+	Halted         bool      `json:"halted"`
+	OpenPositions  int       `json:"open_positions"`
+	Detail         string    `json:"detail,omitempty"`
+	StartedAt      time.Time `json:"started_at,omitempty"`
+	LastCycleOKAt  time.Time `json:"last_cycle_ok_at,omitempty"`
 }
 
 type Server struct {

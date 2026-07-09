@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -77,6 +78,30 @@ INSERT INTO signals (
 		return fmt.Errorf("insert signal: %w", err)
 	}
 	return nil
+}
+
+// SignalScoresByCorrelation maps entry correlation IDs to setup scores from signals.
+func (s *Store) SignalScoresByCorrelation() (map[string]float64, error) {
+	rows, err := s.db.Query(`
+SELECT correlation_id, setup_score FROM signals
+WHERE action = 'entry_taken' AND correlation_id IS NOT NULL AND correlation_id != ''`)
+	if err != nil {
+		return nil, fmt.Errorf("query signal scores: %w", err)
+	}
+	defer rows.Close()
+
+	out := make(map[string]float64)
+	for rows.Next() {
+		var corr sql.NullString
+		var score sql.NullFloat64
+		if err := rows.Scan(&corr, &score); err != nil {
+			return nil, err
+		}
+		if corr.Valid && score.Valid {
+			out[corr.String] = score.Float64
+		}
+	}
+	return out, rows.Err()
 }
 
 func nullString(v string) any {

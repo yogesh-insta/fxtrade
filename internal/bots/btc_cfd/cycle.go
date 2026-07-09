@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"sync"
 	"time"
 
@@ -17,18 +16,19 @@ import (
 )
 
 type cycleEngine struct {
-	client    *oanda.Client
-	bc        config.BtcCfdConfig
-	exec      *execution.Executor
-	rm        *risk.Manager
-	notifier  notify.Notifier
-	posMon    *monitor.PositionMonitor
-	meta      *tradeMetaStore
-	lastCycle *string
-	mu        *sync.RWMutex
+	client      *oanda.Client
+	bc          config.BtcCfdConfig
+	exec        *execution.Executor
+	rm          *risk.Manager
+	notifier    notify.Notifier
+	posMon      *monitor.PositionMonitor
+	meta        *tradeMetaStore
+	lastCycle   *string
+	mu          *sync.RWMutex
+	markCycleOK func()
 
-	reconciled       bool
-	apiFailures      int
+	reconciled  bool
+	apiFailures int
 }
 
 func runCycle(ctx context.Context, e *cycleEngine) {
@@ -72,7 +72,7 @@ func (e *cycleEngine) tick(ctx context.Context) error {
 		}
 	}
 
-	resp, err := e.client.Candles(ctx, e.bc.Instrument, e.bc.Granularity, e.bc.CandleCount)
+	resp, err := e.client.Candles(ctx, e.bc.Instrument, e.bc.Granularity, candlesRequestCount(e.bc.CandleCount))
 	if err != nil {
 		return err
 	}
@@ -112,6 +112,7 @@ func (e *cycleEngine) tick(ctx context.Context) error {
 		return err
 	}
 	balance, _ := oanda.ParsePrice(summary.Account.Balance)
+	balance = risk.EffectiveCapital(e.bc.AllocatedCapitalUSD, balance)
 	riskSnap := e.rm.Snapshot()
 
 	lim := EntryLimits{
@@ -147,6 +148,10 @@ func (e *cycleEngine) tick(ctx context.Context) error {
 		"signal", sig.Direction,
 		"reason", sig.Reason,
 	)
+
+	if e.markCycleOK != nil {
+		e.markCycleOK()
+	}
 
 	if sig.Direction == "" {
 		return nil
@@ -226,7 +231,7 @@ func (e *cycleEngine) tick(ctx context.Context) error {
 }
 
 func (e *cycleEngine) m15Bias(ctx context.Context) (closePx, ema200 float64, err error) {
-	resp, err := e.client.Candles(ctx, e.bc.Instrument, "M15", e.bc.CandleCount)
+	resp, err := e.client.Candles(ctx, e.bc.Instrument, "M15", candlesRequestCount(e.bc.CandleCount))
 	if err != nil {
 		return 0, 0, err
 	}
@@ -270,7 +275,7 @@ func (e *cycleEngine) reconcileStartup(ctx context.Context) error {
 	if len(open) > 1 {
 		msg := fmt.Sprintf("btc_cfd startup: %d open %s trades (expected 0-1)", len(open), e.bc.Instrument)
 		slog.Warn(msg)
-		e.notifier.Send(ctx, "fxtrade: reconciliation mismatch", msg)
+		notify.SendRoutine(e.notifier, ctx, "fxtrade: reconciliation mismatch", msg)
 	}
 	if e.posMon != nil {
 		e.posMon.SeedOpenTrades(open)
@@ -307,7 +312,7 @@ func (e *cycleEngine) recordAPIFailure(ctx context.Context, err error) {
 	e.apiFailures++
 	slog.Warn("btc_cfd cycle", "error", err, "consecutive_failures", e.apiFailures)
 	if e.bc.APIFailureAlertAfter > 0 && e.apiFailures >= e.bc.APIFailureAlertAfter {
-		e.notifier.Send(ctx, "fxtrade: repeated API failures",
+		notify.SendRoutine(e.notifier, ctx, "fxtrade: repeated API failures",
 			fmt.Sprintf("bot=%s\nfailures=%d\nlast_error=%v\n", Meta.ID, e.apiFailures, err))
 	}
 }
@@ -318,11 +323,11 @@ func (e *cycleEngine) setDetail(s string) {
 	e.mu.Unlock()
 }
 
-func fmtDetail(bc config.BtcCfdConfig, n int, lastTime string) string {
-	if lastTime == "" {
-		return bc.Instrument + " " + bc.Granularity + " (no candles)"
-	}
-	return bc.Instrument + " " + bc.Granularity + ": " + lastTime + " (" + strconv.Itoa(n) + " candles)"
+// candlesRequestCount returns how many bars to fetch from OANDA. The latest
+// candle in the response is usually the still-forming bar (incomplete), so we
+// request one extra to ensure CandleCount complete bars for indicators.
+func candlesRequestCount(complete int) int {
+	return complete + 1
 }
 
 func nextM5Boundary(now time.Time) time.Time {

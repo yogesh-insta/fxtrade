@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,9 +22,10 @@ type EntryRequest struct {
 }
 
 type Manager struct {
-	cfg   config.RiskConfig
-	mu    sync.Mutex
-	state State
+	cfg         config.RiskConfig
+	environment string
+	mu          sync.Mutex
+	state       State
 }
 
 type State struct {
@@ -40,15 +42,30 @@ type State struct {
 }
 
 func NewManager(cfg config.RiskConfig) *Manager {
+	return NewManagerForEnv(cfg, "")
+}
+
+// NewManagerForEnv creates a risk manager scoped to an OANDA environment.
+// On practice/demo, cooldown-after-loss and max-trades-per-month are skipped;
+// live (and empty/unknown) keeps those caps enforced.
+func NewManagerForEnv(cfg config.RiskConfig, environment string) *Manager {
 	now := time.Now()
 	return &Manager{
-		cfg: cfg,
+		cfg:         cfg,
+		environment: strings.ToLower(strings.TrimSpace(environment)),
 		state: State{
 			DayStart:  startOfDay(now),
 			WeekStart: startOfWeek(now),
 			MonthKey:  now.Format("2006-01"),
 		},
 	}
+}
+
+// enforceTradeCaps is true for live accounts. Practice skips monthly caps and
+// post-loss cooldowns so demo can iterate freely; flipping oanda.environment
+// to "live" re-enables both automatically.
+func (m *Manager) enforceTradeCaps() bool {
+	return m.environment != config.EnvPractice
 }
 
 func (m *Manager) HaltFile() string {
@@ -86,13 +103,15 @@ func (m *Manager) AllowEntry(ctx context.Context, req EntryRequest) error {
 	if m.state.WeeklyPnL <= -m.weeklyLossLimit(req.AccountBalance) {
 		return fmt.Errorf("weekly loss limit reached (%.2f)", m.state.WeeklyPnL)
 	}
-	if m.cfg.MaxTradesPerMonth > 0 && m.state.TradesThisMonth >= m.cfg.MaxTradesPerMonth {
-		return fmt.Errorf("max trades per month (%d) reached", m.cfg.MaxTradesPerMonth)
-	}
-	if !m.state.LastLossAt.IsZero() {
-		cooldown := time.Duration(m.cfg.CooldownAfterLossDays) * 24 * time.Hour
-		if time.Since(m.state.LastLossAt) < cooldown {
-			return fmt.Errorf("cooldown after loss until %s", m.state.LastLossAt.Add(cooldown))
+	if m.enforceTradeCaps() {
+		if m.cfg.MaxTradesPerMonth > 0 && m.state.TradesThisMonth >= m.cfg.MaxTradesPerMonth {
+			return fmt.Errorf("max trades per month (%d) reached", m.cfg.MaxTradesPerMonth)
+		}
+		if !m.state.LastLossAt.IsZero() && m.cfg.CooldownAfterLossDays > 0 {
+			cooldown := time.Duration(m.cfg.CooldownAfterLossDays) * 24 * time.Hour
+			if time.Since(m.state.LastLossAt) < cooldown {
+				return fmt.Errorf("cooldown after loss until %s", m.state.LastLossAt.Add(cooldown))
+			}
 		}
 	}
 	return nil

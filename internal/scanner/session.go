@@ -93,23 +93,35 @@ func SessionOpen(cfg config.ScannerConfig, instrument, instType string, now time
 	return start
 }
 
-func ForceFlatUTC(cls string, day time.Time) (time.Time, bool) {
-	y, mo, d := day.UTC().Date()
-	switch cls {
-	case "CRYPTO":
-		return time.Time{}, false
-	case "INDEX", "ENERGY":
-		return time.Date(y, mo, d, 20, 0, 0, 0, time.UTC), true
-	default:
-		return time.Date(y, mo, d, 21, 30, 0, 0, time.UTC), true
+func forceFlatHM(cfg config.ScannerConfig, cls string) (hour, min int, enabled bool) {
+	spec := ""
+	if cfg.ForceFlatUTC != nil {
+		spec = strings.TrimSpace(cfg.ForceFlatUTC[cls])
 	}
+	if spec == "" || strings.EqualFold(spec, "off") || strings.EqualFold(spec, "none") {
+		return 0, 0, false
+	}
+	h, m, err := parseHM(spec)
+	if err != nil {
+		return 0, 0, false
+	}
+	return h, m, true
+}
+
+func ForceFlatUTC(cfg config.ScannerConfig, cls string, day time.Time) (time.Time, bool) {
+	h, m, ok := forceFlatHM(cfg, cls)
+	if !ok {
+		return time.Time{}, false
+	}
+	y, mo, d := day.UTC().Date()
+	return time.Date(y, mo, d, h, m, 0, 0, time.UTC), true
 }
 
 func ShouldForceFlat(cfg config.ScannerConfig, instrument, instType string, now time.Time) bool {
 	cls := assetClass(cfg, instrument, instType)
-	at, ok := ForceFlatUTC(cls, now)
+	at, ok := ForceFlatUTC(cfg, cls, now)
 	if !ok {
 		return false
 	}
-	return now.UTC().After(at) || now.UTC().Equal(at)
+	return !now.UTC().Before(at)
 }

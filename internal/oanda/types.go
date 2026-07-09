@@ -6,9 +6,11 @@ const DefaultInstrument = "AUD_USD"
 
 type AccountSummary struct {
 	Account struct {
-		ID      string `json:"id"`
-		Balance string `json:"balance"`
-		NAV     string `json:"NAV"`
+		ID           string `json:"id"`
+		Balance      string `json:"balance"`
+		NAV          string `json:"NAV"`
+		UnrealizedPL string `json:"unrealizedPL"`
+		Currency     string `json:"currency"`
 	} `json:"account"`
 }
 
@@ -126,8 +128,8 @@ type Transaction struct {
 		Units   string `json:"units"`
 	} `json:"tradeReduced"`
 	TradesClosed []struct {
-		TradeID string `json:"tradeID"`
-		Units   string `json:"units"`
+		TradeID    string `json:"tradeID"`
+		Units      string `json:"units"`
 		RealizedPL string `json:"realizedPL"`
 	} `json:"tradesClosed"`
 }
@@ -144,7 +146,7 @@ type Trade struct {
 	UnrealizedPL     string            `json:"unrealizedPL"`
 	OpenTime         string            `json:"openTime"`
 	ClientExtensions *ClientExtensions `json:"clientExtensions,omitempty"`
-	StopLossOrder *struct {
+	StopLossOrder    *struct {
 		ID    string `json:"id"`
 		Price string `json:"price"`
 	} `json:"stopLossOrder"`
@@ -209,4 +211,5 @@ type CancelOrderResponse struct {
 
 type TransactionsResponse struct {
 	Transactions []Transaction `json:"transactions"`
+	Pages        []string      `json:"pages"`
 }

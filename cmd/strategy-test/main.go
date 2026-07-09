@@ -33,7 +33,7 @@ func main() {
 
 	client := oanda.NewClient(cfg.OANDA.RESTBaseURL(), cfg.OANDA.AccountID, cfg.OANDA.Token)
 	notifier := notify.New(cfg.Email)
-	rm := risk.NewManager(cfg.Risk)
+	rm := risk.NewManagerForEnv(cfg.Risk, cfg.OANDA.Environment)
 	exec := execution.NewExecutor(client, rm, notifier)
 
 	var sw *sentiment.Worker

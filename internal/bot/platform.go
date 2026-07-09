@@ -54,7 +54,13 @@ func RunPlatform(cfg *config.Config, opts Options) error {
 
 	client := oanda.NewClient(cfg.OANDA.RESTBaseURL(), cfg.OANDA.AccountID, cfg.OANDA.Token)
 	stream := oanda.NewStream(cfg.OANDA.StreamBaseURL(), cfg.OANDA.AccountID, cfg.OANDA.Token)
-	notifier := notify.New(cfg.Email)
+	baseNotifier := notify.New(cfg.Email)
+	var notifier notify.Notifier = baseNotifier
+	if cfg.Notifications.DailySummaryOnlyMode() {
+		notifier = notify.WithDailySummaryOnly(baseNotifier, true)
+	} else if cfg.Notifications.TradeOnlyEmail() {
+		notifier = notify.WithTradeOnly(baseNotifier, true)
+	}
 	deps := &Deps{CFG: cfg, Client: client, Stream: stream, Notifier: notifier, DryRun: opts.DryRun}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -91,14 +97,15 @@ func RunPlatform(cfg *config.Config, opts Options) error {
 		for _, r := range runners {
 			st := r.handle.Status()
 			out = append(out, health.BotStatus{
-				ID:            st.ID,
-				Name:          st.Name,
-				Description:   st.Description,
-				Running:       st.Running,
-				Halted:        st.Halted,
-				OpenPositions: st.OpenPositions,
-				Detail:        st.Detail,
-				StartedAt:     st.StartedAt,
+				ID:             st.ID,
+				Name:           st.Name,
+				Description:    st.Description,
+				Running:        st.Running,
+				Halted:         st.Halted,
+				OpenPositions:  st.OpenPositions,
+				Detail:         st.Detail,
+				StartedAt:      st.StartedAt,
+				LastCycleOKAt:  st.LastCycleOKAt,
 			})
 		}
 		return out
@@ -176,7 +183,7 @@ func RunPlatform(cfg *config.Config, opts Options) error {
 					}
 				}
 			}
-			notifier.Send(ctx, "fxtrade: platform stopping", fmt.Sprintf("graceful shutdown\nactive_bots: %s\n", strings.Join(enabled, ", ")))
+			notify.SendRoutine(notifier, ctx, "fxtrade: platform stopping", fmt.Sprintf("graceful shutdown\nactive_bots: %s\n", strings.Join(enabled, ", ")))
 			slog.Info("shutting down")
 			return nil
 		case tick := <-ticks:
@@ -211,7 +218,7 @@ func startupChecks(ctx context.Context, client *oanda.Client, notifier notify.No
 		"nav", summary.Account.NAV,
 	)
 
-	notifier.Send(ctx, "fxtrade: platform started",
+	notify.SendRoutine(notifier, ctx, "fxtrade: platform started",
 		fmt.Sprintf("fxtrade platform started.\n\nEnvironment: %s\nActive bots: %s\nRegistered: %s\n",
 			cfg.OANDA.Environment, strings.Join(enabled, ", "), strings.Join(RegisteredIDs(), ", ")))
 	return nil

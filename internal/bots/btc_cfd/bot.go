@@ -12,6 +12,7 @@ import (
 	"github.com/ym/fxtrade/internal/execution"
 	"github.com/ym/fxtrade/internal/journal"
 	"github.com/ym/fxtrade/internal/monitor"
+	"github.com/ym/fxtrade/internal/notify"
 	"github.com/ym/fxtrade/internal/oanda"
 	"github.com/ym/fxtrade/internal/risk"
 	"github.com/ym/fxtrade/internal/state"
@@ -40,7 +41,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	notifier := deps.Notifier
 	bc := cfg.BtcCfd
 
-	rm := risk.NewManager(btcRisk(cfg))
+	rm := risk.NewManagerForEnv(btcRisk(cfg), cfg.OANDA.Environment)
 	stateStore := state.NewStore(config.StateFileForBot(cfg.State.File, Meta.ID))
 	persisted, err := stateStore.Load()
 	if err != nil {
@@ -62,7 +63,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 
 	exec := execution.NewExecutor(client, rm, notifier)
 	exec.SetDryRun(deps.DryRun)
-	posMon := monitor.New(client, rm, notifier, 30*time.Second)
+	posMon := monitor.New(client, rm, notifier, 30*time.Second, bc.Instrument)
 	exec.SetTradeAccounting(posMon)
 	posMon.SetOnTradeClosed(func(tradeID, correlationID string, pl float64) {
 		tradeRecorder.OnClose(tradeID, correlationID, pl, rm, nil)
@@ -105,6 +106,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	startedAt := time.Now()
 	var running bool
 	var lastCycle string
+	var lastCycleOKAt time.Time
 	var mu sync.RWMutex
 
 	saveState := func() error {
@@ -138,6 +140,11 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 		meta:      metaStore,
 		lastCycle: &lastCycle,
 		mu:        &mu,
+		markCycleOK: func() {
+			mu.Lock()
+			lastCycleOKAt = time.Now()
+			mu.Unlock()
+		},
 	}
 
 	go func() {
@@ -156,7 +163,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 		if err := rm.ActivateKillSwitch(); err != nil {
 			return err
 		}
-		notifier.Send(context.Background(), "fxtrade: kill switch activated",
+		notify.SendRoutine(notifier, context.Background(), "fxtrade: kill switch activated",
 			fmt.Sprintf("bot=%s\nhalt_file=%s\n", Meta.ID, rm.HaltFile()))
 		return nil
 	}
@@ -168,6 +175,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 			mu.RLock()
 			run := running
 			cycle := lastCycle
+			cycleOK := lastCycleOKAt
 			mu.RUnlock()
 			d := detail
 			if cycle != "" {
@@ -180,6 +188,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 				OpenPositions: posMon.OpenCount(),
 				Detail:        d,
 				StartedAt:     startedAt,
+				LastCycleOKAt: cycleOK,
 			}
 		},
 		Halt:          halt,
@@ -192,11 +201,11 @@ func lookupSwapCost(ctx context.Context, client *oanda.Client, tradeID string, s
 	if since.IsZero() {
 		since = time.Now().Add(-7 * 24 * time.Hour)
 	}
-	txs, err := client.TransactionsSince(ctx, since)
+	txs, err := client.TransactionsSinceAll(ctx, since)
 	if err != nil {
 		return 0
 	}
-	cost := oanda.FinancingCost(txs.Transactions, tradeID)
+	cost := oanda.FinancingCost(txs, tradeID)
 	if cost < 0 {
 		return -cost
 	}

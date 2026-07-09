@@ -45,6 +45,10 @@ type ScannerConfig struct {
 	JournalDir               string                `json:"journal_dir"`
 	DBPath                   string                `json:"db_path"`
 	AssetClasses             map[string]AssetClassConfig `json:"asset_classes"`
+	// ForceFlatUTC closes open positions at HH:MM UTC per asset class (FX, JPY, METAL, INDEX).
+	// Omit or set CRYPTO to "" for no forced close. Default FX/JPY/METAL/INDEX: 20:00 UTC
+	// (before NY rollover spread widening ~20:45 UTC).
+	ForceFlatUTC             map[string]string     `json:"force_flat_utc"`
 }
 
 type UniverseFiltersConfig struct {
@@ -98,9 +102,15 @@ func DefaultScannerConfig() ScannerConfig {
 		AssetClasses: map[string]AssetClassConfig{
 			"FX":     {MaxSpreadPips: 2.5, SessionUTC: "08:00-17:00"},
 			"JPY":    {MaxSpreadPips: 3.0, SessionUTC: "00:00-17:00"},
-			"METAL":  {MaxSpreadPips: 50, SessionUTC: "13:00-21:00"},
+			"METAL":  {MaxSpreadPips: 80, SessionUTC: "13:00-21:00"},
 			"CRYPTO": {Instruments: []string{"BTC_USD"}, MaxSpreadUSD: 80, SessionUTC: "24/7"},
 			"INDEX":  {MaxSpreadPoints: 2.0, SessionUTC: "13:30-20:00"},
+		},
+		ForceFlatUTC: map[string]string{
+			"FX":    "20:00",
+			"JPY":   "20:00",
+			"METAL": "20:00",
+			"INDEX": "20:00",
 		},
 	}
 }
@@ -181,5 +191,14 @@ func applyScannerDefaults(c *Config) {
 	}
 	if len(c.Scanner.AssetClasses) == 0 {
 		c.Scanner.AssetClasses = def.AssetClasses
+	}
+	if len(c.Scanner.ForceFlatUTC) == 0 {
+		c.Scanner.ForceFlatUTC = def.ForceFlatUTC
+	} else {
+		for k, v := range def.ForceFlatUTC {
+			if _, ok := c.Scanner.ForceFlatUTC[k]; !ok {
+				c.Scanner.ForceFlatUTC[k] = v
+			}
+		}
 	}
 }
