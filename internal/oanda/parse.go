@@ -32,6 +32,18 @@ func ParsePrice(s string) (float64, error) {
 	return v, nil
 }
 
+// ParseUnits parses OANDA unit strings (whole or fractional, e.g. "1000" or "0.042").
+func ParseUnits(s string) (float64, error) {
+	if s == "" {
+		return 0, fmt.Errorf("empty units")
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse units %q: %w", s, err)
+	}
+	return v, nil
+}
+
 func (p ClientPrice) ToUpdate() (PriceUpdate, error) {
 	if len(p.Bids) == 0 || len(p.Asks) == 0 {
 		return PriceUpdate{}, fmt.Errorf("missing bid/ask for %s", p.Instrument)

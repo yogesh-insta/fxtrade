@@ -53,3 +53,31 @@ func TestBuildMarketOrderRejectsMissingStop(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestBuildMarketOrderFractionalBTC(t *testing.T) {
+	order, err := execution.BuildMarketOrder(execution.MarketOrderParams{
+		Instrument: "BTC_USD",
+		Direction:  execution.DirectionLong,
+		UnitsStr:   "0.042",
+		StopLoss:   100000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if order.Order.Units != "0.042" {
+		t.Fatalf("units: %s", order.Order.Units)
+	}
+
+	short, err := execution.BuildMarketOrder(execution.MarketOrderParams{
+		Instrument: "BTC_USD",
+		Direction:  execution.DirectionShort,
+		UnitsStr:   "0.042",
+		StopLoss:   100000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if short.Order.Units != "-0.042" {
+		t.Fatalf("units: %s", short.Order.Units)
+	}
+}

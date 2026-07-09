@@ -186,6 +186,7 @@ type OrderResult struct {
 	OrderID       string
 	Instrument    string
 	Units         int64
+	UnitsStr      string // fractional units as returned by OANDA
 	FillPrice     float64
 }
 

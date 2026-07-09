@@ -111,14 +111,20 @@ func TestComputeIndicatorsNeedsEnoughBars(t *testing.T) {
 }
 
 func TestPositionUnits(t *testing.T) {
-	units := PositionUnits(10000, 500, 0.5)
-	if units != 0 {
-		t.Fatalf("units = %d, want 0 below 1 unit", units)
+	if got := PositionUnits(10000, 500, 0.5); got != "0.100" {
+		t.Fatalf("units = %q, want 0.100", got)
 	}
-	units = PositionUnits(100000, 500, 0.5)
-	want := int64(100000 * 0.005 / 500)
-	if units != want {
-		t.Fatalf("units = %d, want %d", units, want)
+	if got := PositionUnits(100000, 500, 0.5); got != "1.000" {
+		t.Fatalf("units = %q, want 1.000", got)
+	}
+	if got := PositionUnits(5000, 600, 0.5); got != "0.041" {
+		t.Fatalf("units = %q, want 0.041 for $5k slice", got)
+	}
+	if got := PositionUnits(5000, 50, 0.5); got != "0.500" {
+		t.Fatalf("units = %q, want 0.500", got)
+	}
+	if got := PositionUnits(10, 500, 0.5); got != "" {
+		t.Fatalf("units = %q, want empty below minimum", got)
 	}
 }
 

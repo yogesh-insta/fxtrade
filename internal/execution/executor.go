@@ -59,8 +59,12 @@ func (e *Executor) PlaceMarket(ctx context.Context, req risk.EntryRequest, param
 	}
 
 	if e.dryRun {
-		msg := fmt.Sprintf("DRY RUN: would place MARKET %s %s %d units SL=%s",
-			params.Direction, params.Instrument, params.Units, oanda.FormatPrice(params.StopLoss))
+		unitsLabel := strconv.FormatInt(params.Units, 10)
+		if params.UnitsStr != "" {
+			unitsLabel = params.UnitsStr
+		}
+		msg := fmt.Sprintf("DRY RUN: would place MARKET %s %s %s units SL=%s",
+			params.Direction, params.Instrument, unitsLabel, oanda.FormatPrice(params.StopLoss))
 		if params.TakeProfit != nil {
 			msg += fmt.Sprintf(" TP=%s", oanda.FormatPrice(*params.TakeProfit))
 		}
@@ -70,6 +74,7 @@ func (e *Executor) PlaceMarket(ctx context.Context, req risk.EntryRequest, param
 			TradeID:       "dry-run-" + req.CorrelationID,
 			Instrument:    params.Instrument,
 			Units:         params.Units,
+			UnitsStr:      params.UnitsStr,
 			FillPrice:     params.StopLoss,
 		}, nil
 	}
