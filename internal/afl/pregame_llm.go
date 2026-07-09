@@ -35,9 +35,9 @@ Respond with ONLY valid JSON matching this schema (no markdown fences, no prose 
   },
   "main_bet": {
     "market": "H2H | Line | Total",
-    "selection": "string — e.g. STK H2H or Over 168.5",
+    "selection": "string — REQUIRED non-empty, e.g. Port Adelaide H2H or Over 168.5",
     "confidence": "high | medium",
-    "odds_note": "string — live odds snapshot e.g. STK $1.65",
+    "odds_note": "string — live odds snapshot e.g. PORT $1.85",
     "reasons": ["reason 1", "reason 2", "reason 3"]
   },
   "player_prop": {
@@ -50,6 +50,7 @@ Respond with ONLY valid JSON matching this schema (no markdown fences, no prose 
   "disclaimer": "Gambling involves risk. Bet responsibly."
 }
 
+CRITICAL: main_bet.selection MUST be a non-empty string naming the exact pick.
 Ground every field in live search results. Use the model baseline only as a cross-check.`
 
 // PregameLLMResponse is the structured Gemini output for pregame emails.
@@ -182,11 +183,86 @@ func ParsePregameLLMResponse(raw string) (PregameLLMResponse, error) {
 	}
 
 	var out PregameLLMResponse
-	if err := json.Unmarshal(payload, &out); err != nil {
-		return PregameLLMResponse{}, fmt.Errorf("parse pregame llm json: %w", err)
-	}
+	// Best-effort struct decode; normalizePregameLLM repairs alternate keys and nested types.
+	_ = json.Unmarshal(payload, &out)
 	normalizePregameLLM(&out, payload)
 	return out, nil
+}
+
+// BuildPregameModelFallback synthesizes a main bet from the AFLPulse model when live search fails.
+func BuildPregameModelFallback(report MatchReport) PregameLLMResponse {
+	var out PregameLLMResponse
+	winner := report.Score.PredictedWinner
+	winnerName := TeamDisplayName(winner)
+	out.MainBet.Market = "H2H"
+	out.MainBet.Selection = winnerName
+	out.MainBet.Confidence = "medium"
+	if mo, ok := report.MarketOdds[winner]; ok && mo.DecimalOdds > 1 {
+		out.MainBet.OddsNote = fmt.Sprintf("%s $%.2f", winner, mo.DecimalOdds)
+	}
+	reasons := BuildMatchPredictionReasons(report)
+	if len(reasons) > 3 {
+		reasons = reasons[:3]
+	}
+	out.MainBet.Reasons = reasons
+	out.ModelAgreement = "aligns"
+	out.RiskNote = "Live search unavailable — verify final lineups and late changes before betting."
+	out.Disclaimer = "Gambling involves risk. Bet responsibly."
+	return out
+}
+
+// MergePregameLLMWithFallback fills gaps from model baseline when Gemini is empty or incomplete.
+// Returns merged response and whether the model fallback supplied the main bet.
+func MergePregameLLMWithFallback(llm, fallback PregameLLMResponse) (PregameLLMResponse, bool) {
+	if llm.HasMainBet() {
+		return llm, false
+	}
+	if fallback.HasMainBet() {
+		merged := llm
+		if merged.IsEmpty() {
+			merged = fallback
+		} else {
+			merged.MainBet = fallback.MainBet
+			if merged.ModelAgreement == "" {
+				merged.ModelAgreement = "mixed"
+			}
+			if merged.RiskNote == "" {
+				merged.RiskNote = fallback.RiskNote
+			}
+			if merged.Disclaimer == "" {
+				merged.Disclaimer = fallback.Disclaimer
+			}
+		}
+		if merged.ModelAgreement == "aligns" && !llm.IsEmpty() {
+			merged.ModelAgreement = "mixed"
+		}
+		return merged, true
+	}
+	return llm, false
+}
+
+func selectionFromObject(m map[string]json.RawMessage, keys ...string) string {
+	for _, k := range keys {
+		raw, ok := m[k]
+		if !ok {
+			continue
+		}
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &obj); err != nil {
+			continue
+		}
+		team := firstString(obj, "team", "name", "selection")
+		pick := firstString(obj, "pick", "side", "market", "bet")
+		switch {
+		case team != "" && pick != "":
+			return team + " " + pick
+		case team != "":
+			return team
+		case pick != "":
+			return pick
+		}
+	}
+	return ""
 }
 
 // extractJSONObject pulls the first JSON object from text, tolerating markdown fences and prose.
@@ -255,12 +331,15 @@ func normalizePregameLLM(out *PregameLLMResponse, payload []byte) {
 		out.MatchDetails.Lineups = firstString(root, "lineups", "line_ups", "lineup_status")
 	}
 
-	if bet := firstObject(root, "main_bet", "mainBet", "bet", "primary_bet"); bet != nil {
+	if bet := firstObject(root, "main_bet", "mainBet", "bet", "primary_bet", "main_high_confidence_bet_selection", "mainHighConfidenceBetSelection"); bet != nil {
 		if out.MainBet.Market == "" {
 			out.MainBet.Market = firstString(bet, "market", "type", "bet_type", "betType")
 		}
 		if out.MainBet.Selection == "" {
-			out.MainBet.Selection = firstString(bet, "selection", "pick", "side", "team", "bet")
+			out.MainBet.Selection = selectionFromObject(bet, "selection", "pick")
+		}
+		if out.MainBet.Selection == "" {
+			out.MainBet.Selection = firstString(bet, "selection", "pick", "side", "team", "bet", "name")
 		}
 		if out.MainBet.Confidence == "" {
 			out.MainBet.Confidence = firstString(bet, "confidence", "conf")
