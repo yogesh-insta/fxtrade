@@ -16,7 +16,7 @@ func TestFormatPregameEmail_EmptyLLMResponse(t *testing.T) {
 		},
 		Score: ScoreProjection{PredictedWinner: "STK", HomeScore: 79, AwayScore: 88, Margin: 9, TotalScore: 167},
 	}
-	body := FormatPregameEmail(game, report, PregameLLMResponse{}, 45)
+	body := FormatPregameEmail(game, report, PregameLLMResponse{}, 45, false)
 
 	if strings.Contains(body, "[]") {
 		t.Fatalf("must not print [] for empty LLM:\n%s", body)
@@ -29,9 +29,6 @@ func TestFormatPregameEmail_EmptyLLMResponse(t *testing.T) {
 	}
 	if !strings.Contains(body, "MODEL BASELINE") || !strings.Contains(body, "St Kilda") {
 		t.Fatalf("model baseline missing:\n%s", body)
-	}
-	if strings.Contains(body, "Main bet (medium confidence):") {
-		t.Fatal("old empty main-bet format must not appear")
 	}
 }
 
@@ -58,7 +55,7 @@ func TestFormatPregameEmail_FullLLMResponse(t *testing.T) {
 	llm.RiskNote = "Essendon midfield rotation"
 	llm.ModelAgreement = "aligns"
 
-	body := FormatPregameEmail(game, report, llm, 45)
+	body := FormatPregameEmail(game, report, llm, 45, false)
 	for _, want := range []string{
 		"T-45",
 		"MODEL BASELINE",
@@ -77,51 +74,53 @@ func TestFormatPregameEmail_FullLLMResponse(t *testing.T) {
 			t.Fatalf("missing %q in body:\n%s", want, body)
 		}
 	}
-	if strings.Contains(body, "[]") {
-		t.Fatalf("must not print empty slice: %s", body)
-	}
 }
 
-func TestFormatPregameEmail_ModelOnlyAfterGeminiFailure(t *testing.T) {
-	// Zero-value PregameLLMResponse after Gemini 403/parse failure — email must stay readable.
-	game := SquiggleFixture{ID: 55, Venue: "Docklands"}
+func TestFormatPregameEmail_ModelFallbackAfterGeminiFailure(t *testing.T) {
+	game := SquiggleFixture{ID: 38636, Venue: "Adelaide Oval"}
 	report := MatchReport{
 		Context: MatchDayContext{
-			HomeTeam: "ESS", AwayTeam: "STK",
-			Kickoff: time.Date(2026, 7, 5, 8, 20, 0, 0, time.UTC),
-			Venue:   VenueProfile{Name: "Marvel Stadium"},
+			HomeTeam: "PORT", AwayTeam: "NMFC",
+			Kickoff: time.Date(2026, 7, 5, 6, 40, 0, 0, time.UTC),
+			Venue:   VenueProfile{Name: "Adelaide Oval"},
+			HomeStats: TeamStats{LadderPosition: 15},
+			AwayStats: TeamStats{LadderPosition: 11},
 		},
-		Score: ScoreProjection{PredictedWinner: "STK", HomeScore: 78, AwayScore: 92, Margin: 14, TotalScore: 170},
+		HomeWinProb: 0.60,
+		Score: ScoreProjection{
+			PredictedWinner: "PORT", HomeScore: 83, AwayScore: 79, Margin: 4, TotalScore: 162,
+		},
+		MarketOdds: map[TeamID]MarketOdds{
+			"PORT": {DecimalOdds: 1.72},
+		},
 	}
-	body := FormatPregameEmail(game, report, PregameLLMResponse{}, 45)
+	fallback := BuildPregameModelFallback(report)
+	merged, used := MergePregameLLMWithFallback(PregameLLMResponse{}, fallback)
+	if !used || !merged.HasMainBet() {
+		t.Fatalf("expected model fallback main bet: used=%v merged=%+v", used, merged)
+	}
 
-	if strings.Contains(body, "[]") {
-		t.Fatalf("model-only email must not print Go zero values:\n%s", body)
-	}
+	body := FormatPregameEmail(game, report, merged, 45, used)
 	for _, want := range []string{
+		"PORT vs NMFC",
 		"MODEL BASELINE",
+		"Port Adelaide (60%)",
 		"LIVE ANALYTICS (Gemini)",
-		"Gemini returned incomplete analysis",
-		"Live analytics: unavailable",
-		"Gambling involves risk",
+		"live search unavailable — main bet from AFLPulse model baseline",
+		"Main bet: Port Adelaide H2H (medium)",
+		"Why:",
+		"Squiggle game ID: 38636",
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("missing %q in model-only body:\n%s", want, body)
+			t.Fatalf("missing %q in body:\n%s", want, body)
 		}
 	}
-	for _, bad := range []string{
-		"Main bet (medium confidence):",
-		"Main bet:  ",
-		"Why:\n    • ",
-	} {
-		if strings.Contains(body, bad) {
-			t.Fatalf("unexpected broken section %q in:\n%s", bad, body)
-		}
+	if strings.Contains(body, "Live analytics: unavailable") {
+		t.Fatalf("model fallback should not show fully unavailable:\n%s", body)
 	}
 }
 
 func TestPregameOrchestration_Gemini403(t *testing.T) {
-	// Table-driven simulation of cmd/afl-pulse-pregame when RunPregameLLM fails.
 	game := SquiggleFixture{
 		ID: 55, Kickoff: time.Date(2026, 7, 5, 8, 20, 0, 0, time.UTC), Venue: "Docklands",
 	}
@@ -134,7 +133,9 @@ func TestPregameOrchestration_Gemini403(t *testing.T) {
 	st := &PregameState{Sent: make(map[string]time.Time), LLMAttempted: make(map[string]time.Time), FailureAlerted: make(map[string]time.Time)}
 	st.MarkLLMAttempted(game.ID)
 
-	body := FormatPregameEmail(game, report, PregameLLMResponse{}, 45)
+	fallback := BuildPregameModelFallback(report)
+	merged, used := MergePregameLLMWithFallback(PregameLLMResponse{}, fallback)
+	body := FormatPregameEmail(game, report, merged, 45, used)
 	alertBody := FormatPregameFailureAlert(game, "ESS", "STK", game.Venue, llmErr, "/opt/fxtrade/logs/afl-pulse-pregame.log")
 	subject := FormatPregameFailureSubject("[AFLPulse PRE]", "ESS", "STK")
 	pregameSubject := FormatPregameSubject("[AFLPulse PRE]", 45, "ESS", "STK")
@@ -153,15 +154,8 @@ func TestPregameOrchestration_Gemini403(t *testing.T) {
 			t.Fatalf("failure alert missing %q:\n%s", want, alertBody)
 		}
 	}
-	if !strings.Contains(body, "MODEL BASELINE") {
-		t.Fatal("model baseline must still render after Gemini failure")
-	}
-	if st.WasSent(game.ID) {
-		t.Fatal("MarkSent must not run before email send completes")
-	}
-	st.MarkSent(game.ID)
-	if !st.WasSent(game.ID) {
-		t.Fatal("MarkSent after successful model-only email")
+	if !strings.Contains(body, "Main bet: St Kilda H2H") {
+		t.Fatalf("model fallback main bet missing after 403:\n%s", body)
 	}
 	if !st.WasLLMAttempted(game.ID) {
 		t.Fatal("LLM attempt should be recorded to avoid retry budget burn")

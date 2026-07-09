@@ -30,8 +30,9 @@ func FormatPregameFailureSubject(prefix string, home, away TeamID) string {
 }
 
 // FormatPregameEmail renders the pregame body from model report and LLM JSON.
+// When modelFallbackUsed is true, live search failed and the main bet came from AFLPulse model.
 // Empty or partial LLM content never prints Go zero values (e.g. "[]"); it notes incompleteness.
-func FormatPregameEmail(game SquiggleFixture, report MatchReport, llm PregameLLMResponse, leadMinutes int) string {
+func FormatPregameEmail(game SquiggleFixture, report MatchReport, llm PregameLLMResponse, leadMinutes int, modelFallbackUsed bool) string {
 	if leadMinutes <= 0 {
 		leadMinutes = 45
 	}
@@ -61,7 +62,7 @@ func FormatPregameEmail(game SquiggleFixture, report MatchReport, llm PregameLLM
 	b.WriteString("LIVE ANALYTICS (Gemini)\n")
 	b.WriteString(fixtureRule)
 	b.WriteString("\n\n")
-	writePregameLiveAnalytics(&b, llm)
+	writePregameLiveAnalytics(&b, llm, modelFallbackUsed)
 
 	b.WriteString("\n")
 	if s := strings.TrimSpace(llm.Disclaimer); s != "" {
@@ -74,14 +75,16 @@ func FormatPregameEmail(game SquiggleFixture, report MatchReport, llm PregameLLM
 	return b.String()
 }
 
-func writePregameLiveAnalytics(b *strings.Builder, llm PregameLLMResponse) {
+func writePregameLiveAnalytics(b *strings.Builder, llm PregameLLMResponse, modelFallbackUsed bool) {
 	if llm.IsEmpty() {
 		b.WriteString("  Gemini returned incomplete analysis\n")
 		b.WriteString("  Live analytics: unavailable\n")
 		return
 	}
 
-	if llm.Incomplete() {
+	if modelFallbackUsed {
+		b.WriteString("  Note: live search unavailable — main bet from AFLPulse model baseline\n\n")
+	} else if llm.Incomplete() {
 		b.WriteString("  Gemini returned incomplete analysis\n\n")
 	}
 
