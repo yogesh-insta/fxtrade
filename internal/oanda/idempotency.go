@@ -52,12 +52,13 @@ func (c *Client) FindOrderByClientID(ctx context.Context, clientID string) (Orde
 }
 
 func tradeToResult(t Trade) (OrderResult, error) {
-	units, err := strconv.ParseInt(t.CurrentUnits, 10, 64)
+	u, err := ParseUnits(t.CurrentUnits)
 	if err != nil {
 		return OrderResult{}, fmt.Errorf("parse units: %w", err)
 	}
-	if units < 0 {
-		units = -units
+	abs := u
+	if abs < 0 {
+		abs = -abs
 	}
 	price, err := ParsePrice(t.Price)
 	if err != nil {
@@ -66,7 +67,8 @@ func tradeToResult(t Trade) (OrderResult, error) {
 	return OrderResult{
 		TradeID:    t.ID,
 		Instrument: t.Instrument,
-		Units:      units,
+		Units:      int64(abs),
+		UnitsStr:   t.CurrentUnits,
 		FillPrice:  price,
 	}, nil
 }

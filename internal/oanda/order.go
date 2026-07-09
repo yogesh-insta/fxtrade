@@ -2,6 +2,7 @@ package oanda
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 )
 
@@ -33,21 +34,23 @@ func ParseOrderResult(resp *CreateOrderResponse) (OrderResult, error) {
 	}
 
 	if fill.Units != "" {
-		u, err := strconv.ParseInt(fill.Units, 10, 64)
+		u, err := ParseUnits(fill.Units)
 		if err != nil {
 			return OrderResult{}, err
 		}
-		result.Units = u
+		result.UnitsStr = fill.Units
+		result.Units = int64(math.Abs(u))
 	}
 
 	if fill.TradeOpened != nil {
 		result.TradeID = fill.TradeOpened.TradeID
 		if result.Units == 0 && fill.TradeOpened.Units != "" {
-			u, err := strconv.ParseInt(fill.TradeOpened.Units, 10, 64)
+			u, err := ParseUnits(fill.TradeOpened.Units)
 			if err != nil {
 				return OrderResult{}, err
 			}
-			result.Units = u
+			result.UnitsStr = fill.TradeOpened.Units
+			result.Units = int64(math.Abs(u))
 		}
 		if result.FillPrice == 0 && fill.TradeOpened.Price != "" {
 			p, err := ParsePrice(fill.TradeOpened.Price)
