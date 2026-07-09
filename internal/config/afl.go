@@ -60,7 +60,7 @@ func DefaultAFLConfig() AFLConfig {
 		LLMConcurrency:           2,
 		PregameLeadMinutes:       45,
 		PregamePollWindowMinutes: 5,
-		PregameLLMRetries:        2,
+		PregameLLMRetries:        4,
 	}
 }
 
