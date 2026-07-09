@@ -281,11 +281,6 @@ func (m *PositionMonitor) lookupClosedTradeWindows(ctx context.Context, tradeID 
 	return 0, false, 0, 0
 }
 
-func (m *PositionMonitor) lookupClosedPL(ctx context.Context, tradeID string) (float64, bool) {
-	pl, found, _, _ := m.lookupClosedTrade(ctx, tradeID)
-	return pl, found
-}
-
 // SeedOpenTrades registers pre-existing positions after startup reconciliation
 // without incrementing daily trade counters (position may predate today).
 func (m *PositionMonitor) SeedOpenTrades(trades []oanda.Trade) {

@@ -31,16 +31,16 @@ func ReportDayUTC(now time.Time, sameDay bool) time.Time {
 
 // AccountDailyContext is live OANDA account figures for the daily email header.
 type AccountDailyContext struct {
-	NAV            float64
-	Currency       string
-	Baseline       float64
-	TotalPL        float64 // NAV - baseline (all-time)
-	DailyPL        float64 // NAV - prior snapshot
-	DailyPLKnown   bool
-	PriorNAV       float64
-	PriorDate      string
-	UnrealizedPL   float64
-	Reconcile      ReconcileSummary
+	NAV          float64
+	Currency     string
+	Baseline     float64
+	TotalPL      float64 // NAV - baseline (all-time)
+	DailyPL      float64 // NAV - prior snapshot
+	DailyPLKnown bool
+	PriorNAV     float64
+	PriorDate    string
+	UnrealizedPL float64
+	Reconcile    ReconcileSummary
 }
 
 // DailyEmail formats the combined daily performance subject and body.
@@ -172,13 +172,6 @@ func formatMoneySign(v float64) string {
 		return fmt.Sprintf("-$%.2f", -v)
 	}
 	return fmt.Sprintf("$%.2f", v)
-}
-
-func absMoney(v float64) float64 {
-	if v < 0 {
-		return -v
-	}
-	return v
 }
 
 func formatDayTradeLines(trades []sqlite.TradeBrief) []string {
