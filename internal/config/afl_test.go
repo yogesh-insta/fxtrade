@@ -55,7 +55,7 @@ func TestAFLConfigPregameDefaults(t *testing.T) {
 	if cfg.PregamePollWindowMinutes != 5 {
 		t.Fatalf("window = %d", cfg.PregamePollWindowMinutes)
 	}
-	if cfg.PregameLLMRetries != 2 {
+	if cfg.PregameLLMRetries != 4 {
 		t.Fatalf("retries = %d", cfg.PregameLLMRetries)
 	}
 	if !cfg.PregameLLMRequiredEnabled() {

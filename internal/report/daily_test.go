@@ -46,22 +46,33 @@ func TestDailyEmail(t *testing.T) {
 		},
 	}
 	analysis := "── Analysis & Suggested Tweaks ──\nUniverse Scanner\n  • test tweak\n"
-	accountPNL := "Account NAV: $100076.00 AUD | vs baseline $100250.00 AUD | total P&L -$174.00 (-0.17%)"
-	accountTotalPL := -174.0
+	acct := report.AccountDailyContext{
+		NAV:          100076,
+		Currency:     "AUD",
+		Baseline:     100250,
+		TotalPL:      -174,
+		DailyPLKnown: true,
+		PriorNAV:     100100,
+		PriorDate:    "2026-07-06",
+		DailyPL:      -24,
+	}
 
-	subject, body := report.DailyEmail(reportDate, sections, accountPNL, accountTotalPL, analysis)
+	subject, body := report.DailyEmail(reportDate, sections, acct, analysis)
 	if subject != "fxtrade: daily bot summary 2026-07-07" {
 		t.Fatalf("subject = %q", subject)
 	}
 	for _, want := range []string{
-		"Account NAV:",
+		"── Account (OANDA) ──",
+		"Today (account):",
+		"All-time vs baseline:",
+		"Closed bots today: -$25.50",
 		"Bots tracked (all-time net): -$25.50 | gap vs account: -$148.50",
 		"── Universe Scanner ──",
-		"Net P&L: -$25.50",
+		"Net P&L today: -$25.50",
 		"2 trades @ $0.00 (unreconciled)",
 		"── FX Sentiment ──",
 		"No closed trades today.",
-		"Combined net P&L: -$25.50",
+		"Combined net P&L today: -$25.50",
 		"── Analysis & Suggested Tweaks ──",
 		"test tweak",
 	} {

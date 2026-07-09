@@ -29,35 +29,83 @@ func ReportDayUTC(now time.Time, sameDay bool) time.Time {
 	return today.Add(-24 * time.Hour)
 }
 
+// AccountDailyContext is live OANDA account figures for the daily email header.
+type AccountDailyContext struct {
+	NAV          float64
+	Currency     string
+	Baseline     float64
+	TotalPL      float64 // NAV - baseline (all-time)
+	DailyPL      float64 // NAV - prior snapshot
+	DailyPLKnown bool
+	PriorNAV     float64
+	PriorDate    string
+	UnrealizedPL float64
+	Reconcile    ReconcileSummary
+}
+
 // DailyEmail formats the combined daily performance subject and body.
-// accountTotalPL is cumulative account P/L vs baseline (pass 0 when unknown).
 // analysis is optional text from FormatDailyAnalysis (may be empty).
-func DailyEmail(reportDate time.Time, sections []BotDailySection, accountPNL string, accountTotalPL float64, analysis string) (subject, body string) {
+func DailyEmail(reportDate time.Time, sections []BotDailySection, acct AccountDailyContext, analysis string) (subject, body string) {
 	dateStr := reportDate.UTC().Format("2006-01-02")
 	subject = fmt.Sprintf("fxtrade: daily bot summary %s", dateStr)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "Daily Bot Performance\nDate: %s UTC\n\n", dateStr)
-	if accountPNL != "" {
-		fmt.Fprintf(&b, "%s\n", accountPNL)
+
+	var totalTrades int
+	var totalPL float64
+	activeBots := 0
+	for _, sec := range sections {
+		if sec.Err != nil || sec.Day.TradeCount == 0 {
+			continue
+		}
+		activeBots++
+		totalTrades += sec.Day.TradeCount
+		totalPL += sec.Day.TotalNetPL
+	}
+
+	if acct.NAV > 0 && acct.Baseline > 0 {
+		b.WriteString("── Account (OANDA) ──\n")
+		fmt.Fprintf(&b, "  NAV: %s %s\n", formatMoneySign(acct.NAV), acct.Currency)
+		if acct.DailyPLKnown {
+			pct := 0.0
+			if acct.PriorNAV > 0 {
+				pct = acct.DailyPL / acct.PriorNAV * 100
+			}
+			fmt.Fprintf(&b, "  Today (account): %s (%.2f%%) vs %s NAV %s\n",
+				formatMoney(acct.DailyPL), pct, acct.PriorDate, formatMoneySign(acct.PriorNAV))
+		} else {
+			b.WriteString("  Today (account): n/a — first NAV snapshot; tomorrow will show daily change\n")
+		}
+		fmt.Fprintf(&b, "  All-time vs baseline: %s (%.2f%%) [baseline %s %s]\n",
+			formatMoney(acct.TotalPL), acct.TotalPL/acct.Baseline*100,
+			formatMoneySign(acct.Baseline), acct.Currency)
+		if math.Abs(acct.UnrealizedPL) > 0.01 {
+			fmt.Fprintf(&b, "  Unrealized (open positions): %s\n", formatMoney(acct.UnrealizedPL))
+		}
+		fmt.Fprintf(&b, "  Closed bots today: %s\n", formatMoney(totalPL))
+		if acct.Reconcile.AttemptedTotal() > 0 {
+			fmt.Fprintf(&b, "  Reconcile: backfilled %d / %d from OANDA",
+				acct.Reconcile.TotalReconciled, acct.Reconcile.AttemptedTotal())
+			if missing := acct.Reconcile.StillMissingTotal(); missing > 0 {
+				fmt.Fprintf(&b, "; %d still missing (see Analysis)", missing)
+			}
+			b.WriteByte('\n')
+		}
 		var botAllTime float64
 		for _, sec := range sections {
 			if sec.Err == nil {
 				botAllTime += sec.AllTime.TotalNetPL
 			}
 		}
-		gap := accountTotalPL - botAllTime
-		fmt.Fprintf(&b, "Bots tracked (all-time net): %s | gap vs account: %s",
+		gap := acct.TotalPL - botAllTime
+		fmt.Fprintf(&b, "  Bots tracked (all-time net): %s | gap vs account: %s",
 			formatMoney(botAllTime), formatMoney(gap))
 		if math.Abs(gap) > 1.0 {
-			b.WriteString(" (fees, manual trades, open positions, or unreconciled rows)")
+			b.WriteString(" (fees, manual trades, open P&L, unreconciled rows)")
 		}
 		b.WriteString("\n\n")
 	}
-
-	var totalTrades int
-	var totalPL float64
-	activeBots := 0
 
 	for _, sec := range sections {
 		fmt.Fprintf(&b, "── %s ──\n", BotDisplayName(sec.BotID))
@@ -75,13 +123,9 @@ func DailyEmail(reportDate time.Time, sections []BotDailySection, accountPNL str
 			continue
 		}
 
-		activeBots++
-		totalTrades += day.TradeCount
-		totalPL += day.TotalNetPL
-
-		fmt.Fprintf(&b, "  Trades: %d\n", day.TradeCount)
+		fmt.Fprintf(&b, "  Trades today: %d\n", day.TradeCount)
 		fmt.Fprintf(&b, "  Win rate: %s\n", formatWinRate(day.TradeCount, day.WinCount, day.LossCount, day.WinRate))
-		fmt.Fprintf(&b, "  Net P&L: %s\n", formatMoney(day.TotalNetPL))
+		fmt.Fprintf(&b, "  Net P&L today: %s\n", formatMoney(day.TotalNetPL))
 		for _, line := range formatDayTradeLines(day.Trades) {
 			b.WriteString(line)
 			b.WriteByte('\n')
@@ -92,13 +136,13 @@ func DailyEmail(reportDate time.Time, sections []BotDailySection, accountPNL str
 		b.WriteString("\n")
 	}
 
-	b.WriteString("── Combined ──\n")
+	b.WriteString("── Combined (closed bots today) ──\n")
 	if activeBots == 0 {
 		b.WriteString("  No closed trades across any bot today.\n")
 	} else {
 		fmt.Fprintf(&b, "  Active bots: %d\n", activeBots)
 		fmt.Fprintf(&b, "  Total trades: %d\n", totalTrades)
-		fmt.Fprintf(&b, "  Combined net P&L: %s\n", formatMoney(totalPL))
+		fmt.Fprintf(&b, "  Combined net P&L today: %s\n", formatMoney(totalPL))
 	}
 	if strings.TrimSpace(analysis) != "" {
 		b.WriteString("\n")
@@ -107,7 +151,7 @@ func DailyEmail(reportDate time.Time, sections []BotDailySection, accountPNL str
 	return subject, b.String()
 }
 
-// FormatAccountPNL formats account NAV vs configured initial capital.
+// FormatAccountPNL formats account NAV vs configured initial capital (legacy one-liner).
 func FormatAccountPNL(nav, baseline float64, currency string) string {
 	if baseline <= 0 {
 		return ""
@@ -128,13 +172,6 @@ func formatMoneySign(v float64) string {
 		return fmt.Sprintf("-$%.2f", -v)
 	}
 	return fmt.Sprintf("$%.2f", v)
-}
-
-func absMoney(v float64) float64 {
-	if v < 0 {
-		return -v
-	}
-	return v
 }
 
 func formatDayTradeLines(trades []sqlite.TradeBrief) []string {

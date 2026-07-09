@@ -20,6 +20,7 @@ func main() {
 	dateStr := flag.String("date", "", "report UTC date YYYY-MM-DD (default: previous UTC day, or today when -same-day)")
 	sameDay := flag.Bool("same-day", true, "report current UTC day (use with evening cron after force-flat)")
 	printOnly := flag.Bool("print", false, "print email body instead of sending")
+	navPath := flag.String("nav-snapshots", "data/account_nav_snapshots.json", "path to NAV snapshot file for daily account P/L")
 	flag.Parse()
 
 	cfg, err := config.Load(*credsPath)
@@ -40,22 +41,36 @@ func main() {
 	}
 
 	ctx := context.Background()
-	var client *oanda.Client
-	accountPNL := ""
-	var accountTotalPL float64
-	reconcileNote := ""
+	acct := report.AccountDailyContext{}
+	navStore := report.NewNavSnapshotStore(*navPath)
+
 	if cfg.OANDA.Token != "" {
-		client = oanda.NewClient(cfg.OANDA.RESTBaseURL(), cfg.OANDA.AccountID, cfg.OANDA.Token)
-		if summary := report.ReconcileAllBots(ctx, cfg, client); summary.TotalReconciled > 0 {
-			reconcileNote = fmt.Sprintf("Reconciled %d trade(s) from OANDA before this report.", summary.TotalReconciled)
-			slog.Info("reconciled trades before daily email", "count", summary.TotalReconciled)
+		client := oanda.NewClient(cfg.OANDA.RESTBaseURL(), cfg.OANDA.AccountID, cfg.OANDA.Token)
+		acct.Reconcile = report.ReconcileAllBots(ctx, cfg, client)
+		if acct.Reconcile.TotalReconciled > 0 {
+			slog.Info("reconciled trades before daily email", "count", acct.Reconcile.TotalReconciled)
 		}
 		if cfg.OANDA.InitialCapitalAUD > 0 {
 			if navSummary, err := client.AccountSummary(ctx); err == nil {
 				nav, _ := oanda.ParsePrice(navSummary.Account.NAV)
+				unrealized, _ := oanda.ParsePrice(navSummary.Account.UnrealizedPL)
 				currency := navSummary.Account.Currency
-				accountTotalPL = nav - cfg.OANDA.InitialCapitalAUD
-				accountPNL = report.FormatAccountPNL(nav, cfg.OANDA.InitialCapitalAUD, currency)
+				if currency == "" {
+					currency = "AUD"
+				}
+				acct.NAV = nav
+				acct.Currency = currency
+				acct.Baseline = cfg.OANDA.InitialCapitalAUD
+				acct.TotalPL = nav - acct.Baseline
+				acct.UnrealizedPL = unrealized
+				if prior, priorDate, ok := navStore.PriorNAV(reportDate, currency); ok {
+					acct.DailyPLKnown = true
+					acct.PriorNAV = prior
+					acct.PriorDate = priorDate
+					acct.DailyPL = nav - prior
+				}
+			} else {
+				slog.Warn("account summary for daily email", "error", err)
 			}
 		}
 	}
@@ -66,11 +81,11 @@ func main() {
 	}
 
 	analysis := report.FormatDailyAnalysis(cfg, now)
-	if reconcileNote != "" {
-		analysis = reconcileNote + "\n" + analysis
+	if note := reconcileAnalysisNote(acct.Reconcile); note != "" {
+		analysis = note + "\n" + analysis
 	}
 
-	subject, body := report.DailyEmail(reportDate, sections, accountPNL, accountTotalPL, analysis)
+	subject, body := report.DailyEmail(reportDate, sections, acct, analysis)
 	if *printOnly {
 		fmtPrint(subject, body)
 		return
@@ -83,7 +98,23 @@ func main() {
 
 	n := notify.New(cfg.Email)
 	n.Send(ctx, subject, body)
+	if acct.NAV > 0 {
+		if err := navStore.Record(reportDate, acct.NAV, acct.Currency); err != nil {
+			slog.Warn("nav snapshot save failed", "error", err)
+		}
+	}
 	slog.Info("daily summary sent", "subject", subject, "to", cfg.Email.AlertTo, "date", reportDate.Format("2006-01-02"))
+}
+
+func reconcileAnalysisNote(summary report.ReconcileSummary) string {
+	if summary.AttemptedTotal() == 0 {
+		return ""
+	}
+	msg := fmt.Sprintf("Reconciled %d trade(s) from OANDA before this report.", summary.TotalReconciled)
+	if missing := summary.StillMissingTotal(); missing > 0 {
+		msg += fmt.Sprintf(" %d row(s) still missing P/L — often older trades or trade IDs not in the last 30 days of OANDA history.", missing)
+	}
+	return msg
 }
 
 func loadBotSection(botID, dbPath string, day time.Time) report.BotDailySection {
