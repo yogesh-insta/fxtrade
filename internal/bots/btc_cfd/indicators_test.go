@@ -8,6 +8,21 @@ import (
 	"github.com/ym/fxtrade/internal/oanda"
 )
 
+func TestComputeIndicatorsRejectsIncompleteFormingBar(t *testing.T) {
+	cfg := config.DefaultBtcCfdConfig()
+	// OANDA returns candle_count bars; the latest is still forming.
+	candles := make([]oanda.Candle, 200)
+	for i := range candles {
+		candles[i].Complete = i < 199
+		candles[i].Mid = oanda.OHLCPrice{C: "100000.0", H: "100100.0", L: "99900.0"}
+	}
+
+	_, err := btc_cfd.ComputeIndicators(candles, cfg)
+	if err == nil {
+		t.Fatal("expected error when only 199 complete bars available")
+	}
+}
+
 func TestComputeIndicatorsOnFlatSeries(t *testing.T) {
 	cfg := config.DefaultBtcCfdConfig()
 	candles := make([]oanda.Candle, 220)

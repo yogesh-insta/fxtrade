@@ -8,11 +8,30 @@ type NotificationsConfig struct {
 	NSEPrefix             string `json:"nse_prefix"`
 	AFLPrefix             string `json:"afl_prefix"`
 	FXPrefix              string `json:"fx_prefix"`
+	// EmailOnTradeOnly suppresses routine strategy/sentiment digests and other
+	// non-trade alerts when true. Omit or set true (default); set false to restore
+	// full email digests.
+	EmailOnTradeOnly      *bool  `json:"email_on_trade_only,omitempty"`
+	// DailySummaryOnly suppresses all bot emails except cron-driven daily/weekly summaries.
+	DailySummaryOnly      *bool  `json:"daily_summary_only,omitempty"`
 	OnTradeEntry          bool   `json:"on_trade_entry"`
 	OnTradeExit           bool   `json:"on_trade_exit"`
 	EntryIncludeRunnersUp int    `json:"entry_include_runners_up"`
 	DailySummaryUTC       string `json:"daily_summary_utc"`
 	WeeklySummaryUTC      string `json:"weekly_summary_utc"`
+}
+
+// TradeOnlyEmail reports whether only trade-related emails should be sent.
+func (n NotificationsConfig) TradeOnlyEmail() bool {
+	if n.EmailOnTradeOnly == nil {
+		return true
+	}
+	return *n.EmailOnTradeOnly
+}
+
+// DailySummaryOnlyMode reports whether only scheduled summary emails should be sent.
+func (n NotificationsConfig) DailySummaryOnlyMode() bool {
+	return n.DailySummaryOnly != nil && *n.DailySummaryOnly
 }
 
 func DefaultNotificationsConfig() NotificationsConfig {

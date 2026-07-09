@@ -76,6 +76,17 @@ func TestFormatPregameFailureAlert(t *testing.T) {
 	}
 }
 
+func TestFormatPregameSubject(t *testing.T) {
+	subj := FormatPregameSubject("[AFLPulse PRE]", 45, "PORT", "NMFC")
+	if subj != "[AFLPulse PRE] T-45 · PORT vs NMFC" {
+		t.Fatalf("subject = %q", subj)
+	}
+	subj = FormatPregameSubject("", 30, "ESS", "STK")
+	if subj != "[AFLPulse PRE] T-30 · ESS vs STK" {
+		t.Fatalf("default prefix subject = %q", subj)
+	}
+}
+
 func TestFormatPregameFailureSubject(t *testing.T) {
 	subj := FormatPregameFailureSubject("[AFLPulse PRE]", "ESS", "STK")
 	if subj != "[AFLPulse PRE] ALERT · Gemini failed · ESS vs STK" {
@@ -112,7 +123,7 @@ func TestMatchSquiggleToOdds(t *testing.T) {
 }
 
 func TestPregameStateDedup(t *testing.T) {
-	st := &PregameState{Sent: make(map[string]time.Time), LLMAttempted: make(map[string]time.Time)}
+	st := &PregameState{Sent: make(map[string]time.Time), LLMAttempted: make(map[string]time.Time), FailureAlerted: make(map[string]time.Time)}
 	if st.WasSent(7) {
 		t.Fatal("should not be sent initially")
 	}
@@ -126,6 +137,13 @@ func TestPregameStateDedup(t *testing.T) {
 	st.MarkLLMAttempted(7)
 	if !st.WasLLMAttempted(7) {
 		t.Fatal("should show LLM attempted after mark")
+	}
+	if st.WasFailureAlertSent(7) {
+		t.Fatal("should not show failure alert until marked")
+	}
+	st.MarkFailureAlertSent(7)
+	if !st.WasFailureAlertSent(7) {
+		t.Fatal("should show failure alert after mark")
 	}
 }
 

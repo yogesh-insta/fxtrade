@@ -45,7 +45,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 
 	rc := cfg.Risk
 	rc.HaltFile = config.HaltFileForBot(rc.HaltFile, Meta.ID)
-	rm := risk.NewManager(rc)
+	rm := risk.NewManagerForEnv(rc, cfg.OANDA.Environment)
 
 	stateStore := state.NewStore(config.StateFileForBot(cfg.State.File, Meta.ID))
 	persisted, err := stateStore.Load()
@@ -94,7 +94,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 
 	exec := execution.NewExecutor(client, rm, notifier)
 	exec.SetDryRun(deps.DryRun)
-	posMon := monitor.New(client, rm, notifier, 30*time.Second)
+	posMon := monitor.New(client, rm, notifier, 30*time.Second, instruments...)
 	exec.SetTradeAccounting(posMon)
 
 	engines := make([]*strategy.Engine, 0, len(instruments))
@@ -124,6 +124,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 
 	startedAt := time.Now()
 	var running bool
+	var lastCycleOKAt time.Time
 	var mu sync.RWMutex
 
 	saveState := func() error {
@@ -155,7 +156,11 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 			mu.Lock()
 			running = true
 			mu.Unlock()
-			strategy.RunAll(ctx, engines, cfg)
+			strategy.RunAll(ctx, engines, cfg, func() {
+				mu.Lock()
+				lastCycleOKAt = time.Now()
+				mu.Unlock()
+			})
 			mu.Lock()
 			running = false
 			mu.Unlock()
@@ -180,6 +185,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 		Status: func() bot.Status {
 			mu.RLock()
 			run := running
+			cycleOK := lastCycleOKAt
 			mu.RUnlock()
 			return bot.Status{
 				Meta:          Meta,
@@ -188,6 +194,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 				OpenPositions: posMon.OpenCount(),
 				Detail:        tradingDetail(),
 				StartedAt:     startedAt,
+				LastCycleOKAt: cycleOK,
 			}
 		},
 		Halt:          rm.ActivateKillSwitch,

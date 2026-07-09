@@ -12,6 +12,7 @@ import (
 	"github.com/ym/fxtrade/internal/execution"
 	"github.com/ym/fxtrade/internal/journal"
 	"github.com/ym/fxtrade/internal/monitor"
+	"github.com/ym/fxtrade/internal/oanda"
 	"github.com/ym/fxtrade/internal/risk"
 	"github.com/ym/fxtrade/internal/scanner"
 	"github.com/ym/fxtrade/internal/state"
@@ -40,7 +41,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	client := deps.Client
 	notifier := deps.Notifier
 
-	rm := risk.NewManager(scannerRisk(cfg))
+	rm := risk.NewManagerForEnv(scannerRisk(cfg), cfg.OANDA.Environment)
 	stateStore := state.NewStore(config.StateFileForBot(cfg.State.File, Meta.ID))
 	persisted, err := stateStore.Load()
 	if err != nil {
@@ -68,8 +69,11 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	scannerNotifier := scanner.NewNotifier(cfg, notifier, deps.DryRun)
 	exec := execution.NewExecutor(client, rm, notifier)
 	exec.SetDryRun(deps.DryRun)
-	posMon := monitor.New(client, rm, notifier, 30*time.Second)
+	posMon := monitor.New(client, rm, notifier, 30*time.Second, universe.Symbols...)
 	exec.SetTradeAccounting(posMon)
+	posMon.SetOnTradeOpened(func(t oanda.Trade) {
+		metaStore.Put(t.ID, store.MetaFromTrade(t))
+	})
 	posMon.SetOnTradeClosed(func(tradeID, correlationID string, pl float64) {
 		tradeRecorder.OnClose(tradeID, correlationID, pl, rm, nil)
 
@@ -86,7 +90,13 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 
 	startedAt := time.Now()
 	var running bool
+	var lastCycleOKAt time.Time
 	var mu sync.RWMutex
+	engine.SetOnCycleOK(func() {
+		mu.Lock()
+		lastCycleOKAt = time.Now()
+		mu.Unlock()
+	})
 
 	saveState := func() error {
 		snap := state.BuildSnapshot(rm, nil, tradeRecorder.LastTrade())
@@ -127,6 +137,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 		Status: func() bot.Status {
 			mu.RLock()
 			run := running
+			cycleOK := lastCycleOKAt
 			mu.RUnlock()
 			return bot.Status{
 				Meta:          Meta,
@@ -135,6 +146,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 				OpenPositions: posMon.OpenCount(),
 				Detail:        detail,
 				StartedAt:     startedAt,
+				LastCycleOKAt: cycleOK,
 			}
 		},
 		Halt:          rm.ActivateKillSwitch,

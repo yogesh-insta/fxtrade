@@ -18,7 +18,7 @@ import (
 	"github.com/ym/fxtrade/internal/notify"
 )
 
-// AFLPulse pregame — T-30 fixture alerts with Gemini + Google Search.
+// AFLPulse pregame — T-45 fixture alerts with Gemini + Google Search.
 //
 // Scheduled on GCP via afl-pulse-pregame.timer (every 15 min).
 // LLM (Gemini) runs at most once per fixture; see PregameState.LLMAttempted.
@@ -61,6 +61,10 @@ func main() {
 
 	lead := cfg.AFL.ResolvedPregameLead()
 	window := cfg.AFL.ResolvedPregamePollWindow()
+	leadMinutes := cfg.AFL.PregameLeadMinutes
+	if leadMinutes <= 0 {
+		leadMinutes = 45
+	}
 	now := time.Now().UTC()
 
 	year := cfg.AFL.StatsSeasonYear
@@ -90,6 +94,7 @@ func main() {
 	}
 	state.Prune(now.Add(-7 * 24 * time.Hour))
 
+	stateDirty := false
 	var pending []stats.UpcomingGame
 	for _, g := range inWindow {
 		if state.WasSent(g.ID) {
@@ -99,6 +104,12 @@ func main() {
 		pending = append(pending, g)
 	}
 	if len(pending) == 0 {
+		if stateDirty && !*dryRun {
+			if err := state.Save(statePath); err != nil {
+				slog.Error("save pregame state", "path", statePath, "error", err)
+				os.Exit(1)
+			}
+		}
 		slog.Info("all in-window fixtures already sent; exiting")
 		return
 	}
@@ -152,8 +163,6 @@ func main() {
 		notifier = notify.New(cfg.Email)
 	}
 
-	sentAny := false
-	attemptedAny := false
 	for _, game := range pending {
 		sfix := squiggleFixtureFrom(game)
 		fixture, h2h, totals, ok := afl.MatchSquiggleToOdds(sfix, fetched.H2H, fetched.Totals, repo.ResolveTeam)
@@ -191,7 +200,7 @@ func main() {
 				llmFailed = true
 			} else {
 				state.MarkLLMAttempted(game.ID)
-				attemptedAny = true
+				stateDirty = true
 				llmResp, llmErr = afl.RunPregameLLM(ctx, cfg.AFL, sfix, report)
 				if llmErr != nil {
 					llmFailed = true
@@ -221,12 +230,14 @@ func main() {
 			)
 		}
 
-		body := afl.FormatPregameEmail(sfix, report, llmResp, modelFallbackUsed)
-		if llmFailed && cfg.AFL.PregameLLMRequiredEnabled() && llmErr != nil && !*dryRun {
+		body := afl.FormatPregameEmail(sfix, report, llmResp, leadMinutes, modelFallbackUsed)
+		if llmFailed && cfg.AFL.PregameLLMRequiredEnabled() && llmErr != nil && !*dryRun && !state.WasFailureAlertSent(game.ID) {
 			alertBody := afl.FormatPregameFailureAlert(
 				sfix, fixture.HomeTeam, fixture.AwayTeam, game.Venue, llmErr, *logPath,
 			)
 			afl.SendPregameFailureAlert(notifier, ctx, cfg.Notifications, fixture.HomeTeam, fixture.AwayTeam, alertBody)
+			state.MarkFailureAlertSent(game.ID)
+			stateDirty = true
 		}
 		if *dryRun {
 			fmt.Println(body)
@@ -237,13 +248,11 @@ func main() {
 			continue
 		}
 
-		afl.SendPregameEmail(notifier, ctx, cfg.Notifications, fixture.HomeTeam, fixture.AwayTeam, body)
 		state.MarkSent(game.ID)
-		sentAny = true
+		stateDirty = true
+		afl.SendPregameEmail(notifier, ctx, cfg.Notifications, leadMinutes, fixture.HomeTeam, fixture.AwayTeam, body)
 		slog.Info("pregame email sent", "squiggle_id", game.ID)
-	}
 
-	if (sentAny || attemptedAny) && !*dryRun {
 		if err := state.Save(statePath); err != nil {
 			slog.Error("save pregame state", "path", statePath, "error", err)
 			os.Exit(1)

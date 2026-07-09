@@ -2,8 +2,9 @@ package monitor
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,11 +24,20 @@ type PositionMonitor struct {
 	recordedCloses map[string]struct{}
 	onTradeOpened  func(oanda.Trade)
 	onTradeClosed  func(tradeID, correlationID string, pl float64)
+	instruments    map[string]struct{}
 }
 
-func New(client *oanda.Client, rm *risk.Manager, n notify.Notifier, interval time.Duration) *PositionMonitor {
+func New(client *oanda.Client, rm *risk.Manager, n notify.Notifier, interval time.Duration, instruments ...string) *PositionMonitor {
 	if interval <= 0 {
 		interval = 30 * time.Second
+	}
+	filter := make(map[string]struct{}, len(instruments))
+	for _, inst := range instruments {
+		inst = strings.ToUpper(strings.TrimSpace(inst))
+		if inst == "" {
+			continue
+		}
+		filter[inst] = struct{}{}
 	}
 	return &PositionMonitor{
 		client:         client,
@@ -37,6 +47,7 @@ func New(client *oanda.Client, rm *risk.Manager, n notify.Notifier, interval tim
 		known:          make(map[string]oanda.Trade),
 		recordedOpens:  make(map[string]struct{}),
 		recordedCloses: make(map[string]struct{}),
+		instruments:    filter,
 	}
 }
 
@@ -93,6 +104,14 @@ func (m *PositionMonitor) RecordPartialPL(pl float64) {
 	m.risk.RecordTradeClosed(pl)
 }
 
+// TradeSnapshot returns the last known open trade state (for close emails).
+func (m *PositionMonitor) TradeSnapshot(tradeID string) (oanda.Trade, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	t, ok := m.known[tradeID]
+	return t, ok
+}
+
 func (m *PositionMonitor) Run(ctx context.Context) {
 	ticker := time.NewTicker(m.interval)
 	defer ticker.Stop()
@@ -117,19 +136,32 @@ func (m *PositionMonitor) poll(ctx context.Context) {
 
 	current := make(map[string]oanda.Trade, len(resp.Trades))
 	for _, t := range resp.Trades {
+		if !m.trackInstrument(t.Instrument) {
+			continue
+		}
 		current[t.ID] = t
 		m.mu.RLock()
 		_, known := m.known[t.ID]
+		_, alreadyOpened := m.recordedOpens[t.ID]
 		m.mu.RUnlock()
-		if !known {
+		if !known && !alreadyOpened {
+			units, _ := strconv.ParseInt(strings.TrimSpace(t.CurrentUnits), 10, 64)
+			entry, _ := oanda.ParsePrice(t.Price)
+			open := notify.TradeOpen{
+				Instrument: t.Instrument,
+				Units:      units,
+				FillPrice:  entry,
+				TradeID:    t.ID,
+			}
 			slog.Info("position opened",
 				"trade_id", t.ID,
 				"instrument", t.Instrument,
 				"units", t.CurrentUnits,
 				"price", t.Price,
 			)
-			m.notify.Send(ctx, "fxtrade: position detected",
-				fmt.Sprintf("trade_id=%s\ninstrument=%s\nunits=%s\nprice=%s\n", t.ID, t.Instrument, t.CurrentUnits, t.Price))
+			m.notify.Send(ctx,
+				notify.TradeOpenSubject(t.Instrument, oanda.TradeDirection(units), units),
+				notify.FormatTradeOpen(open))
 			m.NoteTradeOpened(t.ID)
 			if m.onTradeOpened != nil {
 				m.onTradeOpened(t)
@@ -148,10 +180,43 @@ func (m *PositionMonitor) poll(ctx context.Context) {
 		if _, ok := current[id]; ok {
 			continue
 		}
-		pl := m.lookupClosedPL(ctx, id)
-		slog.Info("position closed externally", "trade_id", id, "instrument", prev.Instrument, "realized_pl", pl)
-		m.notify.Send(ctx, "fxtrade: position closed externally",
-			fmt.Sprintf("trade_id=%s\ninstrument=%s\nrealized_pl=%.2f\n", id, prev.Instrument, pl))
+		m.mu.RLock()
+		_, alreadyClosed := m.recordedCloses[id]
+		m.mu.RUnlock()
+		if alreadyClosed {
+			continue
+		}
+
+		pl, found, exitPrice, closedUnits := m.lookupClosedTrade(ctx, id)
+		entry, _ := oanda.ParsePrice(prev.Price)
+		openUnits, _ := strconv.ParseInt(strings.TrimSpace(prev.CurrentUnits), 10, 64)
+		closeUnits := openUnits
+		if closedUnits > 0 {
+			closeUnits = closedUnits
+		}
+		if closeUnits < 0 {
+			closeUnits = -closeUnits
+		}
+
+		closeEv := notify.TradeClose{
+			Instrument: prev.Instrument,
+			Direction:  oanda.TradeDirection(openUnits),
+			Units:      closeUnits,
+			EntryPrice: entry,
+			ExitPrice:  exitPrice,
+			RealizedPL: pl,
+			PLKnown:    found,
+			Reason:     "closed externally (stop loss / take profit / manual)",
+			TradeID:    id,
+		}
+		if found {
+			slog.Info("position closed externally", "trade_id", id, "instrument", prev.Instrument, "realized_pl", pl)
+		} else {
+			slog.Warn("position closed externally: realized P/L unavailable", "trade_id", id, "instrument", prev.Instrument)
+		}
+		m.notify.Send(ctx,
+			notify.TradeCloseSubject(prev.Instrument, pl, found, false),
+			notify.FormatTradeClose(closeEv))
 		m.NoteTradeClosed(id, pl)
 	}
 
@@ -160,17 +225,60 @@ func (m *PositionMonitor) poll(ctx context.Context) {
 	m.mu.Unlock()
 }
 
-func (m *PositionMonitor) lookupClosedPL(ctx context.Context, tradeID string) float64 {
-	since := time.Now().Add(-5 * time.Minute)
-	txs, err := m.client.TransactionsSince(ctx, since)
-	if err != nil {
-		slog.Warn("position monitor: transactions lookup failed", "trade_id", tradeID, "error", err)
-		return 0
+func (m *PositionMonitor) trackInstrument(instrument string) bool {
+	if len(m.instruments) == 0 {
+		return true
 	}
-	if pl, ok := oanda.ClosedTradePL(txs.Transactions, tradeID); ok {
-		return pl
+	_, ok := m.instruments[strings.ToUpper(strings.TrimSpace(instrument))]
+	return ok
+}
+
+func (m *PositionMonitor) lookupClosedTrade(ctx context.Context, tradeID string) (pl float64, plFound bool, exitPrice float64, units int64) {
+	retryDelays := []time.Duration{3 * time.Second, 8 * time.Second, 15 * time.Second}
+	for attempt, delay := range append([]time.Duration{0}, retryDelays...) {
+		if delay > 0 {
+			select {
+			case <-ctx.Done():
+				return 0, false, 0, 0
+			case <-time.After(delay):
+			}
+		}
+		pl, plFound, exitPrice, units = m.lookupClosedTradeWindows(ctx, tradeID)
+		if plFound || exitPrice > 0 {
+			return pl, plFound, exitPrice, units
+		}
+		if attempt == len(retryDelays) {
+			break
+		}
 	}
-	return 0
+	return 0, false, 0, 0
+}
+
+func (m *PositionMonitor) lookupClosedTradeWindows(ctx context.Context, tradeID string) (pl float64, plFound bool, exitPrice float64, units int64) {
+	windows := []time.Duration{
+		15 * time.Minute,
+		2 * time.Hour,
+		24 * time.Hour,
+		7 * 24 * time.Hour,
+	}
+	for _, window := range windows {
+		since := time.Now().Add(-window)
+		txs, err := m.client.TransactionsSinceAll(ctx, since)
+		if err != nil {
+			slog.Warn("position monitor: transactions lookup failed", "trade_id", tradeID, "window", window.String(), "error", err)
+			continue
+		}
+		if p, ok := oanda.ClosedTradePL(txs, tradeID); ok {
+			pl, plFound = p, true
+		}
+		if ep, u, ok := oanda.ClosedTradeDetails(txs, tradeID); ok {
+			exitPrice, units = ep, u
+		}
+		if plFound || exitPrice > 0 {
+			return pl, plFound, exitPrice, units
+		}
+	}
+	return 0, false, 0, 0
 }
 
 // SeedOpenTrades registers pre-existing positions after startup reconciliation

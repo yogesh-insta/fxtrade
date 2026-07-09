@@ -27,8 +27,10 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -o afl-pulse ./cmd/afl-pulse
           GOOS=linux GOARCH=amd64 go build -o afl-pulse-pregame ./cmd/afl-pulse-pregame
           GOOS=linux GOARCH=amd64 go build -o health-watch ./cmd/health-watch
-          GOOS=linux GOARCH=amd64 go build -o btc-daily-email ./cmd/btc-daily-email
+          GOOS=linux GOARCH=amd64 go build -o bot-daily-email ./cmd/bot-daily-email
+          GOOS=linux GOARCH=amd64 go build -o bot-analyze ./cmd/bot-analyze
           GOOS=linux GOARCH=amd64 go build -o bot-weekly-email ./cmd/bot-weekly-email
+          GOOS=linux GOARCH=amd64 go build -o reconcile-trades ./cmd/reconcile-trades
 
       - name: Configure SSH
         env:
@@ -50,9 +52,9 @@ jobs:
           INSTALL_ROOT="$(dirname "$(dirname "$VM_PATH")")"
           REMOTE="${GCP_VM_USER}@${GCP_VM_HOST}"
 
-          scp -i ~/.ssh/deploy_key -o BatchMode=yes fxtrade nifty-pulse afl-pulse afl-pulse-pregame health-watch btc-daily-email bot-weekly-email watchlist.txt "${REMOTE}:/tmp/"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes fxtrade nifty-pulse afl-pulse afl-pulse-pregame health-watch bot-daily-email bot-analyze bot-weekly-email reconcile-trades watchlist.txt "${REMOTE}:/tmp/"
           scp -i ~/.ssh/deploy_key -o BatchMode=yes deploy/gcp/afl-pulse-pregame.service deploy/gcp/afl-pulse-pregame.timer "${REMOTE}:/tmp/"
-          scp -i ~/.ssh/deploy_key -o BatchMode=yes deploy/gcp/check-scheduled-jobs.sh deploy/gcp/run-health-watch.sh deploy/gcp/run-btc-daily-email.sh deploy/gcp/run-bot-weekly-email.sh deploy/gcp/fxtrade-watch.cron "${REMOTE}:/tmp/"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes deploy/gcp/check-scheduled-jobs.sh deploy/gcp/run-health-watch.sh deploy/gcp/run-bot-daily-email.sh deploy/gcp/run-bot-weekly-email.sh deploy/gcp/fxtrade-watch.cron "${REMOTE}:/tmp/"
           scp -i ~/.ssh/deploy_key -o BatchMode=yes -r data/afl "${REMOTE}:/tmp/"
 
           ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$REMOTE" bash -s <<EOF
@@ -62,29 +64,29 @@ jobs:
           sudo install -m 755 /tmp/afl-pulse "${INSTALL_ROOT}/bin/afl-pulse"
           sudo install -m 755 /tmp/afl-pulse-pregame "${INSTALL_ROOT}/bin/afl-pulse-pregame"
           sudo install -m 755 /tmp/health-watch "${INSTALL_ROOT}/bin/health-watch"
-          sudo install -m 755 /tmp/btc-daily-email "${INSTALL_ROOT}/bin/btc-daily-email"
+          sudo install -m 755 /tmp/bot-daily-email "${INSTALL_ROOT}/bin/bot-daily-email"
+          sudo install -m 755 /tmp/bot-analyze "${INSTALL_ROOT}/bin/bot-analyze"
           sudo install -m 755 /tmp/bot-weekly-email "${INSTALL_ROOT}/bin/bot-weekly-email"
+          sudo install -m 755 /tmp/reconcile-trades "${INSTALL_ROOT}/bin/reconcile-trades"
           sudo install -m 755 /tmp/check-scheduled-jobs.sh "${INSTALL_ROOT}/scripts/check-scheduled-jobs.sh"
           sudo install -m 755 /tmp/run-health-watch.sh "${INSTALL_ROOT}/scripts/run-health-watch.sh"
-          sudo install -m 755 /tmp/run-btc-daily-email.sh "${INSTALL_ROOT}/scripts/run-btc-daily-email.sh"
+          sudo install -m 755 /tmp/run-bot-daily-email.sh "${INSTALL_ROOT}/scripts/run-bot-daily-email.sh"
           sudo install -m 755 /tmp/run-bot-weekly-email.sh "${INSTALL_ROOT}/scripts/run-bot-weekly-email.sh"
           sudo install -m 644 /tmp/fxtrade-watch.cron /etc/cron.d/fxtrade-watch
-          if [[ ! -f /etc/systemd/system/afl-pulse-pregame.service ]]; then
-            sudo install -m 644 /tmp/afl-pulse-pregame.service /etc/systemd/system/afl-pulse-pregame.service
-            sudo install -m 644 /tmp/afl-pulse-pregame.timer /etc/systemd/system/afl-pulse-pregame.timer
-            sudo systemctl daemon-reload
-            if systemctl is-enabled afl-pulse-pregame.timer &>/dev/null; then
-              :
-            elif systemctl list-unit-files afl-pulse-pregame.timer --no-legend 2>/dev/null | grep -q afl-pulse-pregame.timer; then
-              sudo systemctl enable --now afl-pulse-pregame.timer || true
-            fi
+          sudo install -m 644 /tmp/afl-pulse-pregame.service /etc/systemd/system/afl-pulse-pregame.service
+          sudo install -m 644 /tmp/afl-pulse-pregame.timer /etc/systemd/system/afl-pulse-pregame.timer
+          sudo systemctl daemon-reload
+          if systemctl is-enabled afl-pulse-pregame.timer &>/dev/null; then
+            sudo systemctl restart afl-pulse-pregame.timer
+          elif systemctl list-unit-files afl-pulse-pregame.timer --no-legend 2>/dev/null | grep -q afl-pulse-pregame.timer; then
+            sudo systemctl enable --now afl-pulse-pregame.timer || true
           fi
           sudo install -o fxtrade -g fxtrade -m 644 /tmp/watchlist.txt "${INSTALL_ROOT}/watchlist.txt"
           sudo mkdir -p "${INSTALL_ROOT}/data/afl"
           sudo cp -f /tmp/afl/*.json "${INSTALL_ROOT}/data/afl/"
           sudo chown -R fxtrade:fxtrade "${INSTALL_ROOT}/data/afl"
-          rm -f /tmp/fxtrade /tmp/nifty-pulse /tmp/afl-pulse /tmp/afl-pulse-pregame /tmp/health-watch /tmp/btc-daily-email /tmp/bot-weekly-email /tmp/watchlist.txt
-          rm -f /tmp/check-scheduled-jobs.sh /tmp/run-health-watch.sh /tmp/run-btc-daily-email.sh /tmp/run-bot-weekly-email.sh /tmp/fxtrade-watch.cron
+          rm -f /tmp/fxtrade /tmp/nifty-pulse /tmp/afl-pulse /tmp/afl-pulse-pregame /tmp/health-watch /tmp/bot-daily-email /tmp/bot-analyze /tmp/bot-weekly-email /tmp/reconcile-trades /tmp/watchlist.txt
+          rm -f /tmp/check-scheduled-jobs.sh /tmp/run-health-watch.sh /tmp/run-bot-daily-email.sh /tmp/run-bot-weekly-email.sh /tmp/fxtrade-watch.cron
           rm -f /tmp/afl-pulse-pregame.service /tmp/afl-pulse-pregame.timer
           rm -rf /tmp/afl
           restarted=0
@@ -112,4 +114,62 @@ jobs:
             echo "Enable with: sudo systemctl enable --now fxtrade.service"
             echo "  or: sudo ./deploy/gcp/install.sh --enable-bot BOT_ID"
           fi
+
+          echo ""
+          echo "======== fxtrade trade analysis ========"
+          YEST=\$(date -u -d 'yesterday' +%Y-%m-%d)
+          NEXT=\$(date -u -d 'yesterday + 1 day' +%Y-%m-%d)
+          echo "yesterday_utc=\$YEST"
+          echo ""
+          echo "── data layout ──"
+          ls -la "${INSTALL_ROOT}/data/" 2>/dev/null || echo "(no data dir)"
+          find "${INSTALL_ROOT}/data" -name '*.db' -o -name 'state*.json' 2>/dev/null | head -30 || true
+          echo ""
+          echo "── bot env (dry-run?) ──"
+          for envfile in /etc/fxtrade/fxtrade@*.env /etc/fxtrade/fxtrade.env; do
+            [[ -f "\$envfile" ]] || continue
+            echo "# \$envfile"
+            grep -E 'DRY|FXTRADE' "\$envfile" 2>/dev/null || true
+          done
+          echo ""
+          echo "── trade journals (jsonl) ──"
+          for j in "${INSTALL_ROOT}/logs/universe_scanner/trades.jsonl" "${INSTALL_ROOT}/logs/fx_sentiment/trades.jsonl" "${INSTALL_ROOT}/logs/btc_cfd/trades.jsonl"; do
+            echo "# \$j"
+            if [[ -f "\$j" ]]; then
+              wc -l "\$j" || true
+              grep "\$YEST" "\$j" | tail -20 || echo "(no rows for \$YEST)"
+            else
+              echo "(missing)"
+            fi
+          done
+          if [[ -f "${INSTALL_ROOT}/.credentials" ]]; then
+            echo ""
+            echo "── reconcile-trades ──"
+            "${INSTALL_ROOT}/bin/reconcile-trades" -credentials "${INSTALL_ROOT}/.credentials" -root "${INSTALL_ROOT}" 2>&1 || true
+            echo ""
+            echo "── bot-analyze ──"
+            "${INSTALL_ROOT}/bin/bot-analyze" -credentials "${INSTALL_ROOT}/.credentials" -root "${INSTALL_ROOT}" 2>&1 || true
+          fi
+          for bot in universe_scanner fx_sentiment btc_cfd; do
+            db="${INSTALL_ROOT}/data/\$bot/trades.db"
+            echo ""
+            echo "── sqlite \$bot ──"
+            if [[ ! -f "\$db" ]]; then
+              echo "(no database)"
+              continue
+            fi
+            sqlite3 -header -column "\$db" \
+              "SELECT COUNT(*) AS trades,
+                      ROUND(SUM(CASE WHEN COALESCE(net_pl, realized_pl) > 0 THEN 1 ELSE 0 END)*100.0/COUNT(*),1) AS win_pct,
+                      ROUND(SUM(COALESCE(net_pl, realized_pl)),2) AS net_pl
+               FROM trades;" || true
+            sqlite3 -header -column "\$db" \
+              "SELECT closed_at, instrument, direction,
+                      ROUND(COALESCE(net_pl, realized_pl),2) AS net_pl,
+                      correlation_id
+               FROM trades
+               WHERE closed_at >= '\${YEST}T00:00:00Z' AND closed_at < '\${NEXT}T00:00:00Z'
+               ORDER BY closed_at;" || true
+          done
+          echo "======== end trade analysis ========"
           EOF

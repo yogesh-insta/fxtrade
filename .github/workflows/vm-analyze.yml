@@ -1,0 +1,95 @@
+name: VM trade analysis
+
+on:
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - name: Build bot-analyze
+        run: GOOS=linux GOARCH=amd64 go build -o bot-analyze ./cmd/bot-analyze
+
+      - name: Configure SSH
+        env:
+          GCP_VM_HOST: ${{ secrets.GCP_VM_HOST }}
+          GCP_SSH_KEY: ${{ secrets.GCP_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$GCP_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$GCP_VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Run trade analysis on VM
+        env:
+          GCP_VM_HOST: ${{ secrets.GCP_VM_HOST }}
+          GCP_VM_USER: ${{ secrets.GCP_VM_USER }}
+        run: |
+          REMOTE="${GCP_VM_USER}@${GCP_VM_HOST}"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes bot-analyze "${REMOTE}:/tmp/bot-analyze"
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$REMOTE" bash -s <<'EOF'
+          set -euo pipefail
+          INSTALL=/opt/fxtrade
+          YEST=$(date -u -d 'yesterday' +%Y-%m-%d)
+          NEXT=$(date -u -d 'yesterday + 1 day' +%Y-%m-%d)
+
+          echo "fxtrade VM trade analysis"
+          echo "install_root=$INSTALL"
+          echo "yesterday_utc=$YEST"
+          echo
+
+          if [[ -f "$INSTALL/.credentials" ]]; then
+            echo "── account P/L ──"
+            if [[ -x "$INSTALL/bin/fxtrade" ]] || command -v "$INSTALL/bin/account-pnl" &>/dev/null; then
+              true
+            fi
+            if [[ -f "$INSTALL/bin/account-pnl" ]]; then
+              "$INSTALL/bin/account-pnl" -credentials "$INSTALL/.credentials" 2>/dev/null || echo "(account-pnl failed)"
+            else
+              echo "(account-pnl binary not deployed)"
+            fi
+            echo
+          else
+            echo "warning: no credentials at $INSTALL/.credentials"
+            echo
+          fi
+
+          if [[ -x /tmp/bot-analyze ]]; then
+            echo "── bot-analyze ──"
+            /tmp/bot-analyze -credentials "$INSTALL/.credentials" -root "$INSTALL" 2>/dev/null || echo "(bot-analyze failed)"
+            echo
+          fi
+
+          for bot in universe_scanner fx_sentiment btc_cfd; do
+            db="$INSTALL/data/$bot/trades.db"
+            echo "── $bot ($db) ──"
+            if [[ ! -f "$db" ]]; then
+              echo "  (no database)"
+              echo
+              continue
+            fi
+            echo "  all-time:"
+            sqlite3 -header -column "$db" \
+              "SELECT COUNT(*) AS trades,
+                      ROUND(SUM(CASE WHEN net_pl > 0 THEN 1 ELSE 0 END)*100.0/COUNT(*),1) AS win_pct,
+                      ROUND(SUM(COALESCE(net_pl, realized_pl)),2) AS net_pl
+               FROM trades;"
+            echo "  yesterday ($YEST):"
+            sqlite3 -header -column "$db" \
+              "SELECT closed_at, instrument, direction,
+                      ROUND(COALESCE(net_pl, realized_pl),2) AS net_pl,
+                      correlation_id
+               FROM trades
+               WHERE closed_at >= '${YEST}T00:00:00Z' AND closed_at < '${NEXT}T00:00:00Z'
+               ORDER BY closed_at;"
+            echo
+          done
+          rm -f /tmp/bot-analyze
+          EOF

@@ -52,7 +52,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	rm := risk.NewManager(cfg.Risk)
+	rm := risk.NewManagerForEnv(cfg.Risk, cfg.OANDA.Environment)
 	notifier := scanner.NewNotifier(cfg, nil, false)
 	engine := scanner.NewEngine(cfg, client, execution.NewExecutor(client, rm, nil), rm, notifier, universe)
 

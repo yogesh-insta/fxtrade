@@ -113,6 +113,50 @@ func (c *Client) TransactionsSince(ctx context.Context, since time.Time) (*Trans
 	return &out, nil
 }
 
+// TransactionsSinceAll returns all transactions since a time, following OANDA pagination links.
+func (c *Client) TransactionsSinceAll(ctx context.Context, since time.Time) ([]Transaction, error) {
+	first, err := c.TransactionsSince(ctx, since)
+	if err != nil {
+		return nil, err
+	}
+	out := append([]Transaction(nil), first.Transactions...)
+	for _, pageURL := range first.Pages {
+		var page TransactionsResponse
+		if err := c.getJSONURL(ctx, pageURL, &page); err != nil {
+			return out, fmt.Errorf("fetch transaction page %q: %w", pageURL, err)
+		}
+		out = append(out, page.Transactions...)
+	}
+	return out, nil
+}
+
+func (c *Client) getJSONURL(ctx context.Context, rawURL string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept-Datetime-Format", "RFC3339")
+
+	res, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return err
+	}
+	if res.StatusCode >= 300 {
+		return fmt.Errorf("oanda %s %s: %s", res.Status, rawURL, strings.TrimSpace(string(body)))
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("decode %s: %w", rawURL, err)
+	}
+	return nil
+}
+
 func (c *Client) CancelOrder(ctx context.Context, orderID string) (*CancelOrderResponse, error) {
 	path := fmt.Sprintf("/v3/accounts/%s/orders/%s/cancel", c.accountID, orderID)
 	var out CancelOrderResponse
