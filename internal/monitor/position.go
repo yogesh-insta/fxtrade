@@ -263,15 +263,15 @@ func (m *PositionMonitor) lookupClosedTradeWindows(ctx context.Context, tradeID 
 	}
 	for _, window := range windows {
 		since := time.Now().Add(-window)
-		txs, err := m.client.TransactionsSince(ctx, since)
+		txs, err := m.client.TransactionsSinceAll(ctx, since)
 		if err != nil {
 			slog.Warn("position monitor: transactions lookup failed", "trade_id", tradeID, "window", window.String(), "error", err)
 			continue
 		}
-		if p, ok := oanda.ClosedTradePL(txs.Transactions, tradeID); ok {
+		if p, ok := oanda.ClosedTradePL(txs, tradeID); ok {
 			pl, plFound = p, true
 		}
-		if ep, u, ok := oanda.ClosedTradeDetails(txs.Transactions, tradeID); ok {
+		if ep, u, ok := oanda.ClosedTradeDetails(txs, tradeID); ok {
 			exitPrice, units = ep, u
 		}
 		if plFound || exitPrice > 0 {
@@ -279,11 +279,6 @@ func (m *PositionMonitor) lookupClosedTradeWindows(ctx context.Context, tradeID 
 		}
 	}
 	return 0, false, 0, 0
-}
-
-func (m *PositionMonitor) lookupClosedPL(ctx context.Context, tradeID string) (float64, bool) {
-	pl, found, _, _ := m.lookupClosedTrade(ctx, tradeID)
-	return pl, found
 }
 
 // SeedOpenTrades registers pre-existing positions after startup reconciliation

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"sync"
 	"time"
 
@@ -17,19 +16,19 @@ import (
 )
 
 type cycleEngine struct {
-	client    *oanda.Client
-	bc        config.BtcCfdConfig
-	exec      *execution.Executor
-	rm        *risk.Manager
-	notifier  notify.Notifier
-	posMon    *monitor.PositionMonitor
-	meta      *tradeMetaStore
-	lastCycle *string
-	mu        *sync.RWMutex
+	client      *oanda.Client
+	bc          config.BtcCfdConfig
+	exec        *execution.Executor
+	rm          *risk.Manager
+	notifier    notify.Notifier
+	posMon      *monitor.PositionMonitor
+	meta        *tradeMetaStore
+	lastCycle   *string
+	mu          *sync.RWMutex
 	markCycleOK func()
 
-	reconciled       bool
-	apiFailures      int
+	reconciled  bool
+	apiFailures int
 }
 
 func runCycle(ctx context.Context, e *cycleEngine) {
@@ -322,13 +321,6 @@ func (e *cycleEngine) setDetail(s string) {
 	e.mu.Lock()
 	*e.lastCycle = s
 	e.mu.Unlock()
-}
-
-func fmtDetail(bc config.BtcCfdConfig, n int, lastTime string) string {
-	if lastTime == "" {
-		return bc.Instrument + " " + bc.Granularity + " (no candles)"
-	}
-	return bc.Instrument + " " + bc.Granularity + ": " + lastTime + " (" + strconv.Itoa(n) + " candles)"
 }
 
 // candlesRequestCount returns how many bars to fetch from OANDA. The latest

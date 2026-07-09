@@ -165,15 +165,18 @@ func ClosedTradePL(transactions []Transaction, tradeID string) (float64, bool) {
 			if tc.TradeID != tradeID {
 				continue
 			}
-			if tc.RealizedPL == "" {
-				continue
+			if tc.RealizedPL != "" {
+				if p, err := ParsePrice(tc.RealizedPL); err == nil {
+					total += p
+					found = true
+				}
 			}
-			p, err := ParsePrice(tc.RealizedPL)
-			if err != nil {
-				continue
+		}
+		if tx.TradeReduced != nil && tx.TradeReduced.TradeID == tradeID && tx.Pl != "" {
+			if p, err := ParsePrice(tx.Pl); err == nil {
+				total += p
+				found = true
 			}
-			total += p
-			found = true
 		}
 	}
 	return total, found

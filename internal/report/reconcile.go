@@ -28,6 +28,22 @@ type ReconcileSummary struct {
 	TotalReconciled int
 }
 
+func (s ReconcileSummary) AttemptedTotal() int {
+	n := 0
+	for _, r := range s.Results {
+		n += r.Attempted
+	}
+	return n
+}
+
+func (s ReconcileSummary) StillMissingTotal() int {
+	n := 0
+	for _, r := range s.Results {
+		n += r.StillMissing
+	}
+	return n
+}
+
 // ReconcileAllBots backfills missing P/L and instruments for every trading bot DB.
 func ReconcileAllBots(ctx context.Context, cfg *config.Config, client *oanda.Client) ReconcileSummary {
 	var summary ReconcileSummary
@@ -66,9 +82,20 @@ func ReconcileBot(ctx context.Context, cfg *config.Config, botID string, client 
 		return res
 	}
 	res.Attempted = len(rows)
+	if len(rows) == 0 {
+		return res
+	}
+
+	txs, txErr := fetchReconcileTransactions(ctx, client)
+	if txErr != nil {
+		slog.Warn("reconcile: bulk transaction fetch failed", "bot", botID, "error", txErr)
+	}
 
 	for _, row := range rows {
-		pl, inst, ok := lookupTradePL(ctx, client, row.TradeID, row.ClosedAt)
+		pl, inst, ok := lookupTradePLInTransactions(txs, row.TradeID)
+		if !ok && txErr == nil {
+			pl, inst, ok = lookupTradePL(ctx, client, row.TradeID, row.ClosedAt)
+		}
 		if !ok {
 			res.StillMissing++
 			continue
@@ -88,6 +115,38 @@ func ReconcileBot(ctx context.Context, cfg *config.Config, botID string, client 
 			"bot", botID, "trade_id", row.TradeID, "instrument", inst, "net_pl", netPL)
 	}
 	return res
+}
+
+func fetchReconcileTransactions(ctx context.Context, client *oanda.Client) ([]oanda.Transaction, error) {
+	windows := []time.Duration{
+		7 * 24 * time.Hour,
+		30 * 24 * time.Hour,
+	}
+	var lastErr error
+	for _, window := range windows {
+		txs, err := client.TransactionsSinceAll(ctx, time.Now().Add(-window))
+		if err != nil {
+			lastErr = err
+			slog.Warn("reconcile: transactions fetch failed", "window", window.String(), "error", err)
+			continue
+		}
+		return txs, nil
+	}
+	return nil, lastErr
+}
+
+func lookupTradePLInTransactions(txs []oanda.Transaction, tradeID string) (realizedPL float64, instrument string, ok bool) {
+	if len(txs) == 0 || tradeID == "" {
+		return 0, "", false
+	}
+	pl, plFound := oanda.ClosedTradePL(txs, tradeID)
+	if inst, found := oanda.ClosedTradeInstrument(txs, tradeID); found {
+		instrument = inst
+	}
+	if plFound {
+		return pl, instrument, true
+	}
+	return 0, instrument, false
 }
 
 var reconcileRetryDelays = []time.Duration{
