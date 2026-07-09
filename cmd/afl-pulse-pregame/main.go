@@ -101,17 +101,6 @@ func main() {
 			slog.Info("pregame already sent", "squiggle_id", g.ID, "match", fmt.Sprintf("%s vs %s", g.HomeTeam, g.AwayTeam))
 			continue
 		}
-		if state.WasLLMAttempted(g.ID) {
-			// Prior run invoked Gemini but did not persist WasSent (crash or save race).
-			// Suppress duplicate model-only emails on every poll within the window.
-			slog.Warn("pregame LLM already attempted without sent record; suppressing duplicate",
-				"squiggle_id", g.ID,
-				"match", fmt.Sprintf("%s vs %s", g.HomeTeam, g.AwayTeam),
-			)
-			state.MarkSent(g.ID)
-			stateDirty = true
-			continue
-		}
 		pending = append(pending, g)
 	}
 	if len(pending) == 0 {
@@ -198,31 +187,50 @@ func main() {
 
 		var llmResp afl.PregameLLMResponse
 		llmFailed := false
+		modelFallbackUsed := false
 		var llmErr error
+		fallback := afl.BuildPregameModelFallback(report)
+
 		if cfg.AFL.GeminiAPIKey != "" {
-			state.MarkLLMAttempted(game.ID)
-			stateDirty = true
-			llmResp, llmErr = afl.RunPregameLLM(ctx, cfg.AFL, sfix, report)
-			if llmErr != nil {
-				llmFailed = true
-				slog.Error("pregame gemini failed",
+			if state.WasLLMAttempted(game.ID) {
+				slog.Info("pregame LLM already attempted; using model fallback if needed",
 					"squiggle_id", game.ID,
 					"match", fmt.Sprintf("%s vs %s", fixture.HomeTeam, fixture.AwayTeam),
-					"error", llmErr,
 				)
-			} else if llmResp.Incomplete() {
-				slog.Warn("pregame gemini incomplete; sending partial live analytics",
-					"squiggle_id", game.ID,
-				)
+				llmFailed = true
+			} else {
+				state.MarkLLMAttempted(game.ID)
+				stateDirty = true
+				llmResp, llmErr = afl.RunPregameLLM(ctx, cfg.AFL, sfix, report)
+				if llmErr != nil {
+					llmFailed = true
+					slog.Error("pregame gemini failed",
+						"squiggle_id", game.ID,
+						"match", fmt.Sprintf("%s vs %s", fixture.HomeTeam, fixture.AwayTeam),
+						"error", llmErr,
+					)
+				} else if llmResp.Incomplete() {
+					slog.Warn("pregame gemini incomplete; merging model fallback for main bet",
+						"squiggle_id", game.ID,
+					)
+				}
 			}
 		} else {
 			llmFailed = true
-			slog.Info("no gemini key; model-only email",
+			slog.Info("no gemini key; model fallback for main bet",
 				"squiggle_id", game.ID,
 			)
 		}
 
-		body := afl.FormatPregameEmail(sfix, report, llmResp, leadMinutes)
+		llmResp, modelFallbackUsed = afl.MergePregameLLMWithFallback(llmResp, fallback)
+		if modelFallbackUsed {
+			slog.Info("pregame using model fallback for main bet",
+				"squiggle_id", game.ID,
+				"selection", llmResp.MainBet.Selection,
+			)
+		}
+
+		body := afl.FormatPregameEmail(sfix, report, llmResp, leadMinutes, modelFallbackUsed)
 		if llmFailed && cfg.AFL.PregameLLMRequiredEnabled() && llmErr != nil && !*dryRun && !state.WasFailureAlertSent(game.ID) {
 			alertBody := afl.FormatPregameFailureAlert(
 				sfix, fixture.HomeTeam, fixture.AwayTeam, game.Venue, llmErr, *logPath,
