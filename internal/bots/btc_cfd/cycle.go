@@ -173,9 +173,9 @@ func (e *cycleEngine) tick(ctx context.Context) error {
 	}
 
 	stopDist := ind.ATR * e.bc.SLATRMultiple
-	units := PositionUnits(balance, stopDist, e.bc.PerTradeRiskPct)
-	if units <= 0 {
-		slog.Info("btc_cfd skip entry", "reason", "position size below minimum")
+	unitsStr := PositionUnits(balance, stopDist, e.bc.PerTradeRiskPct)
+	if unitsStr == "" {
+		slog.Info("btc_cfd skip entry", "reason", "position size below minimum", "balance", balance, "stop_dist", stopDist)
 		return nil
 	}
 
@@ -196,7 +196,7 @@ func (e *cycleEngine) tick(ctx context.Context) error {
 	result, err := e.exec.PlaceMarket(ctx, req, execution.MarketOrderParams{
 		Instrument:     e.bc.Instrument,
 		Direction:      sig.Direction,
-		Units:          units,
+		UnitsStr:       unitsStr,
 		StopLoss:       stop,
 		TakeProfit:     &tp,
 		ClientOrderID:  clientOrderID,
@@ -214,6 +214,7 @@ func (e *cycleEngine) tick(ctx context.Context) error {
 		StopLoss:      stop,
 		TakeProfit:    tp,
 		Units:         result.Units,
+		UnitsStr:      result.UnitsStr,
 		OpenedAt:      time.Now().UTC(),
 	})
 
@@ -226,7 +227,7 @@ func (e *cycleEngine) tick(ctx context.Context) error {
 		"tp", tp,
 		"reason", sig.Reason,
 	)
-	e.setDetail(fmt.Sprintf("%s %s trade %s %d units", e.bc.Instrument, sig.Direction, result.TradeID, units))
+	e.setDetail(fmt.Sprintf("%s %s trade %s %s units", e.bc.Instrument, sig.Direction, result.TradeID, unitsStr))
 	return nil
 }
 

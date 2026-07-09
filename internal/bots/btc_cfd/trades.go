@@ -14,6 +14,7 @@ type tradeMeta struct {
 	StopLoss      float64
 	TakeProfit    float64
 	Units         int64
+	UnitsStr      string
 	OpenedAt      time.Time
 }
 

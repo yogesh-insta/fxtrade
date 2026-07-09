@@ -16,6 +16,7 @@ type MarketOrderParams struct {
 	Instrument     string
 	Direction      string
 	Units          int64
+	UnitsStr         string // fractional units (e.g. BTC); takes precedence over Units when set
 	StopLoss       float64
 	TakeProfit     *float64
 	ClientOrderID  string
@@ -26,27 +27,23 @@ func BuildMarketOrder(p MarketOrderParams) (oanda.CreateOrderRequest, error) {
 	if p.Instrument == "" {
 		p.Instrument = oanda.DefaultInstrument
 	}
-	if p.Units <= 0 {
+	if p.UnitsStr == "" && p.Units <= 0 {
 		return oanda.CreateOrderRequest{}, fmt.Errorf("units must be positive")
 	}
 	if p.StopLoss <= 0 {
 		return oanda.CreateOrderRequest{}, fmt.Errorf("stop-loss price is required")
 	}
 
-	units := p.Units
-	switch p.Direction {
-	case DirectionLong:
-	case DirectionShort:
-		units = -units
-	default:
-		return oanda.CreateOrderRequest{}, fmt.Errorf("direction must be LONG or SHORT")
+	unitsField, err := signedOrderUnits(p.Direction, p.UnitsStr, p.Units)
+	if err != nil {
+		return oanda.CreateOrderRequest{}, err
 	}
 
 	order := oanda.CreateOrderRequest{
 		Order: oanda.OrderSpec{
 			Type:         oanda.OrderTypeMarket,
 			Instrument:   p.Instrument,
-			Units:        strconv.FormatInt(units, 10),
+			Units:        unitsField,
 			TimeInForce:  oanda.TimeInForceFOK,
 			PositionFill: oanda.PositionFillDefault,
 			StopLossOnFill: &oanda.OnFillStopLoss{
@@ -71,4 +68,32 @@ func BuildMarketOrder(p MarketOrderParams) (oanda.CreateOrderRequest, error) {
 	}
 
 	return order, nil
+}
+
+func signedOrderUnits(direction, unitsStr string, units int64) (string, error) {
+	if unitsStr != "" {
+		u, err := strconv.ParseFloat(unitsStr, 64)
+		if err != nil {
+			return "", fmt.Errorf("parse units: %w", err)
+		}
+		if u <= 0 {
+			return "", fmt.Errorf("units must be positive")
+		}
+		switch direction {
+		case DirectionLong:
+			return unitsStr, nil
+		case DirectionShort:
+			return strconv.FormatFloat(-u, 'f', -1, 64), nil
+		default:
+			return "", fmt.Errorf("direction must be LONG or SHORT")
+		}
+	}
+	switch direction {
+	case DirectionLong:
+	case DirectionShort:
+		units = -units
+	default:
+		return "", fmt.Errorf("direction must be LONG or SHORT")
+	}
+	return strconv.FormatInt(units, 10), nil
 }
