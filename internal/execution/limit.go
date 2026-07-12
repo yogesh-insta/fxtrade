@@ -8,13 +8,15 @@ import (
 )
 
 type LimitOrderParams struct {
-	Instrument string
-	Direction  string
-	Units      int64
-	Price      float64
-	StopLoss   float64
-	TakeProfit *float64
-	TimeInForce string
+	Instrument     string
+	Direction      string
+	Units          int64
+	Price          float64
+	StopLoss       float64
+	TakeProfit     *float64
+	TimeInForce    string
+	ClientOrderID  string
+	ClientOrderTag string
 }
 
 func BuildLimitOrder(p LimitOrderParams) (oanda.CreateOrderRequest, error) {
@@ -59,6 +61,12 @@ func BuildLimitOrder(p LimitOrderParams) (oanda.CreateOrderRequest, error) {
 		order.Order.TakeProfitOnFill = &oanda.OnFillTakeProfit{
 			Price:       oanda.FormatPrice(*p.TakeProfit),
 			TimeInForce: oanda.TimeInForceGTC,
+		}
+	}
+	if p.ClientOrderID != "" || p.ClientOrderTag != "" {
+		order.Order.ClientExtensions = &oanda.ClientExtensions{
+			ID:  p.ClientOrderID,
+			Tag: p.ClientOrderTag,
 		}
 	}
 	return order, nil

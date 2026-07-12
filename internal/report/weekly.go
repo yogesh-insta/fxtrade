@@ -2,6 +2,7 @@ package report
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -98,8 +99,35 @@ func formatMoney(v float64) string {
 	if v < 0 {
 		sign = "-"
 		v = -v
+	} else if math.Abs(v) < 0.01 {
+		return "$0.00"
 	}
 	return fmt.Sprintf("%s$%.2f", sign, v)
+}
+
+// plKind classifies a P/L value for readable email labels.
+func plKind(v float64) string {
+	switch {
+	case v > 0.01:
+		return "GAIN"
+	case v < -0.01:
+		return "LOSS"
+	default:
+		return "FLAT"
+	}
+}
+
+// formatPL renders P/L with an explicit GAIN/LOSS/FLAT label and signed amount.
+func formatPL(v float64) string {
+	return fmt.Sprintf("%-4s %s", plKind(v), formatMoney(v))
+}
+
+// formatPLWithPct renders P/L with label, amount, and optional percentage.
+func formatPLWithPct(v, pct float64) string {
+	if math.Abs(v) < 0.01 {
+		return fmt.Sprintf("%-4s %s", plKind(v), formatMoney(v))
+	}
+	return fmt.Sprintf("%-4s %s (%.2f%%)", plKind(v), formatMoney(v), pct)
 }
 
 func formatFees(v float64) string {

@@ -67,6 +67,49 @@ func TestPresetVolatilePhase1Count(t *testing.T) {
 	}
 }
 
+func TestBreakoutAlignedWithTrend(t *testing.T) {
+	if !BreakoutAlignedWithTrend("LONG", 1) || !BreakoutAlignedWithTrend("LONG", 0) {
+		t.Fatal("LONG should align with bullish or neutral bias")
+	}
+	if BreakoutAlignedWithTrend("LONG", -1) {
+		t.Fatal("LONG should not align with bearish bias")
+	}
+	if !BreakoutAlignedWithTrend("SHORT", -1) || !BreakoutAlignedWithTrend("SHORT", 0) {
+		t.Fatal("SHORT should align with bearish or neutral bias")
+	}
+	if BreakoutAlignedWithTrend("SHORT", 1) {
+		t.Fatal("SHORT should not align with bullish bias")
+	}
+}
+
+func TestPastEntryCutoffFX(t *testing.T) {
+	cfg := config.DefaultScannerConfig()
+	cfg.EntryCutoffBeforeForceFlatMinutes = 120
+
+	before := time.Date(2026, 7, 7, 17, 59, 0, 0, time.UTC)
+	at := time.Date(2026, 7, 7, 18, 0, 0, 0, time.UTC)
+	after := time.Date(2026, 7, 7, 18, 1, 0, 0, time.UTC)
+
+	if PastEntryCutoff(cfg, "GBP_USD", "CURRENCY", before) {
+		t.Fatal("expected entries allowed before cutoff window")
+	}
+	if !PastEntryCutoff(cfg, "GBP_USD", "CURRENCY", at) {
+		t.Fatal("expected entry cutoff at 18:00 UTC (2h before 20:00 force-flat)")
+	}
+	if !PastEntryCutoff(cfg, "GBP_USD", "CURRENCY", after) {
+		t.Fatal("expected entry cutoff after cutoff window starts")
+	}
+}
+
+func TestPastEntryCutoffDisabledWhenZero(t *testing.T) {
+	cfg := config.DefaultScannerConfig()
+	cfg.EntryCutoffBeforeForceFlatMinutes = 0
+	late := time.Date(2026, 7, 7, 19, 30, 0, 0, time.UTC)
+	if PastEntryCutoff(cfg, "GBP_USD", "CURRENCY", late) {
+		t.Fatal("expected no cutoff when minutes=0")
+	}
+}
+
 func TestShouldForceFlatFXAt2000UTC(t *testing.T) {
 	cfg := config.DefaultScannerConfig()
 	before := time.Date(2026, 7, 7, 19, 59, 0, 0, time.UTC)

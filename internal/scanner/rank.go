@@ -6,17 +6,17 @@ import (
 )
 
 type Setup struct {
-	Instrument         string
-	Class              string
-	Range              OpeningRange
-	SpreadPips         float64
-	RangeSpreadRatio   float64
-	TrendBias          int
-	Score              float64
-	InSession          bool
-	Ready              bool
-	SkipReason         string
-	BreakoutDirection  string
+	Instrument        string
+	Class             string
+	Range             OpeningRange
+	SpreadPips        float64
+	RangeSpreadRatio  float64
+	TrendBias         int
+	Score             float64
+	InSession         bool
+	Ready             bool
+	SkipReason        string
+	BreakoutDirection string
 }
 
 func ScoreSetup(rangePips, spreadPips, maxSpreadPips, minRangeSpreadRatio float64, trendBias int) (score float64, ok bool, reason string) {
@@ -44,6 +44,18 @@ func ScoreSetup(rangePips, spreadPips, maxSpreadPips, minRangeSpreadRatio float6
 
 	score = 0.35*rangeScore + 0.20*spreadScore + 0.30*ratioScore + 0.15*trendScore
 	return score, true, ""
+}
+
+// BreakoutAlignedWithTrend returns true when direction matches H1 bias, or bias is neutral.
+func BreakoutAlignedWithTrend(direction string, trendBias int) bool {
+	switch direction {
+	case "LONG":
+		return trendBias >= 0
+	case "SHORT":
+		return trendBias <= 0
+	default:
+		return true
+	}
 }
 
 func RankSetups(setups []Setup, minScore float64) []Setup {

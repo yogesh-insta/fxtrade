@@ -26,7 +26,7 @@ type Engine struct {
 	universe Universe
 	botID    string
 
-	mu              sync.Mutex
+	mu               sync.Mutex
 	lastDailyNotify  time.Time
 	lastWeeklyNotify time.Time
 	tradesToday      int
@@ -147,6 +147,13 @@ func (e *Engine) cycle(ctx context.Context) {
 	if top.BreakoutDirection == "" {
 		e.recordSignal("await_breakout", top.Instrument, "", top.Score, map[string]any{
 			"setup_score": top.Score,
+		})
+		return
+	}
+
+	if e.cfg.Scanner.RequireTrendAlignment && !BreakoutAlignedWithTrend(top.BreakoutDirection, top.TrendBias) {
+		e.recordSignal("counter_trend_breakout", top.Instrument, top.BreakoutDirection, top.Score, map[string]any{
+			"trend_bias": top.TrendBias,
 		})
 		return
 	}

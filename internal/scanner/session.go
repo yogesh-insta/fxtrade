@@ -125,3 +125,18 @@ func ShouldForceFlat(cfg config.ScannerConfig, instrument, instType string, now 
 	}
 	return !now.UTC().Before(at)
 }
+
+// PastEntryCutoff blocks new entries within N minutes of force-flat for the asset class.
+func PastEntryCutoff(cfg config.ScannerConfig, instrument, instType string, now time.Time) bool {
+	mins := cfg.EntryCutoffBeforeForceFlatMinutes
+	if mins <= 0 {
+		return false
+	}
+	cls := assetClass(cfg, instrument, instType)
+	at, ok := ForceFlatUTC(cfg, cls, now)
+	if !ok {
+		return false
+	}
+	cutoff := at.Add(-time.Duration(mins) * time.Minute)
+	return !now.UTC().Before(cutoff)
+}

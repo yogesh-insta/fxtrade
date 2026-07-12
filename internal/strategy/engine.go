@@ -21,16 +21,16 @@ import (
 )
 
 type Engine struct {
-	cfg        *config.Config
-	instrument string
-	client     *oanda.Client
-	exec       *execution.Executor
-	risk       *risk.Manager
-	notify     notify.Notifier
-	sentiment  *sentiment.Cache
-	journal    *journal.Writer
-	perfStore  *sqlite.Store
-	botID      string
+	cfg              *config.Config
+	instrument       string
+	client           *oanda.Client
+	exec             *execution.Executor
+	risk             *risk.Manager
+	notify           notify.Notifier
+	sentiment        *sentiment.Cache
+	journal          *journal.Writer
+	perfStore        *sqlite.Store
+	botID            string
 	modeMu           sync.RWMutex
 	lastMode         string
 	lastTrendAttempt time.Time
@@ -275,6 +275,9 @@ func (e *Engine) runRangeMode(ctx context.Context, snap market.Snapshot, band Ra
 	if !hasBuy && !longElsewhere && !SentimentVetoBuy(sig, hasSig, e.cfg.LLMGate) && snap.Ask > band.BuyLimitPrice {
 		sl := band.Low - stopDist
 		corr := fmt.Sprintf("range-buy-%s-%d", e.instrument, time.Now().UnixNano())
+		if e.botID != "" {
+			corr = e.botID + ":" + corr
+		}
 		req := risk.EntryRequest{
 			CorrelationID:  corr,
 			SpreadPips:     snap.SpreadPips,
@@ -284,13 +287,15 @@ func (e *Engine) runRangeMode(ctx context.Context, snap market.Snapshot, band Ra
 			StopDistance:   stopDist,
 		}
 		_, err := e.exec.PlaceLimit(ctx, req, execution.LimitOrderParams{
-			Instrument:  e.instrument,
-			Direction:   execution.DirectionLong,
-			Units:       units,
-			Price:       band.BuyLimitPrice,
-			StopLoss:    sl,
-			TakeProfit:  &midTP,
-			TimeInForce: e.cfg.RangeMode.PendingLimitTimeInForce,
+			Instrument:     e.instrument,
+			Direction:      execution.DirectionLong,
+			Units:          units,
+			Price:          band.BuyLimitPrice,
+			StopLoss:       sl,
+			TakeProfit:     &midTP,
+			TimeInForce:    e.cfg.RangeMode.PendingLimitTimeInForce,
+			ClientOrderID:  corr,
+			ClientOrderTag: e.botID,
 		})
 		if err != nil {
 			e.logDecision(ModeRange, "limit_rejected", err.Error(), nil)
@@ -310,6 +315,9 @@ func (e *Engine) runRangeMode(ctx context.Context, snap market.Snapshot, band Ra
 	if !hasSell && !shortElsewhere && !SentimentVetoSell(sig, hasSig, e.cfg.LLMGate) && snap.Bid < band.SellLimitPrice {
 		sl := band.High + stopDist
 		corr := fmt.Sprintf("range-sell-%s-%d", e.instrument, time.Now().UnixNano())
+		if e.botID != "" {
+			corr = e.botID + ":" + corr
+		}
 		req := risk.EntryRequest{
 			CorrelationID:  corr,
 			SpreadPips:     snap.SpreadPips,
@@ -319,13 +327,15 @@ func (e *Engine) runRangeMode(ctx context.Context, snap market.Snapshot, band Ra
 			StopDistance:   stopDist,
 		}
 		_, err := e.exec.PlaceLimit(ctx, req, execution.LimitOrderParams{
-			Instrument:  e.instrument,
-			Direction:   execution.DirectionShort,
-			Units:       units,
-			Price:       band.SellLimitPrice,
-			StopLoss:    sl,
-			TakeProfit:  &midTP,
-			TimeInForce: e.cfg.RangeMode.PendingLimitTimeInForce,
+			Instrument:     e.instrument,
+			Direction:      execution.DirectionShort,
+			Units:          units,
+			Price:          band.SellLimitPrice,
+			StopLoss:       sl,
+			TakeProfit:     &midTP,
+			TimeInForce:    e.cfg.RangeMode.PendingLimitTimeInForce,
+			ClientOrderID:  corr,
+			ClientOrderTag: e.botID,
 		})
 		if err != nil {
 			e.logDecision(ModeRange, "limit_rejected", err.Error(), nil)
@@ -401,6 +411,9 @@ func (e *Engine) runTrendMode(ctx context.Context, snap market.Snapshot, band Ra
 	}
 
 	corr := fmt.Sprintf("trend-%s-%s-%d", e.instrument, direction, time.Now().UnixNano())
+	if e.botID != "" {
+		corr = e.botID + ":" + corr
+	}
 	req := risk.EntryRequest{
 		CorrelationID:  corr,
 		SpreadPips:     snap.SpreadPips,
@@ -410,10 +423,12 @@ func (e *Engine) runTrendMode(ctx context.Context, snap market.Snapshot, band Ra
 		StopDistance:   stopDist,
 	}
 	result, err := e.exec.PlaceMarket(ctx, req, execution.MarketOrderParams{
-		Instrument: e.instrument,
-		Direction:  direction,
-		Units:      units,
-		StopLoss:   sl,
+		Instrument:     e.instrument,
+		Direction:      direction,
+		Units:          units,
+		StopLoss:       sl,
+		ClientOrderID:  corr,
+		ClientOrderTag: e.botID,
 	})
 	if err != nil {
 		e.cycleSummary.Reason = fmt.Sprintf("market order rejected: %v", err)

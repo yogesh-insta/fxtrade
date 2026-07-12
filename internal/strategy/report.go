@@ -134,7 +134,7 @@ func ExplainTrend(snap market.Snapshot) []string {
 	return []string{
 		fmt.Sprintf("Weekly regime: %s", regime),
 		fmt.Sprintf("H4 RSI: %.1f  |  H4 close: %s  |  H4 EMA20: %s", snap.RSI14H4, oanda.FormatPrice(snap.LastH4Close), oanda.FormatPrice(snap.EMA20H4)),
-		fmt.Sprintf("Needs H4 pullback to EMA20 with RSI in band before market entry"),
+		"Needs H4 pullback to EMA20 with RSI in band before market entry",
 	}
 }
 
