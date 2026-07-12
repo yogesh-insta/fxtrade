@@ -31,6 +31,7 @@ Scans a preset/watchlist/account universe every `poll_seconds`. For each in-sess
 ## Key defaults
 
 - `min_setup_score` 0.65, `min_range_spread_ratio` 3.0, `opening_range_candles` 2, `take_profit_rr` 2.1
+- `require_trend_alignment` true, `entry_cutoff_before_force_flat_minutes` 120
 - `max_open_positions` 1 (via scanner risk in `bot.go`)
 - `poll_seconds` 10
 

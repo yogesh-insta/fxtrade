@@ -64,6 +64,10 @@ func (s *Scanner) scanOne(ctx context.Context, instrument string) Setup {
 		setup.SkipReason = "outside session"
 		return setup
 	}
+	if PastEntryCutoff(s.cfg.Scanner, instrument, meta.Type, now) {
+		setup.SkipReason = "past entry cutoff before force-flat"
+		return setup
+	}
 
 	pricing, err := s.client.Pricing(ctx, instrument)
 	if err != nil {

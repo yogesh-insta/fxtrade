@@ -306,6 +306,9 @@ func suggestTweaks(
 		}
 		if lateTrades >= 2 && lateLosses >= lateTrades/2 {
 			out = append(out, "Losses cluster 19:00–21:00 UTC — add entry cutoff before 17:00 UTC for FX/metals/index.")
+			if cfg.Scanner.EntryCutoffBeforeForceFlatMinutes <= 0 {
+				out = append(out, "Scanner: entry_cutoff_before_force_flat_minutes=0 — set 120+ to block late-session entries before force_flat_utc.")
+			}
 		}
 	}
 
@@ -447,6 +450,12 @@ func scannerTweaks(cfg *config.Config, trades []ClosedTrade, dq DataQuality) []s
 				"Scanner: min_range_spread_ratio=%.1f with %.0f%% win rate — consider 2.5+ to skip thin ranges.",
 				sc.MinRangeSpreadRatio, wr*100,
 			))
+		}
+	}
+	if !sc.RequireTrendAlignment && reliableWR {
+		wr, n, _ := reconciledWinStats(trades)
+		if n >= 5 && wr < 0.4 {
+			out = append(out, "Scanner: require_trend_alignment=false — enable to skip counter-H1 breakouts.")
 		}
 	}
 	if reliableWR && sc.TakeProfitRR < 1.8 {

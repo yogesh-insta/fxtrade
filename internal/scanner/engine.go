@@ -151,6 +151,13 @@ func (e *Engine) cycle(ctx context.Context) {
 		return
 	}
 
+	if e.cfg.Scanner.RequireTrendAlignment && !BreakoutAlignedWithTrend(top.BreakoutDirection, top.TrendBias) {
+		e.recordSignal("counter_trend_breakout", top.Instrument, top.BreakoutDirection, top.Score, map[string]any{
+			"trend_bias": top.TrendBias,
+		})
+		return
+	}
+
 	e.mu.Lock()
 	if at, ok := e.sessionEntered[top.Instrument]; ok && at.Equal(top.Range.SessionOpen) {
 		e.mu.Unlock()
