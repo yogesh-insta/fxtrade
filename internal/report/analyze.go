@@ -45,17 +45,17 @@ type DataQuality struct {
 
 // BotAnalysis is a data-driven review of one bot's SQLite store.
 type BotAnalysis struct {
-	BotID      string
-	DBPath     string
-	Err        error
-	AllTime    sqlite.PeriodMetrics
-	Yesterday  sqlite.PeriodMetrics
-	YesterdayDate time.Time
-	Trades     []ClosedTrade
-	ByInstrument []BucketStats
-	ByExit     []BucketStats
-	ByHourUTC  []BucketStats
-	Suggestions []string
+	BotID            string
+	DBPath           string
+	Err              error
+	AllTime          sqlite.PeriodMetrics
+	Yesterday        sqlite.PeriodMetrics
+	YesterdayDate    time.Time
+	Trades           []ClosedTrade
+	ByInstrument     []BucketStats
+	ByExit           []BucketStats
+	ByHourUTC        []BucketStats
+	Suggestions      []string
 	DataQuality      DataQuality
 	ReconciledWins   int
 	ReconciledLosses int
@@ -306,6 +306,9 @@ func suggestTweaks(
 		}
 		if lateTrades >= 2 && lateLosses >= lateTrades/2 {
 			out = append(out, "Losses cluster 19:00–21:00 UTC — add entry cutoff before 17:00 UTC for FX/metals/index.")
+			if cfg.Scanner.EntryCutoffBeforeForceFlatMinutes <= 0 {
+				out = append(out, "Scanner: entry_cutoff_before_force_flat_minutes=0 — set 120+ to block late-session entries before force_flat_utc.")
+			}
 		}
 	}
 
@@ -447,6 +450,12 @@ func scannerTweaks(cfg *config.Config, trades []ClosedTrade, dq DataQuality) []s
 				"Scanner: min_range_spread_ratio=%.1f with %.0f%% win rate — consider 2.5+ to skip thin ranges.",
 				sc.MinRangeSpreadRatio, wr*100,
 			))
+		}
+	}
+	if !sc.RequireTrendAlignment && reliableWR {
+		wr, n, _ := reconciledWinStats(trades)
+		if n >= 5 && wr < 0.4 {
+			out = append(out, "Scanner: require_trend_alignment=false — enable to skip counter-H1 breakouts.")
 		}
 	}
 	if reliableWR && sc.TakeProfitRR < 1.8 {
@@ -626,6 +635,40 @@ func formatAnalysisWinRate(dq DataQuality, reconciledWins, reconciledLosses int)
 		return fmt.Sprintf("%.1f%% (%dW / %dL, %d unreconciled)", wr, reconciledWins, reconciledLosses, dq.UnreconciledCount)
 	}
 	return fmt.Sprintf("%.1f%% (%dW / %dL)", wr, reconciledWins, reconciledLosses)
+}
+
+// FormatDailyTweaks renders suggested config tweaks only (no duplicate P/L buckets).
+func FormatDailyTweaks(cfg *config.Config, now time.Time) string {
+	var b strings.Builder
+	var any bool
+	for _, botID := range TradingBotIDs() {
+		a := AnalyzeBot(cfg, botID, now)
+		if a.Err != nil || len(a.Suggestions) == 0 {
+			continue
+		}
+		var tweaks []string
+		for _, s := range a.Suggestions {
+			if strings.HasPrefix(s, "No closed trades in database yet") {
+				continue
+			}
+			tweaks = append(tweaks, s)
+		}
+		if len(tweaks) == 0 {
+			continue
+		}
+		if !any {
+			b.WriteString("── Suggested tweaks ──\n")
+			any = true
+		}
+		fmt.Fprintf(&b, "\n%s\n", BotDisplayName(botID))
+		for _, s := range tweaks {
+			fmt.Fprintf(&b, "  • %s\n", s)
+		}
+	}
+	if !any {
+		return ""
+	}
+	return strings.TrimRight(b.String(), "\n") + "\n"
 }
 
 // FormatDailyAnalysis renders a concise analysis block for the daily email.
