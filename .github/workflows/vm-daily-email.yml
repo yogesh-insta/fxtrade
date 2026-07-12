@@ -1,0 +1,27 @@
+name: VM daily email preview
+
+on:
+  workflow_dispatch:
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          GCP_VM_HOST: ${{ secrets.GCP_VM_HOST }}
+          GCP_SSH_KEY: ${{ secrets.GCP_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$GCP_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$GCP_VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Preview daily email on VM
+        env:
+          GCP_VM_HOST: ${{ secrets.GCP_VM_HOST }}
+          GCP_VM_USER: ${{ secrets.GCP_VM_USER }}
+        run: |
+          REMOTE="${GCP_VM_USER}@${GCP_VM_HOST}"
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$REMOTE" \
+            'sudo -u fxtrade /opt/fxtrade/bin/bot-daily-email -credentials /opt/fxtrade/.credentials -print'
