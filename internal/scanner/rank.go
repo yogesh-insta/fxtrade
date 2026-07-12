@@ -6,17 +6,17 @@ import (
 )
 
 type Setup struct {
-	Instrument         string
-	Class              string
-	Range              OpeningRange
-	SpreadPips         float64
-	RangeSpreadRatio   float64
-	TrendBias          int
-	Score              float64
-	InSession          bool
-	Ready              bool
-	SkipReason         string
-	BreakoutDirection  string
+	Instrument        string
+	Class             string
+	Range             OpeningRange
+	SpreadPips        float64
+	RangeSpreadRatio  float64
+	TrendBias         int
+	Score             float64
+	InSession         bool
+	Ready             bool
+	SkipReason        string
+	BreakoutDirection string
 }
 
 func ScoreSetup(rangePips, spreadPips, maxSpreadPips, minRangeSpreadRatio float64, trendBias int) (score float64, ok bool, reason string) {

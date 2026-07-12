@@ -21,16 +21,16 @@ import (
 )
 
 type Engine struct {
-	cfg        *config.Config
-	instrument string
-	client     *oanda.Client
-	exec       *execution.Executor
-	risk       *risk.Manager
-	notify     notify.Notifier
-	sentiment  *sentiment.Cache
-	journal    *journal.Writer
-	perfStore  *sqlite.Store
-	botID      string
+	cfg              *config.Config
+	instrument       string
+	client           *oanda.Client
+	exec             *execution.Executor
+	risk             *risk.Manager
+	notify           notify.Notifier
+	sentiment        *sentiment.Cache
+	journal          *journal.Writer
+	perfStore        *sqlite.Store
+	botID            string
 	modeMu           sync.RWMutex
 	lastMode         string
 	lastTrendAttempt time.Time

@@ -26,7 +26,7 @@ type Engine struct {
 	universe Universe
 	botID    string
 
-	mu              sync.Mutex
+	mu               sync.Mutex
 	lastDailyNotify  time.Time
 	lastWeeklyNotify time.Time
 	tradesToday      int
