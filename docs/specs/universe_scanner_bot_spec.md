@@ -52,8 +52,9 @@ breakout confirmed? → session_already_traded? → enter market + SL/TP
 1. **In session?** Asset-class UTC window (`scanner.asset_classes.*.session_utc`). Crypto default `24/7`.
 2. **Live price** — skip if not tradeable or spread > class max.
 3. **Opening range** — first `opening_range_candles` complete M15 bars after session open (`opening_range_granularity`, default M15). High/low → `Range.High`, `Range.Low`, `RangePips`.
-4. **H1 trend bias** — +1 / −1 / 0 from first vs last H1 candle (coarse filter for score only).
-5. **Score** — reject if `range_pips/spread_pips < min_range_spread_ratio` or spread too wide.
+4. **H1 trend bias** — +1 / −1 / 0 from first vs last H1 candle. When `require_trend_alignment` is true (default), counter-trend breakouts are rejected (`counter_trend_breakout` signal).
+5. **Entry cutoff** — when `entry_cutoff_before_force_flat_minutes` > 0 (default 120), no new scans/entries within that window before `force_flat_utc` for the asset class.
+6. **Score** — reject if `range_pips/spread_pips < min_range_spread_ratio` or spread too wide.
 
 ```
 score = 0.35×rangeScore + 0.20×spreadScore + 0.30×ratioScore + 0.15×trendScore
@@ -117,6 +118,8 @@ Signal actions logged to SQLite `signals` table: `no_setup`, `await_breakout`, `
 | `opening_range_candles` | Width/stability of OR (default 2 M15) |
 | `min_range_spread_ratio` | Filters choppy/thin ranges |
 | `min_setup_score` | Minimum quality to rank |
+| `require_trend_alignment` | Block LONG below H1 bias / SHORT above H1 bias |
+| `entry_cutoff_before_force_flat_minutes` | No new entries N minutes before force-flat |
 | `take_profit_rr` | Reward vs stop |
 | `force_flat_utc` | Session-end flat per asset class |
 | `risk_per_trade_pct` | Position size |

@@ -46,6 +46,18 @@ func ScoreSetup(rangePips, spreadPips, maxSpreadPips, minRangeSpreadRatio float6
 	return score, true, ""
 }
 
+// BreakoutAlignedWithTrend returns true when direction matches H1 bias, or bias is neutral.
+func BreakoutAlignedWithTrend(direction string, trendBias int) bool {
+	switch direction {
+	case "LONG":
+		return trendBias >= 0
+	case "SHORT":
+		return trendBias <= 0
+	default:
+		return true
+	}
+}
+
 func RankSetups(setups []Setup, minScore float64) []Setup {
 	var ready []Setup
 	for _, s := range setups {

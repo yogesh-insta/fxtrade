@@ -41,6 +41,8 @@ type ScannerConfig struct {
 	WeeklyProfitTargetPct    float64               `json:"weekly_profit_target_pct"`
 	MinSetupScore            float64               `json:"min_setup_score"`
 	MinRangeSpreadRatio      float64               `json:"min_range_spread_ratio"`
+	RequireTrendAlignment    bool                  `json:"require_trend_alignment"`
+	EntryCutoffBeforeForceFlatMinutes int          `json:"entry_cutoff_before_force_flat_minutes"`
 	RuntimeMode              string                `json:"runtime_mode"`
 	JournalDir               string                `json:"journal_dir"`
 	DBPath                   string                `json:"db_path"`
@@ -89,6 +91,8 @@ func DefaultScannerConfig() ScannerConfig {
 		WeeklyProfitTargetPct:   2.0,
 		MinSetupScore:           0.65,
 		MinRangeSpreadRatio:     3.0,
+		RequireTrendAlignment:   true,
+		EntryCutoffBeforeForceFlatMinutes: 120,
 		RuntimeMode:             RuntimeModeAlwaysOn,
 		JournalDir:              "logs/universe_scanner",
 		DBPath:                  "data/universe_scanner/trades.db",
