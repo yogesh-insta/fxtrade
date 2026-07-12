@@ -4,6 +4,7 @@ set -euo pipefail
 
 INSTALL_ROOT="${FXTRADE_HOME:-/opt/fxtrade}"
 
+cd "$INSTALL_ROOT"
 exec "$INSTALL_ROOT/bin/bot-daily-email" \
   -credentials "$INSTALL_ROOT/.credentials" \
   -same-day
