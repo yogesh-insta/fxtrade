@@ -24,4 +24,4 @@ jobs:
         run: |
           REMOTE="${GCP_VM_USER}@${GCP_VM_HOST}"
           ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$REMOTE" \
-            'cd /opt/fxtrade && sudo -u fxtrade /opt/fxtrade/bin/bot-daily-email -credentials /opt/fxtrade/.credentials -print'
+            'sudo -u fxtrade bash -c "cd /opt/fxtrade && /opt/fxtrade/bin/bot-daily-email -credentials /opt/fxtrade/.credentials -print"'
