@@ -172,4 +172,8 @@ jobs:
                ORDER BY closed_at;" || true
           done
           echo "======== end trade analysis ========"
+          echo ""
+          echo "======== daily email preview ========"
+          sudo -u fxtrade "${INSTALL_ROOT}/bin/bot-daily-email" -credentials "${INSTALL_ROOT}/.credentials" -print 2>&1 || true
+          echo "======== end daily email preview ========"
           EOF
