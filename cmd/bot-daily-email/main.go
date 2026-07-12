@@ -80,7 +80,7 @@ func main() {
 		sections = append(sections, loadBotSection(botID, report.BotDBPath(cfg, botID), reportDate))
 	}
 
-	analysis := report.FormatDailyAnalysis(cfg, now)
+	analysis := report.FormatDailyTweaks(cfg, now)
 	if note := reconcileAnalysisNote(acct.Reconcile); note != "" {
 		analysis = note + "\n" + analysis
 	}

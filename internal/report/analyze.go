@@ -45,17 +45,17 @@ type DataQuality struct {
 
 // BotAnalysis is a data-driven review of one bot's SQLite store.
 type BotAnalysis struct {
-	BotID      string
-	DBPath     string
-	Err        error
-	AllTime    sqlite.PeriodMetrics
-	Yesterday  sqlite.PeriodMetrics
-	YesterdayDate time.Time
-	Trades     []ClosedTrade
-	ByInstrument []BucketStats
-	ByExit     []BucketStats
-	ByHourUTC  []BucketStats
-	Suggestions []string
+	BotID            string
+	DBPath           string
+	Err              error
+	AllTime          sqlite.PeriodMetrics
+	Yesterday        sqlite.PeriodMetrics
+	YesterdayDate    time.Time
+	Trades           []ClosedTrade
+	ByInstrument     []BucketStats
+	ByExit           []BucketStats
+	ByHourUTC        []BucketStats
+	Suggestions      []string
 	DataQuality      DataQuality
 	ReconciledWins   int
 	ReconciledLosses int
@@ -635,6 +635,40 @@ func formatAnalysisWinRate(dq DataQuality, reconciledWins, reconciledLosses int)
 		return fmt.Sprintf("%.1f%% (%dW / %dL, %d unreconciled)", wr, reconciledWins, reconciledLosses, dq.UnreconciledCount)
 	}
 	return fmt.Sprintf("%.1f%% (%dW / %dL)", wr, reconciledWins, reconciledLosses)
+}
+
+// FormatDailyTweaks renders suggested config tweaks only (no duplicate P/L buckets).
+func FormatDailyTweaks(cfg *config.Config, now time.Time) string {
+	var b strings.Builder
+	var any bool
+	for _, botID := range TradingBotIDs() {
+		a := AnalyzeBot(cfg, botID, now)
+		if a.Err != nil || len(a.Suggestions) == 0 {
+			continue
+		}
+		var tweaks []string
+		for _, s := range a.Suggestions {
+			if strings.HasPrefix(s, "No closed trades in database yet") {
+				continue
+			}
+			tweaks = append(tweaks, s)
+		}
+		if len(tweaks) == 0 {
+			continue
+		}
+		if !any {
+			b.WriteString("── Suggested tweaks ──\n")
+			any = true
+		}
+		fmt.Fprintf(&b, "\n%s\n", BotDisplayName(botID))
+		for _, s := range tweaks {
+			fmt.Fprintf(&b, "  • %s\n", s)
+		}
+	}
+	if !any {
+		return ""
+	}
+	return strings.TrimRight(b.String(), "\n") + "\n"
 }
 
 // FormatDailyAnalysis renders a concise analysis block for the daily email.
