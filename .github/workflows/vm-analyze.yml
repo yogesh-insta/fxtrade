@@ -21,11 +21,7 @@ jobs:
         env:
           GCP_VM_HOST: ${{ secrets.GCP_VM_HOST }}
           GCP_SSH_KEY: ${{ secrets.GCP_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$GCP_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$GCP_VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+        run: bash deploy/gcp/vm-ssh-setup.sh
 
       - name: Run trade analysis on VM
         env:

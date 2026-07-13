@@ -1,0 +1,99 @@
+name: VM exec
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: Preset command to run on fxtrade-vm
+        required: true
+        type: choice
+        options:
+          - daily-email-print
+          - bot-analyze
+          - account-pnl
+          - reconcile-trades
+          - service-status
+          - custom
+      custom_command:
+        description: Shell command when command=custom (runs as fxtrade in /opt/fxtrade)
+        required: false
+        type: string
+        default: ""
+
+concurrency:
+  group: vm-exec
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  exec:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          GCP_VM_HOST: ${{ secrets.GCP_VM_HOST }}
+          GCP_SSH_KEY: ${{ secrets.GCP_SSH_KEY }}
+        run: bash deploy/gcp/vm-ssh-setup.sh
+
+      - name: Run on VM
+        env:
+          GCP_VM_HOST: ${{ secrets.GCP_VM_HOST }}
+          GCP_VM_USER: ${{ secrets.GCP_VM_USER }}
+          COMMAND: ${{ inputs.command }}
+          CUSTOM_COMMAND: ${{ inputs.custom_command }}
+        run: |
+          REMOTE="${GCP_VM_USER}@${GCP_VM_HOST}"
+          INSTALL=/opt/fxtrade
+
+          case "$COMMAND" in
+            daily-email-print)
+              REMOTE_CMD="cd ${INSTALL} && ${INSTALL}/bin/bot-daily-email -credentials ${INSTALL}/.credentials -print"
+              ;;
+            bot-analyze)
+              REMOTE_CMD="cd ${INSTALL} && ${INSTALL}/bin/bot-analyze -credentials ${INSTALL}/.credentials -root ${INSTALL}"
+              ;;
+            account-pnl)
+              REMOTE_CMD="cd ${INSTALL} && ${INSTALL}/bin/account-pnl -credentials ${INSTALL}/.credentials"
+              ;;
+            reconcile-trades)
+              REMOTE_CMD="cd ${INSTALL} && ${INSTALL}/bin/reconcile-trades -credentials ${INSTALL}/.credentials -root ${INSTALL}"
+              ;;
+            service-status)
+              ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$REMOTE" bash -s <<'STATUSEOF'
+          set -euo pipefail
+          echo "── fxtrade services ──"
+          for unit in fxtrade@universe_scanner fxtrade@fx_sentiment fxtrade@btc_cfd; do
+            printf '%s: ' "$unit"
+            systemctl is-active "${unit}.service" 2>/dev/null || echo inactive
+          done
+          echo ""
+          echo "── health (localhost) ──"
+          for port in 8081 8082 8083; do
+            printf ':%s ' "$port"
+            curl -sf "http://127.0.0.1:${port}/health" | head -c 200 || echo "(unreachable)"
+            echo ""
+          done
+          STATUSEOF
+              exit 0
+              ;;
+            custom)
+              if [[ -z "${CUSTOM_COMMAND// }" ]]; then
+                echo "error: custom_command is required when command=custom" >&2
+                exit 1
+              fi
+              REMOTE_CMD="$CUSTOM_COMMAND"
+              ;;
+            *)
+              echo "unknown command: $COMMAND" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "======== vm-exec: $COMMAND ========"
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$REMOTE" \
+            "sudo -u fxtrade bash -lc $(printf '%q' "$REMOTE_CMD")"
+          echo "======== end vm-exec ========"
