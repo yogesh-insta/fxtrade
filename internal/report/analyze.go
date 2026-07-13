@@ -62,7 +62,14 @@ type BotAnalysis struct {
 }
 
 // AnalyzeBot reads trades.db and returns metrics plus config tweak suggestions.
+// The highlighted day defaults to the previous UTC calendar day (for CLI / overnight review).
 func AnalyzeBot(cfg *config.Config, botID string, now time.Time) BotAnalysis {
+	return AnalyzeBotAt(cfg, botID, now, time.Time{})
+}
+
+// AnalyzeBotAt is like AnalyzeBot but highlights focusDay (UTC calendar day) instead of yesterday.
+// When focusDay is zero, the previous UTC day is used.
+func AnalyzeBotAt(cfg *config.Config, botID string, now, focusDay time.Time) BotAnalysis {
 	botID = config.NormalizeBotID(botID)
 	out := BotAnalysis{
 		BotID:  botID,
@@ -94,10 +101,15 @@ func AnalyzeBot(cfg *config.Config, botID string, now time.Time) BotAnalysis {
 		out.AllTime = pm
 	}
 
-	yesterday := reportYesterdayUTC(now)
-	out.YesterdayDate = yesterday
-	yStart := yesterday
-	yEnd := yesterday.Add(24 * time.Hour)
+	if focusDay.IsZero() {
+		focusDay = reportYesterdayUTC(now)
+	} else {
+		y, m, d := focusDay.UTC().Date()
+		focusDay = time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+	}
+	out.YesterdayDate = focusDay
+	yStart := focusDay
+	yEnd := focusDay.Add(24 * time.Hour)
 	if pm, err := store.PeriodMetricsUTC(yStart, yEnd); err != nil {
 		out.Err = err
 		return out
@@ -249,10 +261,10 @@ func suggestTweaks(
 		))
 	}
 
-	// Yesterday all-red day (only when yesterday has reconciled losses)
+	// Highlighted day all-red (only when that day has reconciled losses)
 	if yesterday.TradeCount > 0 && yesterday.WinCount == 0 && reliableMetrics && yesterday.TotalNetPL < -0.01 {
 		out = append(out, fmt.Sprintf(
-			"Yesterday (%s): %d trades, all losses (net %s). Pause new entries until filters are tightened.",
+			"Report day (%s): %d trades, all losses (net %s). Pause new entries until filters are tightened.",
 			yesterday.Start.Format("2006-01-02"), yesterday.TradeCount, formatMoney(yesterday.TotalNetPL),
 		))
 	}
@@ -571,11 +583,11 @@ func FormatAnalysis(a BotAnalysis) string {
 	}
 
 	if a.Yesterday.TradeCount > 0 {
-		fmt.Fprintf(&b, "Yesterday (%s): %d trades | %dW/%dL | net %s\n",
+		fmt.Fprintf(&b, "Report day (%s): %d trades | %dW/%dL | net %s\n",
 			a.YesterdayDate.Format("2006-01-02"), a.Yesterday.TradeCount,
 			a.Yesterday.WinCount, a.Yesterday.LossCount, formatMoney(a.Yesterday.TotalNetPL))
 	} else {
-		fmt.Fprintf(&b, "Yesterday (%s): no closed trades\n", a.YesterdayDate.Format("2006-01-02"))
+		fmt.Fprintf(&b, "Report day (%s): no closed trades\n", a.YesterdayDate.Format("2006-01-02"))
 	}
 
 	writeBucket(&b, "By exit reason", a.ByExit)
@@ -638,11 +650,12 @@ func formatAnalysisWinRate(dq DataQuality, reconciledWins, reconciledLosses int)
 }
 
 // FormatDailyTweaks renders suggested config tweaks only (no duplicate P/L buckets).
-func FormatDailyTweaks(cfg *config.Config, now time.Time) string {
+// reportDate is the UTC day covered by the email so "all-red day" suggestions match that day.
+func FormatDailyTweaks(cfg *config.Config, now, reportDate time.Time) string {
 	var b strings.Builder
 	var any bool
 	for _, botID := range TradingBotIDs() {
-		a := AnalyzeBot(cfg, botID, now)
+		a := AnalyzeBotAt(cfg, botID, now, reportDate)
 		if a.Err != nil || len(a.Suggestions) == 0 {
 			continue
 		}
@@ -672,11 +685,12 @@ func FormatDailyTweaks(cfg *config.Config, now time.Time) string {
 }
 
 // FormatDailyAnalysis renders a concise analysis block for the daily email.
-func FormatDailyAnalysis(cfg *config.Config, now time.Time) string {
+// reportDate is the UTC day covered by the email (same-day evening cron or previous day).
+func FormatDailyAnalysis(cfg *config.Config, now, reportDate time.Time) string {
 	var b strings.Builder
 	b.WriteString("── Analysis & Suggested Tweaks ──\n")
 	for _, botID := range TradingBotIDs() {
-		a := AnalyzeBot(cfg, botID, now)
+		a := AnalyzeBotAt(cfg, botID, now, reportDate)
 		fmt.Fprintf(&b, "\n%s\n", BotDisplayName(botID))
 		if a.Err != nil {
 			fmt.Fprintf(&b, "  (no data — %v)\n", a.Err)
@@ -694,9 +708,12 @@ func FormatDailyAnalysis(cfg *config.Config, now time.Time) string {
 				fmt.Fprintf(&b, "  Data quality: reconciled %d | unreconciled %d ($0 P/L) | missing instrument %d\n",
 					a.DataQuality.ReconciledCount, a.DataQuality.UnreconciledCount, a.DataQuality.MissingInstrumentCount)
 			}
+			dayLabel := a.YesterdayDate.Format("2006-01-02")
 			if a.Yesterday.TradeCount > 0 {
-				fmt.Fprintf(&b, "  Yesterday: %d trades, net %s\n",
-					a.Yesterday.TradeCount, formatMoney(a.Yesterday.TotalNetPL))
+				fmt.Fprintf(&b, "  Report day (%s): %d trades, net %s\n",
+					dayLabel, a.Yesterday.TradeCount, formatMoney(a.Yesterday.TotalNetPL))
+			} else {
+				fmt.Fprintf(&b, "  Report day (%s): no closed trades\n", dayLabel)
 			}
 			writeDailyBucket(&b, "  By exit reason", a.ByExit, 5)
 			writeDailyBucket(&b, "  By instrument", a.ByInstrument, 5)
