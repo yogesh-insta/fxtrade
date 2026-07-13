@@ -8,10 +8,13 @@ import (
 
 // TradeBrief is a closed trade row for daily summaries.
 type TradeBrief struct {
-	ClosedAt  time.Time
-	Direction string
-	NetPL     float64
-	SwapCost  float64
+	ClosedAt      time.Time
+	Instrument    string
+	Direction     string
+	TradeID       string
+	CorrelationID string
+	NetPL         float64
+	SwapCost      float64
 }
 
 // DayMetrics aggregates closed trades for one UTC calendar day or all time.
@@ -41,7 +44,8 @@ func (s *Store) AllTimeDayMetrics() (DayMetrics, error) {
 
 func (s *Store) metricsBetween(start, end, label time.Time) (DayMetrics, error) {
 	query := `
-SELECT closed_at, direction, COALESCE(net_pl, realized_pl), COALESCE(swap_cost, 0)
+SELECT closed_at, COALESCE(instrument, ''), direction, COALESCE(trade_id, ''),
+       COALESCE(correlation_id, ''), COALESCE(net_pl, realized_pl), COALESCE(swap_cost, 0)
 FROM trades`
 	var args []any
 	switch {
@@ -64,9 +68,9 @@ FROM trades`
 	m.Date = label
 	for rows.Next() {
 		var closedStr string
-		var direction sql.NullString
+		var instrument, direction, tradeID, correlationID sql.NullString
 		var net, swap sql.NullFloat64
-		if err := rows.Scan(&closedStr, &direction, &net, &swap); err != nil {
+		if err := rows.Scan(&closedStr, &instrument, &direction, &tradeID, &correlationID, &net, &swap); err != nil {
 			return DayMetrics{}, err
 		}
 		closed, err := time.Parse(time.RFC3339, closedStr)
@@ -76,10 +80,13 @@ FROM trades`
 		n := net.Float64
 		fee := swap.Float64
 		m.Trades = append(m.Trades, TradeBrief{
-			ClosedAt:  closed.UTC(),
-			Direction: direction.String,
-			NetPL:     n,
-			SwapCost:  fee,
+			ClosedAt:      closed.UTC(),
+			Instrument:    instrument.String,
+			Direction:     direction.String,
+			TradeID:       tradeID.String,
+			CorrelationID: correlationID.String,
+			NetPL:         n,
+			SwapCost:      fee,
 		})
 		m.TradeCount++
 		m.TotalNetPL += n

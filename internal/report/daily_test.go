@@ -32,18 +32,40 @@ func TestDailyEmail(t *testing.T) {
 				WinRate:    0,
 				TotalNetPL: -25.5,
 				Trades: []sqlite.TradeBrief{
-					{Direction: "LONG", NetPL: -12.75},
-					{Direction: "SHORT", NetPL: -12.75},
-					{Direction: "LONG", NetPL: 0},
-					{Direction: "SHORT", NetPL: 0},
+					{Instrument: "EUR_USD", Direction: "LONG", TradeID: "1", NetPL: -12.75, ClosedAt: reportDate.Add(10 * time.Hour), CorrelationID: "scan-EUR_USD-1"},
+					{Instrument: "AUD_USD", Direction: "SHORT", TradeID: "2", NetPL: -12.75, ClosedAt: reportDate.Add(11 * time.Hour), CorrelationID: "force_flat"},
+					{Instrument: "EUR_USD", Direction: "LONG", TradeID: "3", NetPL: 0},
+					{Instrument: "AUD_USD", Direction: "SHORT", TradeID: "4", NetPL: 0},
 				},
 			},
-			AllTime: sqlite.DayMetrics{TradeCount: 20, TotalNetPL: -25.5},
+			AllTime: sqlite.DayMetrics{
+				TradeCount: 20,
+				TotalNetPL: -25.5,
+				Trades: []sqlite.TradeBrief{
+					{TradeID: "1", NetPL: -12.75},
+					{TradeID: "2", NetPL: -12.75},
+				},
+			},
 		},
 		{
-			BotID:   config.BotFxSentiment,
-			Day:     sqlite.DayMetrics{TradeCount: 0},
-			AllTime: sqlite.DayMetrics{TradeCount: 14, TotalNetPL: -100},
+			BotID: config.BotFxSentiment,
+			Day: sqlite.DayMetrics{
+				TradeCount: 1,
+				WinCount:   0,
+				LossCount:  1,
+				TotalNetPL: -12.75,
+				Trades: []sqlite.TradeBrief{
+					// Same OANDA trade_id as scanner — must not double-count Combined.
+					{Instrument: "EUR_USD", Direction: "LONG", TradeID: "1", NetPL: -12.75, ClosedAt: reportDate.Add(10 * time.Hour)},
+				},
+			},
+			AllTime: sqlite.DayMetrics{
+				TradeCount: 1,
+				TotalNetPL: -12.75,
+				Trades: []sqlite.TradeBrief{
+					{TradeID: "1", NetPL: -12.75},
+				},
+			},
 		},
 	}
 	analysis := "── Suggested tweaks ──\nUniverse Scanner\n  • test tweak\n"
@@ -70,12 +92,13 @@ func TestDailyEmail(t *testing.T) {
 		"Universe Scanner",
 		"LOSS -$25.50",
 		"FX Sentiment",
-		"FLAT $0.00",
-		"LOSS -$100.00",
 		"── Today's trades ──",
-		"LOSS -$12.75  LONG",
+		"EUR_USD LONG",
+		"AUD_USD SHORT",
 		"2 unreconciled trades",
 		"Bots combined today:  LOSS -$25.50",
+		"(4 unique trades)",
+		"duplicate trade_id(s) excluded",
 		"── Suggested tweaks ──",
 		"test tweak",
 	} {
@@ -134,7 +157,8 @@ func TestFormatDailyAnalysisEmptyDB(t *testing.T) {
 		BtcCfd:   config.BtcCfdConfig{DBPath: t.TempDir() + "/missing3.db"},
 	}
 	now := time.Date(2026, 7, 7, 12, 0, 0, 0, time.UTC)
-	body := report.FormatDailyAnalysis(cfg, now)
+	reportDate := time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC)
+	body := report.FormatDailyAnalysis(cfg, now, reportDate)
 	if !strings.Contains(body, "── Analysis & Suggested Tweaks ──") {
 		t.Fatalf("missing analysis header:\n%s", body)
 	}
@@ -151,7 +175,8 @@ func TestFormatDailyTweaksEmptyWhenNoSuggestions(t *testing.T) {
 		BtcCfd:   config.BtcCfdConfig{DBPath: t.TempDir() + "/missing3.db"},
 	}
 	now := time.Date(2026, 7, 7, 12, 0, 0, 0, time.UTC)
-	if body := report.FormatDailyTweaks(cfg, now); body != "" {
+	reportDate := time.Date(2026, 7, 7, 0, 0, 0, 0, time.UTC)
+	if body := report.FormatDailyTweaks(cfg, now, reportDate); body != "" {
 		t.Fatalf("expected empty tweaks, got:\n%s", body)
 	}
 }
