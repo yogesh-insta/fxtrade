@@ -12,7 +12,8 @@ Operational workflow for the three platform bots on the OANDA practice account.
 | Context | Path / command |
 |---------|----------------|
 | **VM** | `fxtrade-vm` in `us-east1-b`; install root `/opt/fxtrade`; run as `fxtrade` user |
-| **SSH** | `gcloud compute ssh fxtrade-vm --zone=us-east1-b` |
+| **SSH (laptop)** | `gcloud compute ssh fxtrade-vm --zone=us-east1-b` |
+| **SSH (Cloud Agent)** | GitHub Actions — `./scripts/vm-exec.sh daily-email-print` (see `docs/guides/vm_access_via_actions.md`) |
 | **Workdir** | Always `cd /opt/fxtrade` on VM (or repo root locally) |
 
 ## Three bots and databases
@@ -43,7 +44,18 @@ go run ./cmd/bot-daily-email -print         # preview today's daily email
 go run ./cmd/bot-daily-email -date 2026-07-07 -print
 ```
 
-### VM
+### VM (via GitHub Actions — preferred for Cloud Agents)
+
+```bash
+./scripts/vm-exec.sh daily-email-print
+./scripts/vm-exec.sh bot-analyze
+./scripts/vm-exec.sh account-pnl
+./scripts/vm-exec.sh service-status
+```
+
+Setup: `docs/guides/vm_access_via_actions.md`
+
+### VM (direct SSH — laptop with gcloud)
 
 ```bash
 cd /opt/fxtrade

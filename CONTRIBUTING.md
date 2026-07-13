@@ -116,6 +116,7 @@ Deploy to the VM is separate (`deploy.yml` on `main`); see `deploy/gcp/DEPLOY.md
 | BTC CFD spec | `docs/specs/btc_cfd_bot_spec.md` |
 | Skills catalog | `docs/skills/README.md` |
 | P/L analysis workflow | `.cursor/skills/analyze-pl-tweaks/SKILL.md` |
+| VM access (Cloud Agents) | `docs/guides/vm_access_via_actions.md` |
 | Pre-PR checks | `.cursor/skills/code-quality/SKILL.md` |
 | Doc updates with code | `.cursor/skills/maintain-bot-specs/SKILL.md` |
 
