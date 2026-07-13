@@ -25,11 +25,11 @@ type TradeSnapshotSource interface {
 }
 
 type Executor struct {
-	client   *oanda.Client
-	risk     *risk.Manager
-	notify   notify.Notifier
-	trades   TradeAccounting
-	dryRun   bool
+	client *oanda.Client
+	risk   *risk.Manager
+	notify notify.Notifier
+	trades TradeAccounting
+	dryRun bool
 }
 
 func NewExecutor(client *oanda.Client, rm *risk.Manager, n notify.Notifier) *Executor {
@@ -88,7 +88,7 @@ func (e *Executor) PlaceMarket(ctx context.Context, req risk.EntryRequest, param
 					"trade_id", existing.TradeID,
 				)
 				if existing.TradeID != "" {
-					e.noteOpened(existing.TradeID)
+					e.noteOpenedFill(existing, params.Instrument, params.Direction)
 				}
 				return existing, nil
 			}
@@ -103,7 +103,7 @@ func (e *Executor) PlaceMarket(ctx context.Context, req risk.EntryRequest, param
 		return oanda.OrderResult{}, err
 	}
 
-	e.noteOpened(result.TradeID)
+	e.noteOpenedFill(result, params.Instrument, params.Direction)
 	open := notify.TradeOpen{
 		Instrument:    params.Instrument,
 		Direction:     params.Direction,
@@ -172,7 +172,7 @@ func (e *Executor) PlaceLimit(ctx context.Context, req risk.EntryRequest, params
 	}
 
 	if result.TradeID != "" {
-		e.noteOpened(result.TradeID)
+		e.noteOpenedFill(result, params.Instrument, params.Direction)
 		open := notify.TradeOpen{
 			Instrument:    params.Instrument,
 			Direction:     params.Direction,
@@ -250,6 +250,37 @@ func (e *Executor) noteOpened(tradeID string) {
 	} else {
 		e.risk.RecordTradeOpened()
 	}
+}
+
+// openTradeSeeder is optionally implemented by TradeAccounting (position monitor)
+// to seed known state so SL/TP hits before the next poll are still recorded.
+type openTradeSeeder interface {
+	SeedOpenedTrade(t oanda.Trade)
+}
+
+func (e *Executor) noteOpenedFill(result oanda.OrderResult, instrument, direction string) {
+	if result.TradeID == "" {
+		return
+	}
+	units := result.UnitsStr
+	if units == "" && result.Units != 0 {
+		units = strconv.FormatInt(result.Units, 10)
+	}
+	// Prefer signed units matching OANDA openTrades (SHORT negative).
+	if direction == "SHORT" && units != "" && !strings.HasPrefix(units, "-") {
+		units = "-" + units
+	}
+	t := oanda.Trade{
+		ID:           result.TradeID,
+		Instrument:   instrument,
+		CurrentUnits: units,
+		Price:        oanda.FormatPrice(result.FillPrice),
+	}
+	if s, ok := e.trades.(openTradeSeeder); ok {
+		s.SeedOpenedTrade(t)
+		return
+	}
+	e.noteOpened(result.TradeID)
 }
 
 func (e *Executor) noteClosed(tradeID string, pl float64) {
