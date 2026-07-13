@@ -64,17 +64,43 @@ func (m *PositionMonitor) SetOnTradeClosed(fn func(tradeID, correlationID string
 
 // NoteTradeOpened records a trade open once (idempotent). Called by the
 // executor on immediate fills so the monitor does not double-count.
+// Seeds known with a stub so SL/TP before the next poll is still detected.
 func (m *PositionMonitor) NoteTradeOpened(tradeID string) {
-	if tradeID == "" || m.risk == nil {
+	if tradeID == "" {
+		return
+	}
+	m.SeedOpenedTrade(oanda.Trade{ID: tradeID})
+}
+
+// SeedOpenedTrade registers a filled trade in known + recordedOpens so a
+// fast SL/TP (open+close between polls) still triggers NoteTradeClosed.
+// Idempotent: risk counters and onTradeOpened run at most once per trade ID.
+func (m *PositionMonitor) SeedOpenedTrade(t oanda.Trade) {
+	if t.ID == "" {
 		return
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	if _, ok := m.recordedOpens[tradeID]; ok {
+	_, already := m.recordedOpens[t.ID]
+	if !already {
+		m.recordedOpens[t.ID] = struct{}{}
+	}
+	// Prefer richer snapshots (instrument/units/price) over ID-only stubs.
+	if prev, ok := m.known[t.ID]; !ok || prev.Instrument == "" {
+		m.known[t.ID] = t
+	} else if t.Instrument != "" {
+		m.known[t.ID] = t
+	}
+	m.mu.Unlock()
+
+	if already {
 		return
 	}
-	m.recordedOpens[tradeID] = struct{}{}
-	m.risk.RecordTradeOpened()
+	if m.risk != nil {
+		m.risk.RecordTradeOpened()
+	}
+	if m.onTradeOpened != nil && t.Instrument != "" {
+		m.onTradeOpened(t)
+	}
 }
 
 // NoteTradeClosed records realized P&L once (idempotent).
@@ -162,31 +188,19 @@ func (m *PositionMonitor) poll(ctx context.Context) {
 			m.notify.Send(ctx,
 				notify.TradeOpenSubject(t.Instrument, oanda.TradeDirection(units), units),
 				notify.FormatTradeOpen(open))
-			m.NoteTradeOpened(t.ID)
-			if m.onTradeOpened != nil {
-				m.onTradeOpened(t)
-			}
+			// Seed before onTradeOpened so risk is counted once; SeedOpenedTrade
+			// invokes onTradeOpened when instrument is set.
+			m.SeedOpenedTrade(t)
+		} else if alreadyOpened {
+			// Refresh snapshot for an executor-seeded fill still open.
+			m.mu.Lock()
+			m.known[t.ID] = t
+			m.mu.Unlock()
 		}
 	}
 
-	m.mu.RLock()
-	knownCopy := make(map[string]oanda.Trade, len(m.known))
-	for id, t := range m.known {
-		knownCopy[id] = t
-	}
-	m.mu.RUnlock()
-
-	for id, prev := range knownCopy {
-		if _, ok := current[id]; ok {
-			continue
-		}
-		m.mu.RLock()
-		_, alreadyClosed := m.recordedCloses[id]
-		m.mu.RUnlock()
-		if alreadyClosed {
-			continue
-		}
-
+	candidates := m.closeCandidates(current)
+	for id, prev := range candidates {
 		pl, found, exitPrice, closedUnits := m.lookupClosedTrade(ctx, id)
 		entry, _ := oanda.ParsePrice(prev.Price)
 		openUnits, _ := strconv.ParseInt(strings.TrimSpace(prev.CurrentUnits), 10, 64)
@@ -221,8 +235,59 @@ func (m *PositionMonitor) poll(ctx context.Context) {
 	}
 
 	m.mu.Lock()
+	// Keep fills seeded while this poll ran (or mid-poll) if still "open"
+	// according to recordedOpens — next poll will close them if gone on OANDA.
+	for id, t := range m.known {
+		if _, inCurrent := current[id]; inCurrent {
+			continue
+		}
+		if _, open := m.recordedOpens[id]; !open {
+			continue
+		}
+		if _, closed := m.recordedCloses[id]; closed {
+			continue
+		}
+		current[id] = t
+	}
 	m.known = current
 	m.mu.Unlock()
+}
+
+// closeCandidates are trades we believe should have closed: previously known or
+// executor-seeded opens that are no longer in the openTrades response.
+func (m *PositionMonitor) closeCandidates(current map[string]oanda.Trade) map[string]oanda.Trade {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make(map[string]oanda.Trade)
+	add := func(id string, prev oanda.Trade) {
+		if id == "" {
+			return
+		}
+		if _, ok := current[id]; ok {
+			return
+		}
+		if _, closed := m.recordedCloses[id]; closed {
+			return
+		}
+		if prev.ID == "" {
+			prev.ID = id
+		}
+		out[id] = prev
+	}
+	for id, prev := range m.known {
+		add(id, prev)
+	}
+	for id := range m.recordedOpens {
+		if _, already := out[id]; already {
+			continue
+		}
+		if prev, ok := m.known[id]; ok {
+			add(id, prev)
+		} else {
+			add(id, oanda.Trade{ID: id})
+		}
+	}
+	return out
 }
 
 func (m *PositionMonitor) trackInstrument(instrument string) bool {
