@@ -52,21 +52,11 @@ func DailyEmail(reportDate time.Time, sections []BotDailySection, acct AccountDa
 	var b strings.Builder
 	fmt.Fprintf(&b, "Daily Bot Performance\nDate: %s UTC\n\n", dateStr)
 
-	var totalTrades int
-	var totalPL float64
-	activeBots := 0
-	for _, sec := range sections {
-		if sec.Err != nil || sec.Day.TradeCount == 0 {
-			continue
-		}
-		activeBots++
-		totalTrades += sec.Day.TradeCount
-		totalPL += sec.Day.TotalNetPL
-	}
+	dayUnique := uniqueTradesAcrossBots(sections, true)
 
-	writePLSummary(&b, sections, acct, totalPL)
+	writePLSummary(&b, sections, acct, dayUnique)
 
-	if activeBots > 0 {
+	if dayUnique.Count > 0 {
 		b.WriteString("\n── Today's trades ──\n")
 		for _, sec := range sections {
 			if sec.Err != nil || sec.Day.TradeCount == 0 {
@@ -98,7 +88,7 @@ func dailyEmailSubject(dateStr string, acct AccountDailyContext) string {
 	return fmt.Sprintf("fxtrade: daily summary %s | account %s", dateStr, label)
 }
 
-func writePLSummary(b *strings.Builder, sections []BotDailySection, acct AccountDailyContext, botsTodayPL float64) {
+func writePLSummary(b *strings.Builder, sections []BotDailySection, acct AccountDailyContext, dayUnique uniqueTradeTotals) {
 	b.WriteString("═══ P&L SUMMARY ═══\n\n")
 	b.WriteString("                      Today          All-time\n")
 
@@ -131,31 +121,14 @@ func writePLSummary(b *strings.Builder, sections []BotDailySection, acct Account
 		b.WriteByte('\n')
 	}
 
-	fmt.Fprintf(b, "\nBots combined today:  %s", formatPL(botsTodayPL))
-	if activeBots := countActiveBots(sections); activeBots > 0 {
-		fmt.Fprintf(b, "  (%d trades)", totalTradesFromSections(sections))
+	fmt.Fprintf(b, "\nBots combined today:  %s", formatPL(dayUnique.NetPL))
+	if dayUnique.Count > 0 {
+		fmt.Fprintf(b, "  (%d unique trades)", dayUnique.Count)
+		if dayUnique.Duplicates > 0 {
+			fmt.Fprintf(b, "; %d duplicate trade_id(s) excluded", dayUnique.Duplicates)
+		}
 	}
 	b.WriteByte('\n')
-}
-
-func countActiveBots(sections []BotDailySection) int {
-	n := 0
-	for _, sec := range sections {
-		if sec.Err == nil && sec.Day.TradeCount > 0 {
-			n++
-		}
-	}
-	return n
-}
-
-func totalTradesFromSections(sections []BotDailySection) int {
-	n := 0
-	for _, sec := range sections {
-		if sec.Err == nil {
-			n += sec.Day.TradeCount
-		}
-	}
-	return n
 }
 
 func writeBotDayDetail(b *strings.Builder, sec BotDailySection) {
@@ -184,16 +157,15 @@ func accountFootnotes(acct AccountDailyContext, sections []BotDailySection) stri
 			notes = append(notes, fmt.Sprintf("Unrealized open P&L: %s", formatPL(acct.UnrealizedPL)))
 		}
 
-		var botAllTime float64
-		for _, sec := range sections {
-			if sec.Err == nil {
-				botAllTime += sec.AllTime.TotalNetPL
-			}
-		}
-		gap := acct.TotalPL - botAllTime
+		allUnique := uniqueTradesAcrossBots(sections, false)
+		gap := acct.TotalPL - allUnique.NetPL
 		if math.Abs(gap) > 1.0 {
-			notes = append(notes, fmt.Sprintf("Bots tracked all-time: %s | gap vs account: %s (fees, manual trades, open P&L)",
-				formatPL(botAllTime), formatPL(gap)))
+			note := fmt.Sprintf("Bots tracked all-time (unique): %s | gap vs account: %s (fees, manual trades, open P&L)",
+				formatPL(allUnique.NetPL), formatPL(gap))
+			if allUnique.Duplicates > 0 {
+				note += fmt.Sprintf("; %d duplicate trade_id(s) excluded", allUnique.Duplicates)
+			}
+			notes = append(notes, note)
 		}
 	}
 
@@ -214,6 +186,46 @@ func accountFootnotes(acct AccountDailyContext, sections []BotDailySection) stri
 		fmt.Fprintf(&b, "  • %s\n", n)
 	}
 	return b.String()
+}
+
+// uniqueTradeTotals is P/L after collapsing the same OANDA trade_id across bots.
+type uniqueTradeTotals struct {
+	Count      int
+	NetPL      float64
+	Duplicates int
+}
+
+// uniqueTradesAcrossBots collapses shared OANDA trade_ids so Combined / account gap
+// are not double-counted when the same close is stored in multiple bot DBs.
+// Prefer the first TradingBotIDs() order (universe_scanner, then fx_sentiment, then btc_cfd).
+func uniqueTradesAcrossBots(sections []BotDailySection, dayOnly bool) uniqueTradeTotals {
+	seen := make(map[string]struct{})
+	var out uniqueTradeTotals
+	anon := 0
+	for _, sec := range sections {
+		if sec.Err != nil {
+			continue
+		}
+		trades := sec.AllTime.Trades
+		if dayOnly {
+			trades = sec.Day.Trades
+		}
+		for _, t := range trades {
+			key := strings.TrimSpace(t.TradeID)
+			if key == "" {
+				anon++
+				key = fmt.Sprintf("anon:%s:%d", sec.BotID, anon)
+			}
+			if _, ok := seen[key]; ok {
+				out.Duplicates++
+				continue
+			}
+			seen[key] = struct{}{}
+			out.Count++
+			out.NetPL += t.NetPL
+		}
+	}
+	return out
 }
 
 // FormatAccountPNL formats account NAV vs configured initial capital (legacy one-liner).
@@ -251,7 +263,14 @@ func formatDayTradeLines(trades []sqlite.TradeBrief) []string {
 		if dir == "" {
 			dir = "?"
 		}
-		lines = append(lines, fmt.Sprintf("    %s  %s", formatPL(t.NetPL), dir))
+		inst := strings.TrimSpace(t.Instrument)
+		if inst == "" {
+			inst = "?"
+		}
+		exit := exitReason(t.CorrelationID)
+		closed := t.ClosedAt.UTC().Format("15:04")
+		lines = append(lines, fmt.Sprintf("    %s  %s %s  %s UTC  %s",
+			formatPL(t.NetPL), inst, dir, closed, exit))
 	}
 	if zeroCount == 1 {
 		lines = append(lines, "    FLAT $0.00  (1 unreconciled trade)")
