@@ -59,6 +59,12 @@ func TestDayMetricsUTC(t *testing.T) {
 	if m.TotalFees != 2.1 {
 		t.Fatalf("total_fees = %f", m.TotalFees)
 	}
+	if len(m.Trades) != 3 {
+		t.Fatalf("trades len = %d", len(m.Trades))
+	}
+	if m.Trades[0].Instrument != "BTC_USD" || m.Trades[0].TradeID == "" {
+		t.Fatalf("trade brief missing instrument/trade_id: %+v", m.Trades[0])
+	}
 
 	all, err := store.AllTimeDayMetrics()
 	if err != nil {
