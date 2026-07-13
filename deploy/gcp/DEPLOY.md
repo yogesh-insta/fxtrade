@@ -260,6 +260,8 @@ ssh user@VM_IP 'sudo install -m 755 /tmp/fxtrade /opt/fxtrade/bin/fxtrade && \
 
 **Via GitHub Actions:** push to `main` (see `.github/workflows/deploy.yml`) after configuring secrets below. The workflow deploys `fxtrade`, `nifty-pulse`, `afl-pulse`, `watchlist.txt`, and `data/afl/`, then restarts every enabled `fxtrade.service` and `fxtrade@*.service` unit.
 
+**Cloud Agents / no gcloud SSH:** use `./scripts/vm-exec.sh` or the **VM exec** workflow — see **`docs/guides/vm_access_via_actions.md`**.
+
 ## 5. NiftyPulse (NSE daily scanner)
 
 NiftyPulse scans the NSE watchlist after market close and emails a single swing-trade pick (if any symbol passes filters + sentiment gate). It does **not** place orders.
