@@ -3,19 +3,21 @@ name: VM daily email preview
 on:
   workflow_dispatch:
 
+concurrency:
+  group: vm-exec
+  cancel-in-progress: false
+
 jobs:
   preview:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Configure SSH
         env:
           GCP_VM_HOST: ${{ secrets.GCP_VM_HOST }}
           GCP_SSH_KEY: ${{ secrets.GCP_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$GCP_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$GCP_VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+        run: bash deploy/gcp/vm-ssh-setup.sh
 
       - name: Preview daily email on VM
         env:
@@ -23,5 +25,7 @@ jobs:
           GCP_VM_USER: ${{ secrets.GCP_VM_USER }}
         run: |
           REMOTE="${GCP_VM_USER}@${GCP_VM_HOST}"
+          echo "======== vm-exec: daily-email-print ========"
           ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$REMOTE" \
-            'sudo -u fxtrade bash -c "cd /opt/fxtrade && /opt/fxtrade/bin/bot-daily-email -credentials /opt/fxtrade/.credentials -print"'
+            'sudo -u fxtrade bash -lc "cd /opt/fxtrade && /opt/fxtrade/bin/bot-daily-email -credentials /opt/fxtrade/.credentials -print"'
+          echo "======== end vm-exec ========"
