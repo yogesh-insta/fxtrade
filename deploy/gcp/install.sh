@@ -186,8 +186,10 @@ chmod 755 "$INSTALL_ROOT"/{bin,logs,data} 2>/dev/null || true
 
 systemctl daemon-reload
 
-systemctl enable --now nifty-pulse.timer
-echo "Enabled nifty-pulse.timer (18:00 Australia/Sydney, Sun–Fri)"
+# NiftyPulse is scheduled via fxtrade-watch.cron (CRON_TZ=Australia/Sydney).
+# Install the oneshot unit for cron / manual: systemctl start nifty-pulse.service
+systemctl disable --now nifty-pulse.timer 2>/dev/null || true
+echo "NiftyPulse oneshot installed (scheduled by /etc/cron.d/fxtrade-watch at 18:00 Sydney)"
 
 systemctl enable --now afl-pulse.timer
 echo "Enabled afl-pulse.timer (18:00 Australia/Melbourne, Thursday)"

@@ -1,9 +1,12 @@
 [Unit]
 Description=NiftyPulse daily timer (18:00 Australia/Sydney, Sun–Fri)
+# Prefer CRON_TZ scheduling in fxtrade-watch.cron — this VM's systemd (249)
+# does not support Timer Timezone=, and Sun..Fri calendar ranges fail to parse.
+# This unit is kept for manual enable; default deploy uses cron → systemctl start.
 
 [Timer]
-OnCalendar=Sun..Fri *-*-* 18:00:00
-Timezone=Australia/Sydney
+# 08:00 UTC ≈ 18:00 AEST (Sydney winter). During AEDT this is 19:00 Sydney.
+OnCalendar=Mon..Fri,Sun *-*-* 08:00:00
 Persistent=true
 Unit=nifty-pulse.service
 
