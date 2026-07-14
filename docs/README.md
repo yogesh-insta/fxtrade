@@ -46,7 +46,8 @@ Skills live under **`.cursor/skills/`** (Cursor auto-discovers them). Catalog: *
 | Doc | Path |
 |-----|------|
 | VM deploy | [deploy/gcp/DEPLOY.md](../deploy/gcp/DEPLOY.md) |
-| Quickstart | [README.md](../README.md) |
+| Quickstart (all programs) | [README.md](../README.md) |
+| BTC sentiment agent | [services/btc-sentiment/README.md](../services/btc-sentiment/README.md) |
 | Historical fx_sentiment design | [plan.md](../plan.md) |
 
 ---

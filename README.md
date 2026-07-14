@@ -1,8 +1,16 @@
 # fxtrade
 
-Multi-bot trading platform for **OANDA practice** (and optional email-only scanners). Long-running **platform bots** share one daemon (`cmd/fxtrade`): opening-range FX scanner, FX sentiment range/trend strategy, and BTC/USD CFD mean reversion. Separate **scheduled scanners** email NSE swing picks and AFL round reports. Deploy locally, on macOS via launchd, or on a GCP e2-micro VM with systemd.
+Multi-bot trading platform for **OANDA practice**, email-only scanners, and a standalone **BTC/USD sentiment agent**.
 
-**Contributing:** all changes go through pull requests — see **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+| Layer | What |
+|-------|------|
+| **Platform bots** | Long-running daemon (`cmd/fxtrade`): opening-range FX scanner, FX sentiment range/trend, BTC/USD CFD mean reversion |
+| **Scheduled scanners** | Email NSE swing picks (`nifty-pulse`) and AFL round/pregame reports (`afl-pulse*`) — no OANDA orders |
+| **Standalone services** | `services/btc-sentiment` — Gemini tool-calling agent (local HTTP or Cloud Run + Scheduler) |
+
+Deploy platform bots/scanners on a GCP e2-micro VM (systemd) or macOS (`launchd`). The BTC sentiment agent is a separate Go module aimed at Cloud Run.
+
+**Contributing:** all changes go through pull requests — see **[CONTRIBUTING.md](CONTRIBUTING.md)**. Full doc index: **[docs/README.md](docs/README.md)**.
 
 ---
 
@@ -21,9 +29,10 @@ Multi-bot trading platform for **OANDA practice** (and optional email-only scann
 |---------------|------------------------|
 | `fx_sentiment` | `finnhub.api_key`, `llm.api_key` (Groq) |
 | `universe_scanner`, `btc_cfd` | OANDA only |
-| `nifty-pulse` | Email; OANDA keys required for `config.Load`; optional `llm.api_key` for sentiment gate |
+| `nifty-pulse` | Email; OANDA keys required for `config.Load`; `llm.api_key` for RSS/LLM sentiment gate |
 | `afl-pulse` | `afl.odds_api_key` |
 | `afl-pulse-pregame` | `afl.odds_api_key`, `afl.gemini_api_key` |
+| `btc-sentiment` (service) | `btc_sentiment.*` (Gemini, Reddit, optional CryptoPanic); Gemini may fall back to `afl.gemini_api_key` |
 
 ---
 
@@ -128,7 +137,8 @@ go run ./cmd/btc-metrics   # alias for btc_cfd defaults
 **Unit tests:**
 
 ```bash
-go test ./...
+go test ./...                                    # main module (platform + scanners)
+(cd services/btc-sentiment && go test ./...)     # BTC sentiment agent module
 ```
 
 **Integration tests** (requires `.credentials`):
@@ -141,17 +151,19 @@ go test -tags=integration ./internal/integration/...
 
 ## Services & programs
 
-All binaries live under `cmd/`. On **fxtrade-vm**, `install.sh` installs scanner timers and cron watchdog jobs; enable long-running bots with `--enable-all` or `--enable-bot ID`. Terraform startup uses `install.sh --enable-bot universe_scanner --dry-run`.
+Platform bots, scanners, and ops CLIs live under `cmd/` (main Go module). The BTC sentiment agent is a **separate module** under `services/btc-sentiment/`.
+
+On **fxtrade-vm**, `install.sh` installs scanner timers and cron watchdog jobs; enable long-running bots with `--enable-all` or `--enable-bot ID`. Terraform startup uses `install.sh --enable-bot universe_scanner --dry-run`. The BTC sentiment agent is **not** installed on the VM — deploy it to Cloud Run (see below).
 
 **Typical layout on fxtrade-vm:**
 
 | Always on / scheduled | Notes |
 |-----------------------|--------|
 | `fxtrade@BOT.service` or `fxtrade.service` | Platform bots (OANDA orders when not in dry-run) |
-| `nifty-pulse.timer` | Daily NSE scan (Sun–Fri 18:00 Sydney) |
+| `nifty-pulse.service` | Daily NSE scan — started by cron (Sun–Fri 18:00 Sydney); timer unit is installed but disabled |
 | `afl-pulse.timer` | Weekly AFL round scan (Thu 18:00 Melbourne) |
 | `afl-pulse-pregame.timer` | Pregame poll (every 15 min) |
-| `/etc/cron.d/fxtrade-watch` | `health-watch` every 5 min; timer failure checks; `bot-daily-email` at 20:30 UTC; `bot-weekly-email` Mon 07:00 UTC |
+| `/etc/cron.d/fxtrade-watch` | Starts `nifty-pulse.service` at 18:00 Sydney; `health-watch` every 5 min; timer failure checks; `bot-daily-email` at 20:30 UTC; `bot-weekly-email` Mon 07:00 UTC |
 
 ### Platform bots (long-running, OANDA orders)
 
@@ -172,7 +184,7 @@ Enable per-bot units: `sudo ./deploy/gcp/install.sh --enable-bot ID`.
 
 | Program | What | Schedule |
 |---------|------|----------|
-| `nifty-pulse` | NSE watchlist swing scan; emails one pick if found | `nifty-pulse.timer` |
+| `nifty-pulse` | NSE watchlist swing scan (SMA/RSI filters + RSS/LLM sentiment gate); emails one pick if found | Cron Sun–Fri 18:00 Sydney → `nifty-pulse.service` |
 | `afl-pulse` | AFL round odds, projections, value bets | `afl-pulse.timer` |
 | `afl-pulse-pregame` | T-45 pregame report (Gemini + Google Search) | `afl-pulse-pregame.timer` |
 
@@ -188,13 +200,23 @@ Local: `go run ./cmd/nifty-pulse`, `go run ./cmd/afl-pulse`, `go run ./cmd/afl-p
 | `reconcile-trades` | Backfill $0 P/L and missing instruments from OANDA transactions | Manual CLI; runs automatically before daily email |
 | `bot-weekly-email` | Combined weekly P&L for all platform bots | Cron Mon 07:00 UTC via `run-bot-weekly-email.sh` |
 
+### Standalone services (separate Go module)
+
+| Service | What | How it runs |
+|---------|------|-------------|
+| `btc-sentiment` | Gemini skills+tools agent: news/Reddit → scored BTC/USD sentiment JSON | Local `go run ./cmd/server`, or Cloud Run + Scheduler `POST /run-sentiment-pass` |
+
+Details: [services/btc-sentiment/README.md](services/btc-sentiment/README.md).
+
 ---
 
 ## Deploy on GCP
 
-Bare-metal **e2-micro** VM (systemd, optional GitHub Actions CD). **Full guide:** [deploy/gcp/DEPLOY.md](deploy/gcp/DEPLOY.md). **Terraform (preferred):** [deploy/gcp/terraform/README.md](deploy/gcp/terraform/README.md).
+**Platform bots + scanners:** bare-metal **e2-micro** VM (systemd, optional GitHub Actions CD). **Full guide:** [deploy/gcp/DEPLOY.md](deploy/gcp/DEPLOY.md). **Terraform (preferred):** [deploy/gcp/terraform/README.md](deploy/gcp/terraform/README.md).
 
 Quick path: provision VM → `sudo ./deploy/gcp/install.sh --enable-bot universe_scanner --dry-run` → place `/opt/fxtrade/.credentials` → deploy Linux binaries (manual `scp` or push to `main` with `GCP_VM_HOST`, `GCP_VM_USER`, `GCP_SSH_KEY` secrets).
+
+**BTC sentiment agent:** build the image from `services/btc-sentiment/Dockerfile`, deploy to Cloud Run (`--min-instances=0`), put secrets in Secret Manager (`GEMINI_API_KEY`, Reddit, optional CryptoPanic), and schedule Cloud Scheduler (OIDC) to `POST /run-sentiment-pass`. See [services/btc-sentiment/README.md](services/btc-sentiment/README.md).
 
 ---
 
@@ -258,11 +280,14 @@ fxtrade/
 ├── cmd/bot-analyze/          # Trade analysis CLI
 ├── cmd/bot-weekly-email/     # Combined weekly bot performance email
 ├── cmd/*-test/               # one-shot dev CLIs (sentiment, strategy, scanner, order, …)
+├── services/
+│   └── btc-sentiment/        # standalone Gemini sentiment agent (own go.mod)
 ├── data/                     # bot state, AFL stats, per-bot trades.db
-├── deploy/gcp/               # systemd units, install.sh, Terraform
+├── deploy/gcp/               # systemd units, install.sh, Terraform (VM)
 ├── logs/                     # sentiment audit, trade journal, daemon logs
 ├── docs/                     # README index, specs/, guides/, skills/
 ├── .cursor/skills/           # Cursor agent skills (catalog in docs/skills/)
+├── watchlist.txt.example     # NiftyPulse NSE symbol list template
 └── plan.md                   # fx_sentiment strategy spec
 ```
 
@@ -298,6 +323,49 @@ watch -n 10 'curl -s http://localhost:8080/health | python3 -m json.tool'
 - Never commit `.credentials` — it is gitignored.
 - Use OANDA **practice** until expectancy is proven.
 - Revoke API tokens if they are ever exposed.
+
+---
+
+## BTC sentiment agent (`services/btc-sentiment`)
+
+Standalone **Gemini function-calling** agent (not part of `cmd/fxtrade`). Skills (markdown) + tools drive a multi-turn loop until `emit_sentiment` returns scored BTC/USD sentiment JSON. Intended for Cloud Run; Cloud Scheduler triggers `POST /run-sentiment-pass`.
+
+```text
+Cloud Scheduler → HTTP → Agent loop (Gemini + tools) → emit_sentiment → JSON
+```
+
+| Piece | Role |
+|-------|------|
+| Skills | `core`, `data-sources`, `sentiment-scoring`, `cache-and-audit` |
+| Tools | `fetch_news`, `fetch_reddit`, `compute_window_key`, `cache_get` / `cache_set`, `log_run`, `emit_sentiment` (terminal) |
+
+**Requires** in `.credentials` under `btc_sentiment` (see `.credentials.example`): Gemini API key (or reuse `afl.gemini_api_key`), Reddit OAuth script app (`reddit_client_id` / `reddit_client_secret` / user-agent with your Reddit username). Optional: `cryptopanic_api_key` (else RSS fallback).
+
+```bash
+cd services/btc-sentiment
+go run ./cmd/reddit-smoke    # verify Reddit OAuth
+go run ./cmd/server          # loads ../../.credentials by default
+
+curl -s localhost:8080/healthz
+curl -s -X POST localhost:8080/run-sentiment-pass \
+  -H 'Content-Type: application/json' -d '{}'
+```
+
+Full architecture, env vars, and Cloud Run notes: **[services/btc-sentiment/README.md](services/btc-sentiment/README.md)**.
+
+---
+
+## NiftyPulse (NSE swing scanner)
+
+Daily NSE watchlist scanner on GCP: `/etc/cron.d/fxtrade-watch` starts `nifty-pulse.service` **Sun–Fri at 18:00 Australia/Sydney** (after NSE close). For each symbol in `watchlist.txt` it fetches Yahoo daily bars, keeps names with **close > SMA(50)** and **RSI(14) in [30, 45]** (`stock_scan` in `.credentials`), ranks by lowest RSI, then runs an **RSS + LLM sentiment gate** on the top candidates (default 3) and skips Negative picks. Emails a single swing suggestion (entry / SL / target) if any survivor remains. Does **not** place orders.
+
+**Requires:** `llm.api_key` for the sentiment gate. Without it (or if RSS/LLM fails), the run degrades to the top ranked filter pass. SMTP for email. OANDA keys still required for `config.Load`. Watchlist: copy `watchlist.txt.example` → `watchlist.txt` (one NSE ticker per line, no `.NS`).
+
+```bash
+go run ./cmd/nifty-pulse -dry-run     # scan + log pick, no email
+go run ./cmd/nifty-pulse              # email if a pick survives
+./scripts/nifty-pulse-run.sh --dry-run
+```
 
 ---
 
