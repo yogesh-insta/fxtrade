@@ -1,0 +1,31 @@
+---
+description: Never push to main — always use a branch and open a pull request
+alwaysApply: true
+---
+
+# PR workflow (required)
+
+All changes land through **pull requests**. Do not commit or push directly to `main`.
+
+## When the user asks to commit / ship changes
+
+1. Create or switch to a feature branch (never commit on `main`).
+2. Commit on that branch.
+3. Push the branch with `-u` if needed.
+4. Open a PR to `main` with `gh pr create` (summary + test plan).
+5. Return the PR URL.
+
+## Never
+
+- `git push origin main` or push HEAD while on `main`
+- Commit on `main` (even if the user says “commit and push” — use a branch + PR instead)
+- `--force` to `main` / `master`
+
+## Exceptions
+
+Only if the user **explicitly** overrides in that message (e.g. “push to main anyway” or “skip the PR”). Prefer still warning once.
+
+## References
+
+- `CONTRIBUTING.md`
+- `.github/BRANCH_PROTECTION.md`
