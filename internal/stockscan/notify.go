@@ -3,6 +3,7 @@ package stockscan
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/ym/fxtrade/internal/config"
@@ -11,34 +12,53 @@ import (
 
 // Pick is the final trade recommendation.
 type Pick struct {
-	Candidate Candidate
-	Entry     float64
-	StopLoss  float64
-	Target    float64
-	Reasons   []string
+	Candidate    Candidate
+	Entry        float64
+	StopLoss     float64
+	Target       float64
+	StopLossPct  float64
+	TargetPct    float64
+	Reasons      []string
 }
 
 func BuildPick(c Candidate, cfg config.StockScanConfig, reasons []string) Pick {
 	entry := RoundINR(c.Close)
 	sl, tgt := Levels(c.Close, cfg.StopLossPct, cfg.TargetPct)
 	return Pick{
-		Candidate: c,
-		Entry:     entry,
-		StopLoss:  RoundINR(sl),
-		Target:    RoundINR(tgt),
-		Reasons:   reasons,
+		Candidate:   c,
+		Entry:       entry,
+		StopLoss:    RoundINR(sl),
+		Target:      RoundINR(tgt),
+		StopLossPct: cfg.StopLossPct,
+		TargetPct:   cfg.TargetPct,
+		Reasons:     reasons,
 	}
+}
+
+func formatPctLabel(pct float64) string {
+	v := pct * 100
+	if math.Abs(v-math.Round(v)) < 1e-9 {
+		return fmt.Sprintf("%.0f%%", v)
+	}
+	return fmt.Sprintf("%.1f%%", v)
 }
 
 // FormatAlertEmail renders the Zerodha-style alert body with shortlist context.
 func FormatAlertEmail(p Pick, contenders []Contender, totalPassed int) string {
 	symbol := strings.ToUpper(p.Candidate.Symbol)
+	slPct, tgtPct := p.StopLossPct, p.TargetPct
+	if slPct <= 0 {
+		slPct = 0.02
+	}
+	if tgtPct <= 0 {
+		tgtPct = 0.03
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Instrument: %s (Cash Equity Stock)\n", symbol)
 	b.WriteString("Action: BUY\n")
 	fmt.Fprintf(&b, "Limit Price: ₹%.2f\n", p.Entry)
-	fmt.Fprintf(&b, "Stop Loss: ₹%.2f (Strict 1.5%% protection)\n", p.StopLoss)
-	fmt.Fprintf(&b, "Target: ₹%.2f (Strict 3%% profit goal)\n", p.Target)
+	fmt.Fprintf(&b, "Stop Loss: ₹%.2f (Strict %s protection)\n", p.StopLoss, formatPctLabel(slPct))
+	fmt.Fprintf(&b, "Target: ₹%.2f (Strict %s profit goal)\n", p.Target, formatPctLabel(tgtPct))
 	b.WriteString("\n")
 
 	if len(p.Reasons) > 0 {

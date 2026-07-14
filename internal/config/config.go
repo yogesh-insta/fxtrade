@@ -155,7 +155,7 @@ func DefaultStockScanConfig() StockScanConfig {
 		RSIPeriod:           14,
 		RSIMin:              30,
 		RSIMax:              45,
-		StopLossPct:         0.015,
+		StopLossPct:         0.02,
 		TargetPct:           0.03,
 		SentimentCandidates: 3,
 	}
