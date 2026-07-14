@@ -100,6 +100,8 @@ Implementation: `internal/report/analyze.go` (`AnalyzeBot`, `suggestTweaks`, `Fo
 | `opening_range_candles` | M15 candles before range (≥2 reduces false breakouts) |
 | `min_range_spread_ratio` | Skip thin ranges |
 | `min_setup_score` | Entry quality floor |
+| `stop_loss_pips_fx` | FX/JPY stop (do not raise for silver — use metal knob) |
+| `stop_loss_pips_metal` | XAU/XAG stop in metal pips |
 | `take_profit_rr` | Reward vs stop |
 | `risk_per_trade_pct` | Position size |
 | `force_flat_utc` | Session close before rollover (~20:00 UTC FX) |

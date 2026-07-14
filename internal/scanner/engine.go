@@ -343,6 +343,12 @@ func stopDistanceForClass(cfg config.ScannerConfig, cls string, pipSize float64)
 		return cfg.StopLossPointsCrypto * pipSize
 	case "INDEX", "ENERGY":
 		return cfg.StopLossPointsIndex * pipSize
+	case "METAL":
+		pips := cfg.StopLossPipsMetal
+		if pips <= 0 {
+			pips = cfg.StopLossPipsFX
+		}
+		return pips * pipSize
 	default:
 		return cfg.StopLossPipsFX * pipSize
 	}

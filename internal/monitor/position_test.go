@@ -148,3 +148,82 @@ func TestSeedOpenedTradeIdempotent(t *testing.T) {
 		t.Fatalf("onTradeOpened want 1, got %d", opens)
 	}
 }
+
+func TestOwnerTagSkipsForeignOpen(t *testing.T) {
+	var mu sync.Mutex
+	opens := []oanda.Trade{{
+		ID:           "100",
+		Instrument:   "AUD_USD",
+		CurrentUnits: "1000",
+		Price:        "0.65",
+		ClientExtensions: &oanda.ClientExtensions{
+			ID:  "universe_scanner:scan-AUD_USD-1",
+			Tag: "universe_scanner",
+		},
+	}}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v3/accounts/acc/openTrades" {
+			_ = json.NewEncoder(w).Encode(oanda.OpenTradesResponse{Trades: opens})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := oanda.NewClient(srv.URL, "acc", "token")
+	rm := risk.NewManager(config.RiskConfig{})
+	mon := New(client, rm, silentNotifier{}, time.Second, "AUD_USD")
+	mon.SetOwnerTag("fx_sentiment")
+
+	adopted := 0
+	mon.SetOnTradeOpened(func(oanda.Trade) { adopted++ })
+	mon.poll(context.Background())
+	if adopted != 0 {
+		t.Fatalf("fx_sentiment must not adopt scanner trade, got %d opens", adopted)
+	}
+	if mon.OpenCount() != 0 {
+		t.Fatalf("want empty known, got %d", mon.OpenCount())
+	}
+}
+
+func TestOwnerTagAdoptsOwnOpen(t *testing.T) {
+	opens := []oanda.Trade{{
+		ID:           "200",
+		Instrument:   "EUR_USD",
+		CurrentUnits: "1000",
+		Price:        "1.10",
+		ClientExtensions: &oanda.ClientExtensions{
+			ID:  "fx_sentiment:trend-EUR_USD-1",
+			Tag: "fx_sentiment",
+		},
+	}}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v3/accounts/acc/openTrades" {
+			_ = json.NewEncoder(w).Encode(oanda.OpenTradesResponse{Trades: opens})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	client := oanda.NewClient(srv.URL, "acc", "token")
+	rm := risk.NewManager(config.RiskConfig{})
+	mon := New(client, rm, silentNotifier{}, time.Second, "EUR_USD")
+	mon.SetOwnerTag("fx_sentiment")
+
+	adopted := 0
+	mon.SetOnTradeOpened(func(oanda.Trade) { adopted++ })
+	mon.poll(context.Background())
+	if adopted != 1 {
+		t.Fatalf("want adopt own trade once, got %d", adopted)
+	}
+	if mon.OpenCount() != 1 {
+		t.Fatalf("want 1 open, got %d", mon.OpenCount())
+	}
+}
