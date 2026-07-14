@@ -16,12 +16,12 @@ import (
 
 // Result holds one symbol's scan outcome.
 type Result struct {
-	Symbol string
-	Bar    Bar
+	Symbol    string
+	Bar       Bar
 	Candidate Candidate
-	Error  error
-	Skipped bool
-	Reason  string
+	Error     error
+	Skipped   bool
+	Reason    string
 }
 
 // Scanner fetches Yahoo data and applies technical filters.
@@ -44,6 +44,7 @@ func NewScanner(cfg config.StockScanConfig) *Scanner {
 }
 
 // LoadWatchlist reads one NSE symbol per line from path.
+// Blank lines and # comments are ignored. Symbols are uppercased; duplicates are dropped.
 func LoadWatchlist(path string) ([]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -51,6 +52,7 @@ func LoadWatchlist(path string) ([]string, error) {
 	}
 	defer f.Close()
 
+	seen := make(map[string]struct{})
 	var symbols []string
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -58,7 +60,12 @@ func LoadWatchlist(path string) ([]string, error) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		symbols = append(symbols, strings.ToUpper(line))
+		sym := strings.ToUpper(line)
+		if _, ok := seen[sym]; ok {
+			continue
+		}
+		seen[sym] = struct{}{}
+		symbols = append(symbols, sym)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("read watchlist %s: %w", path, err)
@@ -67,6 +74,26 @@ func LoadWatchlist(path string) ([]string, error) {
 		return nil, fmt.Errorf("watchlist %s is empty", path)
 	}
 	return symbols, nil
+}
+
+// ExcludeSymbols returns symbols with any entry also present in exclude removed.
+// Order of symbols is preserved.
+func ExcludeSymbols(symbols, exclude []string) []string {
+	if len(symbols) == 0 || len(exclude) == 0 {
+		return append([]string(nil), symbols...)
+	}
+	skip := make(map[string]struct{}, len(exclude))
+	for _, s := range exclude {
+		skip[strings.ToUpper(strings.TrimSpace(s))] = struct{}{}
+	}
+	out := make([]string, 0, len(symbols))
+	for _, s := range symbols {
+		if _, ok := skip[strings.ToUpper(strings.TrimSpace(s))]; ok {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 // ScanAll fetches and evaluates all symbols concurrently.
@@ -96,12 +123,13 @@ func (s *Scanner) ScanAll(ctx context.Context, symbols []string) []Result {
 func (s *Scanner) scanOne(ctx context.Context, symbol string) Result {
 	res := Result{Symbol: symbol}
 
-	bars, err := s.yahoo.FetchDaily(ctx, symbol)
+	quote, err := s.yahoo.FetchDaily(ctx, symbol)
 	if err != nil {
 		res.Error = err
 		slog.Warn("yahoo fetch failed", "symbol", symbol, "error", err)
 		return res
 	}
+	bars := quote.Bars
 
 	closes := make([]float64, len(bars))
 	for i, b := range bars {
@@ -125,6 +153,7 @@ func (s *Scanner) scanOne(ctx context.Context, symbol string) Result {
 	res.Bar = last
 	res.Candidate = Candidate{
 		Symbol: symbol,
+		Name:   quote.Name,
 		Close:  last.Close,
 		SMA:    sma,
 		RSI:    rsi,
@@ -155,7 +184,16 @@ func (s *Scanner) Run(ctx context.Context, watchlistPath string) ([]Candidate, [
 	if err != nil {
 		return nil, nil, err
 	}
-	slog.Info("stock scan started", "symbols", len(symbols), "watchlist", watchlistPath)
+	return s.RunSymbols(ctx, symbols, watchlistPath)
+}
+
+// RunSymbols scans an in-memory symbol list up to ranking (no sentiment or notify).
+// label is used only for logging (e.g. file path or universe name).
+func (s *Scanner) RunSymbols(ctx context.Context, symbols []string, label string) ([]Candidate, []Result, error) {
+	if len(symbols) == 0 {
+		return nil, nil, fmt.Errorf("symbol list %s is empty", label)
+	}
+	slog.Info("stock scan started", "symbols", len(symbols), "watchlist", label)
 
 	results := s.ScanAll(ctx, symbols)
 	candidates := CollectCandidates(results)
@@ -165,6 +203,7 @@ func (s *Scanner) Run(ctx context.Context, watchlistPath string) ([]Candidate, [
 		"scanned", len(symbols),
 		"passed", len(candidates),
 		"errors", countErrors(results),
+		"watchlist", label,
 	)
 	return ranked, results, nil
 }

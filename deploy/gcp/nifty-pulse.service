@@ -10,6 +10,6 @@ User=fxtrade
 Group=fxtrade
 WorkingDirectory=/opt/fxtrade
 EnvironmentFile=-/etc/fxtrade/fxtrade.env
-ExecStart=/opt/fxtrade/bin/nifty-pulse -credentials /opt/fxtrade/.credentials -watchlist /opt/fxtrade/watchlist.txt
+ExecStart=/opt/fxtrade/bin/nifty-pulse -credentials /opt/fxtrade/.credentials -watchlist /opt/fxtrade/watchlist.txt -watchlist-extended /opt/fxtrade/watchlist-nifty500-rest.txt
 StandardOutput=append:/opt/fxtrade/logs/nifty-pulse.log
 StandardError=append:/opt/fxtrade/logs/nifty-pulse.stderr.log
