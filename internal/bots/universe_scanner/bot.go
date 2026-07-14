@@ -70,6 +70,7 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 	exec := execution.NewExecutor(client, rm, notifier)
 	exec.SetDryRun(deps.DryRun)
 	posMon := monitor.New(client, rm, notifier, 30*time.Second, universe.Symbols...)
+	posMon.SetOwnerTag(Meta.ID)
 	exec.SetTradeAccounting(posMon)
 	posMon.SetOnTradeOpened(func(t oanda.Trade) {
 		metaStore.Put(t.ID, store.MetaFromTrade(t))

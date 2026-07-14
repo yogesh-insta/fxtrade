@@ -48,6 +48,25 @@ func TestRankSetupsOrder(t *testing.T) {
 	}
 }
 
+func TestStopDistanceForClassMetal(t *testing.T) {
+	cfg := config.ScannerConfig{
+		StopLossPipsFX:       8,
+		StopLossPipsMetal:    50,
+		StopLossPointsCrypto: 150,
+		StopLossPointsIndex:  20,
+	}
+	pip := 0.01 // XAG
+	got := stopDistanceForClass(cfg, "METAL", pip)
+	want := 50 * pip
+	if got != want {
+		t.Fatalf("METAL stop: got %v want %v", got, want)
+	}
+	fx := stopDistanceForClass(cfg, "FX", 0.0001)
+	if fx != 8*0.0001 {
+		t.Fatalf("FX stop must stay on stop_loss_pips_fx: got %v", fx)
+	}
+}
+
 func TestInSessionFX(t *testing.T) {
 	cfg := config.DefaultScannerConfig()
 	now := time.Date(2026, 7, 3, 10, 0, 0, 0, time.UTC)
