@@ -154,8 +154,8 @@ func TestRankByRSI(t *testing.T) {
 }
 
 func TestLevels(t *testing.T) {
-	sl, tgt := Levels(1000, 0.015, 0.03)
-	if math.Abs(sl-985) > 1e-9 {
+	sl, tgt := Levels(1000, 0.02, 0.03)
+	if math.Abs(sl-980) > 1e-9 {
 		t.Fatalf("stop loss = %v", sl)
 	}
 	if math.Abs(tgt-1030) > 1e-9 {
@@ -172,17 +172,19 @@ func TestFormatAlertEmail(t *testing.T) {
 		{Rank: 2, Candidate: Candidate{Symbol: "RELIANCE", Close: 2500, SMA: 2450, RSI: 38.5}, OneLiner: BuildOneLiner(Candidate{Symbol: "RELIANCE", Close: 2500, SMA: 2450, RSI: 38.5}, cfg)},
 	}
 	body := FormatAlertEmail(Pick{
-		Candidate: candidate,
-		Entry:     910,
-		StopLoss:  896.35,
-		Target:    937.30,
-		Reasons:   reasons,
+		Candidate:   candidate,
+		Entry:       910,
+		StopLoss:    891.80,
+		Target:      937.30,
+		StopLossPct: 0.02,
+		TargetPct:   0.03,
+		Reasons:     reasons,
 	}, contenders, 2)
 	want := []string{
 		"Instrument: TATAMOTORS (Cash Equity Stock)",
 		"Action: BUY",
 		"Limit Price: ₹910.00",
-		"Stop Loss: ₹896.35 (Strict 1.5% protection)",
+		"Stop Loss: ₹891.80 (Strict 2% protection)",
 		"Target: ₹937.30 (Strict 3% profit goal)",
 		"Why this pick:",
 		"above SMA(50)",
