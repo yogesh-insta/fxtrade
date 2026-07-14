@@ -25,11 +25,11 @@ type Bar struct {
 
 // YahooClient fetches NSE daily candles via Yahoo Finance.
 type YahooClient struct {
-	http       *http.Client
-	rateLimit  time.Duration
-	mu         sync.Mutex
-	lastReq    time.Time
-	userAgent  string
+	http      *http.Client
+	rateLimit time.Duration
+	mu        sync.Mutex
+	lastReq   time.Time
+	userAgent string
 }
 
 func NewYahooClient(requestTimeout time.Duration, rateLimit time.Duration) *YahooClient {
@@ -40,15 +40,27 @@ func NewYahooClient(requestTimeout time.Duration, rateLimit time.Duration) *Yaho
 		rateLimit = 300 * time.Millisecond
 	}
 	return &YahooClient{
-		http: &http.Client{Timeout: requestTimeout},
+		http:      &http.Client{Timeout: requestTimeout},
 		rateLimit: rateLimit,
 		userAgent: "fxtrade-stockscan/1.0",
 	}
 }
 
+// QuoteHistory is daily bars plus Yahoo's company name for a symbol.
+type QuoteHistory struct {
+	Symbol string
+	Name   string // longName preferred, else shortName
+	Bars   []Bar
+}
+
 type chartResponse struct {
 	Chart struct {
 		Result []struct {
+			Meta struct {
+				Symbol    string `json:"symbol"`
+				ShortName string `json:"shortName"`
+				LongName  string `json:"longName"`
+			} `json:"meta"`
 			Timestamp  []int64 `json:"timestamp"`
 			Indicators struct {
 				Quote []struct {
@@ -74,9 +86,10 @@ func NSESymbol(symbol string) string {
 	return symbol + ".NS"
 }
 
-func (c *YahooClient) FetchDaily(ctx context.Context, symbol string) ([]Bar, error) {
+func (c *YahooClient) FetchDaily(ctx context.Context, symbol string) (QuoteHistory, error) {
+	out := QuoteHistory{Symbol: strings.TrimSpace(strings.ToUpper(symbol))}
 	if err := c.waitRateLimit(ctx); err != nil {
-		return nil, err
+		return out, err
 	}
 
 	yahooSym := NSESymbol(symbol)
@@ -84,43 +97,44 @@ func (c *YahooClient) FetchDaily(ctx context.Context, symbol string) ([]Bar, err
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	req.Header.Set("User-Agent", c.userAgent)
 
 	res, err := c.http.Do(req)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	if res.StatusCode >= 300 {
-		return nil, fmt.Errorf("yahoo %s: status %s: %s", yahooSym, res.Status, strings.TrimSpace(string(body)))
+		return out, fmt.Errorf("yahoo %s: status %s: %s", yahooSym, res.Status, strings.TrimSpace(string(body)))
 	}
 
 	var parsed chartResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("yahoo %s: parse: %w", yahooSym, err)
+		return out, fmt.Errorf("yahoo %s: parse: %w", yahooSym, err)
 	}
 	if parsed.Chart.Error != nil {
-		return nil, fmt.Errorf("yahoo %s: %s", yahooSym, parsed.Chart.Error.Description)
+		return out, fmt.Errorf("yahoo %s: %s", yahooSym, parsed.Chart.Error.Description)
 	}
 	if len(parsed.Chart.Result) == 0 {
-		return nil, fmt.Errorf("yahoo %s: empty result", yahooSym)
+		return out, fmt.Errorf("yahoo %s: empty result", yahooSym)
 	}
 
 	result := parsed.Chart.Result[0]
+	out.Name = companyNameFromMeta(result.Meta.LongName, result.Meta.ShortName)
 	if len(result.Indicators.Quote) == 0 {
-		return nil, fmt.Errorf("yahoo %s: missing quote", yahooSym)
+		return out, fmt.Errorf("yahoo %s: missing quote", yahooSym)
 	}
 	q := result.Indicators.Quote[0]
 	n := len(result.Timestamp)
 	if n == 0 {
-		return nil, fmt.Errorf("yahoo %s: no timestamps", yahooSym)
+		return out, fmt.Errorf("yahoo %s: no timestamps", yahooSym)
 	}
 
 	bars := make([]Bar, 0, n)
@@ -148,9 +162,17 @@ func (c *YahooClient) FetchDaily(ctx context.Context, symbol string) ([]Bar, err
 		bars = append(bars, bar)
 	}
 	if len(bars) == 0 {
-		return nil, fmt.Errorf("yahoo %s: no valid bars", yahooSym)
+		return out, fmt.Errorf("yahoo %s: no valid bars", yahooSym)
 	}
-	return bars, nil
+	out.Bars = bars
+	return out, nil
+}
+
+func companyNameFromMeta(longName, shortName string) string {
+	if n := strings.TrimSpace(longName); n != "" {
+		return n
+	}
+	return strings.TrimSpace(shortName)
 }
 
 func (c *YahooClient) waitRateLimit(ctx context.Context) error {

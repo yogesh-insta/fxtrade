@@ -11,10 +11,21 @@ import (
 // Candidate is a watchlist symbol that passed technical filters.
 type Candidate struct {
 	Symbol  string
+	Name    string // company name from Yahoo (optional)
 	Close   float64
 	SMA     float64
 	RSI     float64
 	H1Trend string // optional hourly trend label, empty when unavailable
+}
+
+// DisplayName returns "SYMBOL (Company Name)" when a name is available.
+func (c Candidate) DisplayName() string {
+	sym := strings.ToUpper(strings.TrimSpace(c.Symbol))
+	name := strings.TrimSpace(c.Name)
+	if name == "" {
+		return sym
+	}
+	return fmt.Sprintf("%s (%s)", sym, name)
 }
 
 // Contender is a ranked filter-passing symbol shown in the alert email.

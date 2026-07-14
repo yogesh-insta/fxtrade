@@ -13,24 +13,24 @@ const (
 )
 
 type Config struct {
-	OANDA         OANDAConfig           `json:"oanda"`
-	Instruments   []string              `json:"instruments"`
-	Email         EmailConfig           `json:"email"`
-	Notifications NotificationsConfig   `json:"notifications"`
-	Scanner       ScannerConfig         `json:"scanner"`
-	BtcCfd        BtcCfdConfig          `json:"btc_cfd"`
-	Bots          BotsConfig            `json:"bots"`
-	Risk          RiskConfig            `json:"risk"`
-	Finnhub   FinnhubConfig   `json:"finnhub"`
-	LLM       LLMConfig       `json:"llm"`
-	Sentiment SentimentConfig `json:"sentiment"`
-	Strategy  StrategyConfig  `json:"strategy"`
-	RangeMode RangeModeConfig `json:"range_mode"`
-	TrendMode TrendModeConfig `json:"trend_mode"`
-	LLMGate    LLMGateConfig    `json:"llm_gate"`
-	StockScan  StockScanConfig  `json:"stock_scan"`
-	AFL        AFLConfig        `json:"afl"`
-	State      StateConfig      `json:"state"`
+	OANDA         OANDAConfig         `json:"oanda"`
+	Instruments   []string            `json:"instruments"`
+	Email         EmailConfig         `json:"email"`
+	Notifications NotificationsConfig `json:"notifications"`
+	Scanner       ScannerConfig       `json:"scanner"`
+	BtcCfd        BtcCfdConfig        `json:"btc_cfd"`
+	Bots          BotsConfig          `json:"bots"`
+	Risk          RiskConfig          `json:"risk"`
+	Finnhub       FinnhubConfig       `json:"finnhub"`
+	LLM           LLMConfig           `json:"llm"`
+	Sentiment     SentimentConfig     `json:"sentiment"`
+	Strategy      StrategyConfig      `json:"strategy"`
+	RangeMode     RangeModeConfig     `json:"range_mode"`
+	TrendMode     TrendModeConfig     `json:"trend_mode"`
+	LLMGate       LLMGateConfig       `json:"llm_gate"`
+	StockScan     StockScanConfig     `json:"stock_scan"`
+	AFL           AFLConfig           `json:"afl"`
+	State         StateConfig         `json:"state"`
 }
 
 type OANDAConfig struct {
@@ -42,12 +42,12 @@ type OANDAConfig struct {
 }
 
 type EmailConfig struct {
-	SMTPHost            string `json:"smtp_host"`
-	SMTPPort            int    `json:"smtp_port"`
-	Username            string `json:"username"`
-	Password            string `json:"password"`
-	AlertTo             string `json:"alert_to"`
-	MinIntervalMinutes  int    `json:"min_interval_minutes"`
+	SMTPHost           string `json:"smtp_host"`
+	SMTPPort           int    `json:"smtp_port"`
+	Username           string `json:"username"`
+	Password           string `json:"password"`
+	AlertTo            string `json:"alert_to"`
+	MinIntervalMinutes int    `json:"min_interval_minutes"`
 }
 
 func (e EmailConfig) Enabled() bool {
@@ -150,7 +150,7 @@ func DefaultStockScanConfig() StockScanConfig {
 		Concurrency:         4,
 		RequestTimeoutSec:   15,
 		RateLimitMS:         300,
-		OverallTimeoutMin:   10,
+		OverallTimeoutMin:   15, // Nifty 200 + Nifty 500-rest (~500 Yahoo chart calls)
 		SMAPeriod:           50,
 		RSIPeriod:           14,
 		RSIMin:              30,

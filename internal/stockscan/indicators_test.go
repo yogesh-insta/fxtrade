@@ -165,11 +165,11 @@ func TestLevels(t *testing.T) {
 
 func TestFormatAlertEmail(t *testing.T) {
 	cfg := config.StockScanConfig{SMAPeriod: 50, RSIMin: 30, RSIMax: 45}
-	candidate := Candidate{Symbol: "TATAMOTORS", Close: 910, SMA: 880, RSI: 32.1}
+	candidate := Candidate{Symbol: "TATAMOTORS", Name: "Tata Motors Limited", Close: 910, SMA: 880, RSI: 32.1}
 	reasons := BuildReasons(candidate, cfg, "Positive Sentiment (confidence 82%) — strong outlook")
 	contenders := []Contender{
 		{Rank: 1, Candidate: candidate, OneLiner: BuildOneLiner(candidate, cfg), Selected: true},
-		{Rank: 2, Candidate: Candidate{Symbol: "RELIANCE", Close: 2500, SMA: 2450, RSI: 38.5}, OneLiner: BuildOneLiner(Candidate{Symbol: "RELIANCE", Close: 2500, SMA: 2450, RSI: 38.5}, cfg)},
+		{Rank: 2, Candidate: Candidate{Symbol: "RELIANCE", Name: "Reliance Industries Limited", Close: 2500, SMA: 2450, RSI: 38.5}, OneLiner: BuildOneLiner(Candidate{Symbol: "RELIANCE", Close: 2500, SMA: 2450, RSI: 38.5}, cfg)},
 	}
 	body := FormatAlertEmail(Pick{
 		Candidate:   candidate,
@@ -181,7 +181,8 @@ func TestFormatAlertEmail(t *testing.T) {
 		Reasons:     reasons,
 	}, contenders, 2)
 	want := []string{
-		"Instrument: TATAMOTORS (Cash Equity Stock)",
+		"NiftyPulse daily picks: 1 suggestion(s)",
+		"Instrument: TATAMOTORS — Tata Motors Limited (Cash Equity Stock)",
 		"Action: BUY",
 		"Limit Price: ₹910.00",
 		"Stop Loss: ₹891.80 (Strict 2% protection)",
@@ -191,9 +192,9 @@ func TestFormatAlertEmail(t *testing.T) {
 		"pullback zone [30–45]",
 		"Sentiment: Positive Sentiment (confidence 82%) — strong outlook",
 		"Top contenders (2 passed filters):",
-		"1. TATAMOTORS",
+		"1. TATAMOTORS (Tata Motors Limited)",
 		"★ selected",
-		"2. RELIANCE",
+		"2. RELIANCE (Reliance Industries Limited)",
 		"Only 2 symbol(s) passed today's SMA/RSI filters.",
 		"GTT OCO",
 		"NiftyPulse does NOT place orders automatically",
@@ -205,6 +206,62 @@ func TestFormatAlertEmail(t *testing.T) {
 	}
 	if strings.Contains(body, "This bot") {
 		t.Fatal("footer should say NiftyPulse, not This bot")
+	}
+}
+
+func TestFormatPicksEmailDual(t *testing.T) {
+	cfg := config.StockScanConfig{SMAPeriod: 50, RSIMin: 30, RSIMax: 45}
+	p1 := BuildPickUniverse(
+		Candidate{Symbol: "INFY", Name: "Infosys Limited", Close: 1500, SMA: 1450, RSI: 34},
+		cfg,
+		BuildReasons(Candidate{Symbol: "INFY", Close: 1500, SMA: 1450, RSI: 34}, cfg, ""),
+		UniverseNifty200,
+	)
+	p2 := BuildPickUniverse(
+		Candidate{Symbol: "AFFLE", Name: "Affle (India) Limited", Close: 1400, SMA: 1350, RSI: 36},
+		cfg,
+		BuildReasons(Candidate{Symbol: "AFFLE", Close: 1400, SMA: 1350, RSI: 36}, cfg, ""),
+		UniverseNifty500Rest,
+	)
+	body := FormatPicksEmail([]Pick{p1, p2}, nil, nil)
+	for _, want := range []string{
+		"NiftyPulse daily picks: 2 suggestion(s)",
+		"=== Nifty 200 ===",
+		"Instrument: INFY — Infosys Limited (Cash Equity Stock)",
+		"=== Nifty 500 (ex-200) ===",
+		"Instrument: AFFLE — Affle (India) Limited (Cash Equity Stock)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in body:\n%s", want, body)
+		}
+	}
+}
+
+func TestFormatPicksSubjectDual(t *testing.T) {
+	picks := []Pick{
+		{Candidate: Candidate{Symbol: "INFY", Name: "Infosys Limited"}, Universe: UniverseNifty200, Entry: 1500, StopLoss: 1470, Target: 1545},
+		{Candidate: Candidate{Symbol: "AFFLE", Name: "Affle (India) Limited"}, Universe: UniverseNifty500Rest, Entry: 1400, StopLoss: 1372, Target: 1442},
+	}
+	got := FormatPicksSubject("[NiftyPulse]", picks)
+	want := "[NiftyPulse] BUY N200 INFY (Infosys Limited) · N500 AFFLE (Affle (India) Limited)"
+	if got != want {
+		t.Fatalf("subject = %q, want %q", got, want)
+	}
+}
+
+func TestCandidateDisplayName(t *testing.T) {
+	if got := (Candidate{Symbol: "infy"}).DisplayName(); got != "INFY" {
+		t.Fatalf("got %q", got)
+	}
+	if got := (Candidate{Symbol: "INFY", Name: "Infosys Limited"}).DisplayName(); got != "INFY (Infosys Limited)" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestExcludeSymbols(t *testing.T) {
+	got := ExcludeSymbols([]string{"AFFLE", "INFY", "RELIANCE", "KFINTECH"}, []string{"infy", "RELIANCE"})
+	if len(got) != 2 || got[0] != "AFFLE" || got[1] != "KFINTECH" {
+		t.Fatalf("got %#v, want [AFFLE KFINTECH]", got)
 	}
 }
 
@@ -240,13 +297,13 @@ func TestBuildContendersMarksSelected(t *testing.T) {
 
 func TestFormatAlertSubject(t *testing.T) {
 	p := Pick{
-		Candidate: Candidate{Symbol: "reliance"},
+		Candidate: Candidate{Symbol: "reliance", Name: "Reliance Industries Limited"},
 		Entry:     2500,
 		StopLoss:  2462.50,
 		Target:    2575,
 	}
 	got := FormatAlertSubject("[NiftyPulse]", p)
-	want := "[NiftyPulse] BUY RELIANCE · Limit ₹2500.00 · SL ₹2462.50 · TGT ₹2575.00"
+	want := "[NiftyPulse] BUY RELIANCE (Reliance Industries Limited) · Limit ₹2500.00 · SL ₹2462.50 · TGT ₹2575.00"
 	if got != want {
 		t.Fatalf("subject = %q, want %q", got, want)
 	}

@@ -184,7 +184,7 @@ Enable per-bot units: `sudo ./deploy/gcp/install.sh --enable-bot ID`.
 
 | Program | What | Schedule |
 |---------|------|----------|
-| `nifty-pulse` | NSE watchlist swing scan (SMA/RSI filters + RSS/LLM sentiment gate); emails one pick if found | Cron Sun–Fri 18:00 Sydney → `nifty-pulse.service` |
+| `nifty-pulse` | NSE dual-universe swing scan (Nifty 200 + Nifty 500 ex-200; SMA/RSI + RSS/LLM); emails up to two picks | Cron Sun–Fri 18:00 Sydney → `nifty-pulse.service` |
 | `afl-pulse` | AFL round odds, projections, value bets | `afl-pulse.timer` |
 | `afl-pulse-pregame` | T-45 pregame report (Gemini + Google Search) | `afl-pulse-pregame.timer` |
 
@@ -287,7 +287,8 @@ fxtrade/
 ├── logs/                     # sentiment audit, trade journal, daemon logs
 ├── docs/                     # README index, specs/, guides/, skills/
 ├── .cursor/skills/           # Cursor agent skills (catalog in docs/skills/)
-├── watchlist.txt.example     # NiftyPulse NSE symbol list template
+├── watchlist.txt.example              # NiftyPulse Nifty 200 template
+├── watchlist-nifty500-rest.txt.example # NiftyPulse Nifty 500 ex-200 template
 └── plan.md                   # fx_sentiment strategy spec
 ```
 
@@ -357,13 +358,18 @@ Full architecture, env vars, and Cloud Run notes: **[services/btc-sentiment/READ
 
 ## NiftyPulse (NSE swing scanner)
 
-Daily NSE watchlist scanner on GCP: `/etc/cron.d/fxtrade-watch` starts `nifty-pulse.service` **Sun–Fri at 18:00 Australia/Sydney** (after NSE close). For each symbol in `watchlist.txt` it fetches Yahoo daily bars, keeps names with **close > SMA(50)** and **RSI(14) in [30, 45]** (`stock_scan` in `.credentials`), ranks by lowest RSI, then runs an **RSS + LLM sentiment gate** on the top candidates (default 3) and skips Negative picks. Emails a single swing suggestion (entry / SL / target) if any survivor remains. Does **not** place orders.
+Daily NSE watchlist scanner on GCP: `/etc/cron.d/fxtrade-watch` starts `nifty-pulse.service` **Sun–Fri at 18:00 Australia/Sydney** (after NSE close). It scans **two universes** and emails up to **two** swing suggestions:
 
-**Requires:** `llm.api_key` for the sentiment gate. Without it (or if RSS/LLM fails), the run degrades to the top ranked filter pass. SMTP for email. OANDA keys still required for `config.Load`. Watchlist: copy `watchlist.txt.example` → `watchlist.txt` (one NSE ticker per line, no `.NS`).
+1. **Nifty 200** — `watchlist.txt`
+2. **Nifty 500 (ex-200)** — `watchlist-nifty500-rest.txt` (built without overlaps; runtime also drops any duplicate vs the primary list)
+
+For each universe it fetches Yahoo daily bars, keeps names with **close > SMA(50)** and **RSI(14) in [30, 45]** (`stock_scan` in `.credentials`), ranks by lowest RSI, then runs an **RSS + LLM sentiment gate** on the top candidates (default 3) and skips Negative picks. Does **not** place orders.
+
+**Requires:** `llm.api_key` for the sentiment gate. Without it (or if RSS/LLM fails), the run degrades to the top ranked filter pass. SMTP for email. OANDA keys still required for `config.Load`. Watchlists: copy `watchlist.txt.example` → `watchlist.txt` and `watchlist-nifty500-rest.txt.example` → `watchlist-nifty500-rest.txt` (one NSE ticker per line, no `.NS`). Prefer `overall_timeout_minutes: 15` for the larger universe.
 
 ```bash
-go run ./cmd/nifty-pulse -dry-run     # scan + log pick, no email
-go run ./cmd/nifty-pulse              # email if a pick survives
+go run ./cmd/nifty-pulse -dry-run     # scan + log picks, no email
+go run ./cmd/nifty-pulse              # email if any pick survives
 ./scripts/nifty-pulse-run.sh --dry-run
 ```
 
