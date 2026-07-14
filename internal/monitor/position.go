@@ -25,6 +25,9 @@ type PositionMonitor struct {
 	onTradeOpened  func(oanda.Trade)
 	onTradeClosed  func(tradeID, correlationID string, pl float64)
 	instruments    map[string]struct{}
+	// ownerTag, when set, only auto-adopts open trades whose clientExtensions.tag
+	// matches (orders set Tag = bot ID). Executor-seeded fills are always tracked.
+	ownerTag string
 }
 
 func New(client *oanda.Client, rm *risk.Manager, n notify.Notifier, interval time.Duration, instruments ...string) *PositionMonitor {
@@ -60,6 +63,13 @@ func (m *PositionMonitor) SetOnTradeOpened(fn func(oanda.Trade)) {
 // SetOnTradeClosed is called after realized P&L is recorded (journal/state).
 func (m *PositionMonitor) SetOnTradeClosed(fn func(tradeID, correlationID string, pl float64)) {
 	m.onTradeClosed = fn
+}
+
+// SetOwnerTag restricts auto-discovery of open trades to this bot's OANDA
+// clientExtensions.tag. Prevents dual-bot accounts from recording each
+// other's closes into the wrong trades.db. Empty = adopt any instrument match.
+func (m *PositionMonitor) SetOwnerTag(tag string) {
+	m.ownerTag = strings.TrimSpace(tag)
 }
 
 // NoteTradeOpened records a trade open once (idempotent). Called by the
@@ -163,6 +173,9 @@ func (m *PositionMonitor) poll(ctx context.Context) {
 	current := make(map[string]oanda.Trade, len(resp.Trades))
 	for _, t := range resp.Trades {
 		if !m.trackInstrument(t.Instrument) {
+			continue
+		}
+		if !m.ownsTrade(t) {
 			continue
 		}
 		current[t.ID] = t
@@ -296,6 +309,18 @@ func (m *PositionMonitor) trackInstrument(instrument string) bool {
 	}
 	_, ok := m.instruments[strings.ToUpper(strings.TrimSpace(instrument))]
 	return ok
+}
+
+// ownsTrade reports whether this monitor should auto-adopt an OANDA open trade.
+// Executor-seeded IDs bypass this (already in recordedOpens/known).
+func (m *PositionMonitor) ownsTrade(t oanda.Trade) bool {
+	if m.ownerTag == "" {
+		return true
+	}
+	if t.ClientExtensions == nil {
+		return false
+	}
+	return strings.TrimSpace(t.ClientExtensions.Tag) == m.ownerTag
 }
 
 func (m *PositionMonitor) lookupClosedTrade(ctx context.Context, tradeID string) (pl float64, plFound bool, exitPrice float64, units int64) {

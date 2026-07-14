@@ -34,6 +34,7 @@ type ScannerConfig struct {
 	BalanceSource                     string                      `json:"balance_source"`
 	RiskPerTradePct                   float64                     `json:"risk_per_trade_pct"`
 	StopLossPipsFX                    float64                     `json:"stop_loss_pips_fx"`
+	StopLossPipsMetal                 float64                     `json:"stop_loss_pips_metal"`
 	StopLossPointsCrypto              float64                     `json:"stop_loss_points_crypto"`
 	StopLossPointsIndex               float64                     `json:"stop_loss_points_index"`
 	TakeProfitRR                      float64                     `json:"take_profit_rr"`
@@ -84,6 +85,7 @@ func DefaultScannerConfig() ScannerConfig {
 		BalanceSource:                     "oanda_nav",
 		RiskPerTradePct:                   1.0,
 		StopLossPipsFX:                    10,
+		StopLossPipsMetal:                 50,
 		StopLossPointsCrypto:              200,
 		StopLossPointsIndex:               20,
 		TakeProfitRR:                      2.1,
@@ -162,6 +164,9 @@ func applyScannerDefaults(c *Config) {
 	}
 	if c.Scanner.StopLossPipsFX == 0 {
 		c.Scanner.StopLossPipsFX = def.StopLossPipsFX
+	}
+	if c.Scanner.StopLossPipsMetal == 0 {
+		c.Scanner.StopLossPipsMetal = def.StopLossPipsMetal
 	}
 	if c.Scanner.StopLossPointsCrypto == 0 {
 		c.Scanner.StopLossPointsCrypto = def.StopLossPointsCrypto

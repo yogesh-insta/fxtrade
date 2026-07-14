@@ -80,7 +80,7 @@ Sort descending: **score** → **range/spread ratio** → **tightest spread** �
 | Input | Source |
 |-------|--------|
 | Entry | Ask (LONG) or Bid (SHORT) |
-| Stop distance | `stop_loss_pips_fx` / `stop_loss_points_crypto` / `stop_loss_points_index` × pip size |
+| Stop distance | `stop_loss_pips_fx` (FX/JPY) / `stop_loss_pips_metal` (METAL) / `stop_loss_points_crypto` / `stop_loss_points_index` × pip size |
 | Take profit | `take_profit_rr × stop distance` (default RR 2.1) |
 | Units | `floor(balance × risk_per_trade_pct/100 / stop_distance)` |
 | Balance | `balance_source`: `oanda_nav` (default), `oanda_balance`, or `config` |
@@ -118,6 +118,8 @@ Signal actions logged to SQLite `signals` table: `no_setup`, `await_breakout`, `
 | `opening_range_candles` | Width/stability of OR (default 2 M15) |
 | `min_range_spread_ratio` | Filters choppy/thin ranges |
 | `min_setup_score` | Minimum quality to rank |
+| `stop_loss_pips_fx` | FX/JPY stop distance in pips |
+| `stop_loss_pips_metal` | METAL (XAU/XAG) stop distance in metal pips (default 50; do not reuse FX stop) |
 | `require_trend_alignment` | Block LONG below H1 bias / SHORT above H1 bias |
 | `entry_cutoff_before_force_flat_minutes` | No new entries N minutes before force-flat |
 | `take_profit_rr` | Reward vs stop |
