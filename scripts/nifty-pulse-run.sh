@@ -7,6 +7,7 @@ HOME="${FXTRADE_HOME:-$ROOT}"
 BIN="${NIFTY_PULSE_BIN:-$HOME/bin/nifty-pulse}"
 CRED="${NIFTY_PULSE_CREDENTIALS:-$HOME/.credentials}"
 WATCH="${NIFTY_PULSE_WATCHLIST:-$HOME/watchlist.txt}"
+WATCH_EXT="${NIFTY_PULSE_WATCHLIST_EXTENDED:-$HOME/watchlist-nifty500-rest.txt}"
 
 DRY_RUN=false
 if [[ "${1:-}" == "--dry-run" ]]; then
@@ -20,7 +21,7 @@ if [[ ! -x "$BIN" ]]; then
   (cd "$ROOT" && go build -o "$BIN" ./cmd/nifty-pulse)
 fi
 
-ARGS=(-credentials "$CRED" -watchlist "$WATCH")
+ARGS=(-credentials "$CRED" -watchlist "$WATCH" -watchlist-extended "$WATCH_EXT")
 if $DRY_RUN; then
   ARGS+=(-dry-run)
 fi

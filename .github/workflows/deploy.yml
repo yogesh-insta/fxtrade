@@ -52,7 +52,7 @@ jobs:
           INSTALL_ROOT="$(dirname "$(dirname "$VM_PATH")")"
           REMOTE="${GCP_VM_USER}@${GCP_VM_HOST}"
 
-          scp -i ~/.ssh/deploy_key -o BatchMode=yes fxtrade nifty-pulse afl-pulse afl-pulse-pregame health-watch bot-daily-email bot-analyze bot-weekly-email reconcile-trades watchlist.txt "${REMOTE}:/tmp/"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes fxtrade nifty-pulse afl-pulse afl-pulse-pregame health-watch bot-daily-email bot-analyze bot-weekly-email reconcile-trades watchlist.txt watchlist-nifty500-rest.txt "${REMOTE}:/tmp/"
           scp -i ~/.ssh/deploy_key -o BatchMode=yes deploy/gcp/nifty-pulse.service deploy/gcp/nifty-pulse.timer deploy/gcp/afl-pulse-pregame.service deploy/gcp/afl-pulse-pregame.timer "${REMOTE}:/tmp/"
           scp -i ~/.ssh/deploy_key -o BatchMode=yes deploy/gcp/check-scheduled-jobs.sh deploy/gcp/run-health-watch.sh deploy/gcp/run-bot-daily-email.sh deploy/gcp/run-bot-weekly-email.sh deploy/gcp/fxtrade-watch.cron "${REMOTE}:/tmp/"
           scp -i ~/.ssh/deploy_key -o BatchMode=yes -r data/afl "${REMOTE}:/tmp/"
@@ -86,10 +86,11 @@ jobs:
             sudo systemctl enable --now afl-pulse-pregame.timer || true
           fi
           sudo install -o fxtrade -g fxtrade -m 644 /tmp/watchlist.txt "${INSTALL_ROOT}/watchlist.txt"
+          sudo install -o fxtrade -g fxtrade -m 644 /tmp/watchlist-nifty500-rest.txt "${INSTALL_ROOT}/watchlist-nifty500-rest.txt"
           sudo mkdir -p "${INSTALL_ROOT}/data/afl"
           sudo cp -f /tmp/afl/*.json "${INSTALL_ROOT}/data/afl/"
           sudo chown -R fxtrade:fxtrade "${INSTALL_ROOT}/data/afl"
-          rm -f /tmp/fxtrade /tmp/nifty-pulse /tmp/afl-pulse /tmp/afl-pulse-pregame /tmp/health-watch /tmp/bot-daily-email /tmp/bot-analyze /tmp/bot-weekly-email /tmp/reconcile-trades /tmp/watchlist.txt
+          rm -f /tmp/fxtrade /tmp/nifty-pulse /tmp/afl-pulse /tmp/afl-pulse-pregame /tmp/health-watch /tmp/bot-daily-email /tmp/bot-analyze /tmp/bot-weekly-email /tmp/reconcile-trades /tmp/watchlist.txt /tmp/watchlist-nifty500-rest.txt
           rm -f /tmp/check-scheduled-jobs.sh /tmp/run-health-watch.sh /tmp/run-bot-daily-email.sh /tmp/run-bot-weekly-email.sh /tmp/fxtrade-watch.cron
           rm -f /tmp/nifty-pulse.service /tmp/nifty-pulse.timer /tmp/afl-pulse-pregame.service /tmp/afl-pulse-pregame.timer
           rm -rf /tmp/afl

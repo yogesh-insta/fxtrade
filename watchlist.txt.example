@@ -1,7 +1,7 @@
-# NiftyPulse watchlist — Nifty 200 symbols, one NSE ticker per line (no .NS suffix).
-# Copy to watchlist.txt and expand to your full universe.
+# NiftyPulse Nifty 200 watchlist — one NSE ticker per line (no .NS suffix).
+# Company names are fetched from Yahoo at scan time (shown in the email).
 RELIANCE
 TCS
 INFY
 HDFCBANK
-TATAMOTORS
+TMPV

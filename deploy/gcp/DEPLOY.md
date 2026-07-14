@@ -79,7 +79,8 @@ This creates:
 | `/opt/fxtrade/bin/nifty-pulse` | NiftyPulse daily NSE scanner |
 | `/opt/fxtrade/bin/afl-pulse` | AFLPulse weekly AFL round scanner |
 | `/opt/fxtrade/bin/afl-pulse-pregame` | AFLPulse T-45 pregame scanner (Gemini) |
-| `/opt/fxtrade/watchlist.txt` | NSE symbol watchlist for NiftyPulse |
+| `/opt/fxtrade/watchlist.txt` | Nifty 200 watchlist for NiftyPulse |
+| `/opt/fxtrade/watchlist-nifty500-rest.txt` | Nifty 500 ex-200 watchlist for NiftyPulse |
 | `/opt/fxtrade/data/afl/` | AFL seed stats (teams, venues, model coefficients) |
 | `/opt/fxtrade/.credentials` | Secrets JSON (600, owner `fxtrade`) |
 | `/opt/fxtrade/data/` | Bot state files |
@@ -246,25 +247,26 @@ GOOS=linux GOARCH=amd64 go build -o fxtrade ./cmd/fxtrade
 GOOS=linux GOARCH=amd64 go build -o nifty-pulse ./cmd/nifty-pulse
 GOOS=linux GOARCH=amd64 go build -o afl-pulse ./cmd/afl-pulse
 GOOS=linux GOARCH=amd64 go build -o afl-pulse-pregame ./cmd/afl-pulse-pregame
-scp fxtrade nifty-pulse afl-pulse afl-pulse-pregame watchlist.txt user@VM_IP:/tmp/
+scp fxtrade nifty-pulse afl-pulse afl-pulse-pregame watchlist.txt watchlist-nifty500-rest.txt user@VM_IP:/tmp/
 scp -r data/afl user@VM_IP:/tmp/
 ssh user@VM_IP 'sudo install -m 755 /tmp/fxtrade /opt/fxtrade/bin/fxtrade && \
   sudo install -m 755 /tmp/nifty-pulse /opt/fxtrade/bin/nifty-pulse && \
   sudo install -m 755 /tmp/afl-pulse /opt/fxtrade/bin/afl-pulse && \
   sudo install -m 755 /tmp/afl-pulse-pregame /opt/fxtrade/bin/afl-pulse-pregame && \
   sudo install -o fxtrade -g fxtrade -m 644 /tmp/watchlist.txt /opt/fxtrade/watchlist.txt && \
+  sudo install -o fxtrade -g fxtrade -m 644 /tmp/watchlist-nifty500-rest.txt /opt/fxtrade/watchlist-nifty500-rest.txt && \
   sudo mkdir -p /opt/fxtrade/data/afl && sudo cp -f /tmp/afl/*.json /opt/fxtrade/data/afl/ && \
   sudo chown -R fxtrade:fxtrade /opt/fxtrade/data/afl && \
   sudo systemctl restart fxtrade.service'
 ```
 
-**Via GitHub Actions:** push to `main` (see `.github/workflows/deploy.yml`) after configuring secrets below. The workflow deploys `fxtrade`, `nifty-pulse`, `afl-pulse`, `watchlist.txt`, and `data/afl/`, then restarts every enabled `fxtrade.service` and `fxtrade@*.service` unit.
+**Via GitHub Actions:** push to `main` (see `.github/workflows/deploy.yml`) after configuring secrets below. The workflow deploys `fxtrade`, `nifty-pulse`, `afl-pulse`, `watchlist.txt`, `watchlist-nifty500-rest.txt`, and `data/afl/`, then restarts every enabled `fxtrade.service` and `fxtrade@*.service` unit.
 
 **Cloud Agents / no gcloud SSH:** use `./scripts/vm-exec.sh` or the **VM exec** workflow — see **`docs/guides/vm_access_via_actions.md`**.
 
 ## 5. NiftyPulse (NSE daily scanner)
 
-NiftyPulse scans the NSE watchlist after market close and emails a single swing-trade pick (if any symbol passes filters + sentiment gate). It does **not** place orders.
+NiftyPulse scans two NSE universes after market close and emails up to two swing-trade picks (one from Nifty 200, one from Nifty 500 ex-200, after filters + sentiment gate). It does **not** place orders.
 
 ### Schedule
 
@@ -293,6 +295,7 @@ sudo systemctl start nifty-pulse.service
 sudo -u fxtrade /opt/fxtrade/bin/nifty-pulse \
   -credentials /opt/fxtrade/.credentials \
   -watchlist /opt/fxtrade/watchlist.txt \
+  -watchlist-extended /opt/fxtrade/watchlist-nifty500-rest.txt \
   -dry-run
 ```
 
@@ -308,7 +311,7 @@ Or build and run directly:
 
 ```bash
 go build -o bin/nifty-pulse ./cmd/nifty-pulse
-./bin/nifty-pulse -credentials .credentials -watchlist watchlist.txt -dry-run
+./bin/nifty-pulse -credentials .credentials -watchlist watchlist.txt -watchlist-extended watchlist-nifty500-rest.txt -dry-run
 ```
 
 **Email on real runs:** any on-demand run **without** `-dry-run` uses the SMTP settings in `.credentials` (`email.alert_to`) and sends the same Zerodha-style alert as the timer. Use `-dry-run` when testing credentials, watchlist, or scanner changes.

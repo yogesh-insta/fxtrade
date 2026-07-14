@@ -172,6 +172,11 @@ if [[ -f "$ROOT/watchlist.txt" ]]; then
 elif [[ ! -f "$INSTALL_ROOT/watchlist.txt" ]]; then
   echo "note: no watchlist at $INSTALL_ROOT/watchlist.txt — copy watchlist.txt from repo root"
 fi
+if [[ -f "$ROOT/watchlist-nifty500-rest.txt" ]]; then
+  install -o fxtrade -g fxtrade -m 644 "$ROOT/watchlist-nifty500-rest.txt" "$INSTALL_ROOT/watchlist-nifty500-rest.txt"
+elif [[ ! -f "$INSTALL_ROOT/watchlist-nifty500-rest.txt" ]]; then
+  echo "note: no extended watchlist at $INSTALL_ROOT/watchlist-nifty500-rest.txt — copy watchlist-nifty500-rest.txt from repo root"
+fi
 
 cp -f "$ROOT/deploy/gcp/fetch-credentials.sh" "$INSTALL_ROOT/deploy/gcp/"
 chmod 755 "$INSTALL_ROOT/deploy/gcp/fetch-credentials.sh"
