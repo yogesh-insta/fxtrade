@@ -133,11 +133,11 @@ func TestAgentFallbackOnMaxTurns(t *testing.T) {
 		t.Fatal(err)
 	}
 	reg := tools.BuildRegistry(tools.Deps{
-		News:       newsStub{},
-		Reddit:     redditStub{},
-		Cache:      c,
-		Store:      st,
-		CacheTTL:   time.Hour,
+		News:     newsStub{},
+		Reddit:   redditStub{},
+		Cache:    c,
+		Store:    st,
+		CacheTTL: time.Hour,
 	})
 	model := &scriptedModel{steps: []gemini.GenerateResponse{
 		{Candidates: []gemini.Candidate{{Content: gemini.Content{Role: "model", Parts: []gemini.Part{

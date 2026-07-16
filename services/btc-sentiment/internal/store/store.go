@@ -13,16 +13,16 @@ import (
 
 // RunRecord is one scoring run for audit/backtesting.
 type RunRecord struct {
-	Timestamp      time.Time
-	WindowStart    time.Time
-	WindowEnd      time.Time
-	NewsCount      int
-	RedditCount    int
-	LLMRequest     string
-	LLMResponse    string
-	ParsedResult   sentiment.SentimentResult
-	CacheUsed      bool
-	FallbackUsed   bool
+	Timestamp    time.Time
+	WindowStart  time.Time
+	WindowEnd    time.Time
+	NewsCount    int
+	RedditCount  int
+	LLMRequest   string
+	LLMResponse  string
+	ParsedResult sentiment.SentimentResult
+	CacheUsed    bool
+	FallbackUsed bool
 }
 
 // Store persists run records (SQLite now; BigQuery later).
@@ -33,8 +33,8 @@ type Store interface {
 
 // SQLiteStore logs runs to SQLite.
 type SQLiteStore struct {
-	db     *sql.DB
-	owned  bool
+	db    *sql.DB
+	owned bool
 }
 
 // Open opens a new SQLite store at path.

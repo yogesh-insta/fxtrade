@@ -56,10 +56,10 @@ type btcSentimentFile struct {
 // Gemini falls back to afl.gemini_* when btc_sentiment.gemini_* is empty.
 func Load() (Config, error) {
 	cfg := Config{
-		GeminiModel:     DefaultGeminiModel,
-		RedditUserAgent: DefaultRedditUserAgent,
-		DBPath:          envOr("DB_PATH", "/tmp/btc-sentiment.db"),
-		Port:            envOr("PORT", "8080"),
+		GeminiModel:      DefaultGeminiModel,
+		RedditUserAgent:  DefaultRedditUserAgent,
+		DBPath:           envOr("DB_PATH", "/tmp/btc-sentiment.db"),
+		Port:             envOr("PORT", "8080"),
 		RedditSubreddits: []string{"Bitcoin", "CryptoCurrency"},
 	}
 

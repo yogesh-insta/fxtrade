@@ -20,13 +20,13 @@ type Model interface {
 
 // Agent runs a Gemini function-calling loop over registered tools + skills.
 type Agent struct {
-	Model     Model
-	Tools     *tools.Registry
-	System    string
-	MaxTurns  int
-	MinItems  int
-	Window    time.Duration
-	Log       *slog.Logger
+	Model    Model
+	Tools    *tools.Registry
+	System   string
+	MaxTurns int
+	MinItems int
+	Window   time.Duration
+	Log      *slog.Logger
 }
 
 // Result is the HTTP-facing outcome of one agent run.

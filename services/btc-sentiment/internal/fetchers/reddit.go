@@ -48,11 +48,11 @@ type redditListing struct {
 	Data struct {
 		Children []struct {
 			Data struct {
-				Title       string  `json:"title"`
-				Selftext    string  `json:"selftext"`
-				Subreddit   string  `json:"subreddit"`
-				Ups         int     `json:"ups"`
-				CreatedUTC  float64 `json:"created_utc"`
+				Title      string  `json:"title"`
+				Selftext   string  `json:"selftext"`
+				Subreddit  string  `json:"subreddit"`
+				Ups        int     `json:"ups"`
+				CreatedUTC float64 `json:"created_utc"`
 			} `json:"data"`
 		} `json:"children"`
 	} `json:"data"`
@@ -112,7 +112,7 @@ func (c *RedditClient) FetchRedditPosts(ctx context.Context, subreddits []string
 			posts = append(posts, RedditPost{
 				Text:      text,
 				Subreddit: d.Subreddit,
-				Upvotes:    d.Ups,
+				Upvotes:   d.Ups,
 				Timestamp: ts,
 			})
 		}

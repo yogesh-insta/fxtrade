@@ -13,15 +13,15 @@ type Handler func(ctx context.Context, args map[string]any) (any, error)
 
 // Tool is a Gemini function declaration plus its Go handler.
 type Tool struct {
-	Decl    gemini.FunctionDeclaration
-	Handle  Handler
+	Decl   gemini.FunctionDeclaration
+	Handle Handler
 	// Terminal tools end the agent loop when called successfully (emit_sentiment).
 	Terminal bool
 }
 
 // Registry maps tool name → Tool.
 type Registry struct {
-	order []string
+	order  []string
 	byName map[string]Tool
 }
 

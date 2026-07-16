@@ -17,7 +17,7 @@ type NewsItem struct {
 type RedditPost struct {
 	Text      string
 	Subreddit string
-	Upvotes    int
+	Upvotes   int
 	Timestamp time.Time
 }
 
