@@ -62,19 +62,26 @@ func (w *Worker) Instruments() []string {
 }
 
 func (w *Worker) Run(ctx context.Context) {
-	interval := time.Duration(w.cfg.IntervalMinutes) * time.Minute
-	if interval < time.Duration(config.MinSentimentIntervalMinutes)*time.Minute {
-		interval = time.Duration(config.MinSentimentIntervalMinutes) * time.Minute
+	if w.cfg.IntervalMinutes < config.MinSentimentIntervalMinutes {
 		slog.Warn("sentiment interval below minimum; using floor",
 			"configured_minutes", w.cfg.IntervalMinutes,
 			"floor_minutes", config.MinSentimentIntervalMinutes,
 		)
 	}
+	interval := time.Duration(w.effectiveIntervalMinutes()) * time.Minute
 	schedule.RunPeriodic(ctx, "sentiment worker", interval, func(cycleCtx context.Context) {
 		if _, err := w.runOnce(cycleCtx); err != nil {
 			slog.Warn("sentiment cycle finished with errors", "error", err)
 		}
 	})
+}
+
+// effectiveIntervalMinutes is the actual cycle cadence after applying the floor.
+func (w *Worker) effectiveIntervalMinutes() int {
+	if w.cfg.IntervalMinutes < config.MinSentimentIntervalMinutes {
+		return config.MinSentimentIntervalMinutes
+	}
+	return w.cfg.IntervalMinutes
 }
 
 // RunOnce runs one full cycle over all instruments and returns the primary
@@ -141,6 +148,13 @@ func (w *Worker) analyzeInstrument(ctx context.Context, instrument string, norm 
 		return SentimentSignal{}, err
 	}
 	signal.Instrument = instrument
+
+	// Keep a signal valid until the next scheduled cycle so the strategy gate
+	// has continuous coverage; otherwise a short valid_minutes (default 30)
+	// leaves a gap when the cycle interval is longer.
+	if iv := w.effectiveIntervalMinutes(); signal.ValidMinutes < iv {
+		signal.ValidMinutes = iv
+	}
 
 	if cache := w.caches[instrument]; cache != nil {
 		cache.Set(signal)
