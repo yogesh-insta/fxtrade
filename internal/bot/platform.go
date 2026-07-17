@@ -97,19 +97,25 @@ func RunPlatform(cfg *config.Config, opts Options) error {
 		for _, r := range runners {
 			st := r.handle.Status()
 			out = append(out, health.BotStatus{
-				ID:             st.ID,
-				Name:           st.Name,
-				Description:    st.Description,
-				Running:        st.Running,
-				Halted:         st.Halted,
-				OpenPositions:  st.OpenPositions,
-				Detail:         st.Detail,
-				StartedAt:      st.StartedAt,
-				LastCycleOKAt:  st.LastCycleOKAt,
+				ID:            st.ID,
+				Name:          st.Name,
+				Description:   st.Description,
+				Running:       st.Running,
+				Halted:        st.Halted,
+				OpenPositions: st.OpenPositions,
+				Detail:        st.Detail,
+				StartedAt:     st.StartedAt,
+				LastCycleOKAt: st.LastCycleOKAt,
 			})
 		}
 		return out
 	})
+	for _, r := range runners {
+		if r.handle.SentimentStatus != nil {
+			healthSrv.SetSentimentStatus(r.handle.SentimentStatus)
+			break
+		}
+	}
 	healthSrv.SetAvailableBots(RegisteredIDs())
 	healthSrv.SetActiveBots(enabled)
 	healthSrv.SetHaltedCheck(func() bool {

@@ -19,12 +19,12 @@ type Meta struct {
 // Status is the runtime snapshot exposed on /health.
 type Status struct {
 	Meta
-	Running        bool      `json:"running"`
-	Halted         bool      `json:"halted"`
-	OpenPositions  int       `json:"open_positions"`
-	Detail         string    `json:"detail,omitempty"`
-	StartedAt      time.Time `json:"started_at,omitempty"`
-	LastCycleOKAt  time.Time `json:"last_cycle_ok_at,omitempty"`
+	Running       bool      `json:"running"`
+	Halted        bool      `json:"halted"`
+	OpenPositions int       `json:"open_positions"`
+	Detail        string    `json:"detail,omitempty"`
+	StartedAt     time.Time `json:"started_at,omitempty"`
+	LastCycleOKAt time.Time `json:"last_cycle_ok_at,omitempty"`
 }
 
 // Deps are shared platform services passed to every bot.
@@ -44,6 +44,10 @@ type Handle struct {
 	Halt          func() error
 	OpenPositions func() int
 	SaveState     func() error
+	// SentimentStatus, when set, reports the live sentiment gate state for
+	// the health endpoint: whether the worker is running plus the latest
+	// signal for the primary instrument. Nil for bots without sentiment.
+	SentimentStatus func() (enabled bool, direction string, confidence float64, at time.Time)
 }
 
 // Bot is a deployable trading strategy. Each implementation runs concurrently with others.

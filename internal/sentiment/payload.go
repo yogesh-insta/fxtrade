@@ -10,13 +10,13 @@ import (
 )
 
 type LLMPayload struct {
-	Task            string              `json:"task"`
-	AsOf            time.Time           `json:"as_of"`
-	Instrument      string              `json:"instrument"`
-	PriceContext    market.PriceContext `json:"price_context"`
-	UpcomingEvents  []PayloadEvent      `json:"upcoming_events"`
-	Headlines       []PayloadHeadline   `json:"headlines"`
-	HighEventRisk   bool                `json:"high_event_risk"`
+	Task           string              `json:"task"`
+	AsOf           time.Time           `json:"as_of"`
+	Instrument     string              `json:"instrument"`
+	PriceContext   market.PriceContext `json:"price_context"`
+	UpcomingEvents []PayloadEvent      `json:"upcoming_events"`
+	Headlines      []PayloadHeadline   `json:"headlines"`
+	HighEventRisk  bool                `json:"high_event_risk"`
 }
 
 type PayloadEvent struct {
@@ -39,12 +39,7 @@ func BuildPayload(instrument string, norm Normalized, price market.PriceContext,
 	}
 	events := make([]PayloadEvent, 0, len(norm.Events))
 	for _, e := range norm.Events {
-		events = append(events, PayloadEvent{
-			Time:    e.Time,
-			Country: e.Country,
-			Event:   e.Event,
-			Impact:  e.Impact,
-		})
+		events = append(events, PayloadEvent(e))
 	}
 
 	headlines := make([]PayloadHeadline, 0, len(norm.Headlines))
@@ -53,7 +48,7 @@ func BuildPayload(instrument string, norm Normalized, price market.PriceContext,
 			Source:  h.Source,
 			Time:    h.Published,
 			Title:   h.Title,
-			Summary: truncate(h.Summary, 500),
+			Summary: truncate(h.Summary, 180),
 		})
 	}
 

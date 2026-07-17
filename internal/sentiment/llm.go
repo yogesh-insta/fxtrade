@@ -27,10 +27,16 @@ func NewLLMClient(cfg config.LLMConfig) *LLMClient {
 	}
 }
 
+// maxCompletionTokens caps the model's output reservation. The sentiment
+// signal JSON is small (~250 tokens), so a tight cap keeps each request's
+// billed token count low — important on Groq's free daily-token budget.
+const maxCompletionTokens = 768
+
 type chatRequest struct {
 	Model          string          `json:"model"`
 	Messages       []chatMessage   `json:"messages"`
 	Temperature    float64         `json:"temperature"`
+	MaxTokens      int             `json:"max_tokens,omitempty"`
 	ResponseFormat *responseFormat `json:"response_format,omitempty"`
 }
 
@@ -53,8 +59,9 @@ type chatResponse struct {
 
 func (c *LLMClient) Analyze(ctx context.Context, systemPrompt string, payload []byte) (SentimentSignal, error) {
 	reqBody := chatRequest{
-		Model:       c.cfg.Model,
-		Temperature: 0,
+		Model:          c.cfg.Model,
+		Temperature:    0,
+		MaxTokens:      maxCompletionTokens,
 		ResponseFormat: &responseFormat{Type: "json_object"},
 		Messages: []chatMessage{
 			{Role: "system", Content: systemPrompt},

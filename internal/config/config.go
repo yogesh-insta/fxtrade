@@ -124,7 +124,7 @@ const MinSentimentIntervalMinutes = 30
 func DefaultSentimentConfig() SentimentConfig {
 	return SentimentConfig{
 		IntervalMinutes:     30,
-		MaxHeadlines:        25,
+		MaxHeadlines:        12,
 		HeadlineMaxAgeHours: 48,
 		AuditDir:            "logs/sentiment",
 	}

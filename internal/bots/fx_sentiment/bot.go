@@ -201,5 +201,14 @@ func (b *Bot) Start(ctx context.Context, deps *bot.Deps) (*bot.Handle, error) {
 		Halt:          rm.ActivateKillSwitch,
 		OpenPositions: posMon.OpenCount,
 		SaveState:     saveState,
+		SentimentStatus: func() (bool, string, float64, time.Time) {
+			enabled := sentimentWorker != nil
+			if cache := sentimentCaches[primaryInstrument]; cache != nil {
+				if sig, ok := cache.Get(); ok {
+					return enabled, sig.Direction, sig.Confidence, sig.AnalyzedAt
+				}
+			}
+			return enabled, "", 0, time.Time{}
+		},
 	}, nil
 }

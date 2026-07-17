@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mmcdole/gofeed"
@@ -19,8 +20,8 @@ const (
 	finnhubNewsURL     = "https://finnhub.io/api/v1/news"
 	finnhubCalendarURL = "https://finnhub.io/api/v1/calendar/economic"
 
-	rbaMediaURL = "https://www.rba.gov.au/rss/rss-cb-media-releases.xml"
-	rbaSpeechURL = "https://www.rba.gov.au/rss/rss-cb-speeches.xml"
+	rbaMediaURL    = "https://www.rba.gov.au/rss/rss-cb-media-releases.xml"
+	rbaSpeechURL   = "https://www.rba.gov.au/rss/rss-cb-speeches.xml"
 	fedMonetaryURL = "https://www.federalreserve.gov/feeds/press_monetary.xml"
 )
 
@@ -28,6 +29,9 @@ type Fetcher struct {
 	finnhubKey string
 	http       *http.Client
 	feed       *gofeed.Parser
+
+	calMu      sync.Mutex
+	lastCalErr string
 }
 
 func NewFetcher(cfg config.FinnhubConfig) *Fetcher {
@@ -52,8 +56,9 @@ func (f *Fetcher) FetchAll(ctx context.Context, maxAge time.Duration) (RawData, 
 
 	events, err := f.fetchFinnhubCalendar(ctx)
 	if err != nil {
-		slog.Warn("finnhub calendar unavailable, continuing without events", "error", err)
+		f.logCalendarError(err)
 	} else {
+		f.resetCalendarError()
 		out.Events = events
 	}
 
@@ -76,14 +81,37 @@ func (f *Fetcher) FetchAll(ctx context.Context, maxAge time.Duration) (RawData, 
 	return out, nil
 }
 
+// logCalendarError logs the calendar failure once per distinct error, at INFO
+// (economic-calendar access is a known plan limitation, not a per-cycle alarm).
+func (f *Fetcher) logCalendarError(err error) {
+	msg := err.Error()
+	f.calMu.Lock()
+	first := msg != f.lastCalErr
+	f.lastCalErr = msg
+	f.calMu.Unlock()
+	if first {
+		slog.Info("finnhub economic calendar unavailable; continuing without events (suppressing repeats)", "error", err)
+	}
+}
+
+func (f *Fetcher) resetCalendarError() {
+	f.calMu.Lock()
+	recovered := f.lastCalErr != ""
+	f.lastCalErr = ""
+	f.calMu.Unlock()
+	if recovered {
+		slog.Info("finnhub economic calendar recovered")
+	}
+}
+
 type finnhubNewsItem struct {
-	Category string  `json:"category"`
-	Datetime int64   `json:"datetime"`
-	Headline string  `json:"headline"`
-	ID       int64   `json:"id"`
-	Source   string  `json:"source"`
-	Summary  string  `json:"summary"`
-	URL      string  `json:"url"`
+	Category string `json:"category"`
+	Datetime int64  `json:"datetime"`
+	Headline string `json:"headline"`
+	ID       int64  `json:"id"`
+	Source   string `json:"source"`
+	Summary  string `json:"summary"`
+	URL      string `json:"url"`
 }
 
 func (f *Fetcher) fetchFinnhubNews(ctx context.Context) ([]Headline, error) {
