@@ -56,6 +56,28 @@ Restart after credential edits: `sudo systemctl restart fxtrade@btc_cfd`.
 
 `internal/oanda`, `risk`, `execution`, `monitor`, `journal`, `state`, `notify`, `health`, `bot` platform — same patterns as `universe_scanner` / `fx_sentiment`.
 
+### Code organisation (where to find things)
+
+```
+cmd/
+├── fxtrade/                 # daemon that runs the bot
+└── btc-metrics/            # win-rate / drawdown query over the trades DB
+internal/
+├── bots/
+│   ├── register.go         # registers btc_cfd into the bot platform
+│   └── btc_cfd/
+│       ├── bot.go          # wiring; swap-cost enrichment on close
+│       ├── cycle.go        # M5 candle-aligned loop, reconcile, max-hold, entry
+│       ├── signals.go      # EvaluateSignal, StaleSignal, StopTakeProfit
+│       ├── indicators.go   # RSI(21), EMA50/200, ATR(14), ATR-SMA(20), deviation
+│       ├── sizing.go       # PositionUnits
+│       ├── trades.go       # trade metadata store, slippage
+│       └── daily_report.go # daily email
+└── config/btc_cfd.go       # BtcCfdConfig + DefaultBtcCfdConfig
+```
+
+Runtime artifacts (all on the VM, free tier — see the storage table above): state `data/state-btc_cfd.json`, trades DB `data/btc_cfd/trades.db`, journal `logs/btc_cfd/{journal,trades}.jsonl`, halt file `.halt.btc_cfd`, process logs via `journalctl -u fxtrade@btc_cfd`. Indicators and the signal's reference price are held **in memory** per cycle — there is no on-disk candle cache. Phase-2 news sentiment (deferred) would come from the separate `services/btc-sentiment/` module, not this bot.
+
 ### Implementation status
 
 | Component | Status |
@@ -101,6 +123,32 @@ Build a fully automated trading system that:
 **Supporting Filter: Volatility Regime**
 - ATR is not optional — it gates entries and sizes both SL and TP dynamically (see §5, §6)
 - BTC's volatility regime shifts fast; a static % stop will get chopped in high-vol periods and sit too loose in quiet ones
+
+### Algorithm diagram
+
+```mermaid
+flowchart TD
+    A[Align to next M5 candle, then tick every 5m] --> B{Halted?}
+    B -- yes --> Z[HOLD]
+    B -- no --> C[Startup reconcile once: seed monitor from OANDA]
+    C --> D[Fetch M5 candles → RSI21, EMA50, EMA200, ATR14, ATR-SMA20]
+    D --> E[Enforce max_hold_hours force-close]
+    E --> F[Fetch pricing + account → EntryLimits]
+    F --> G{EvaluateSignal gates:<br/>open pos? trades≥max? daily cap?<br/>spread&gt;max? ATR spike? RSI mid-band?}
+    G -- blocked --> Z
+    G -- pass --> H{Direction}
+    H -- LONG --> I["RSI crossed back up thru 30<br/>close &gt; EMA200<br/>deviation ≤ −1.5 ATR"]
+    H -- SHORT --> J["RSI crossed back down thru 70<br/>close &lt; EMA200<br/>deviation ≥ +1.5 ATR"]
+    I --> K[Optional M15 EMA200 confirm]
+    J --> K
+    K --> L{Staleness: live price drift<br/>&gt; max_slippage_pct?}
+    L -- yes --> Z
+    L -- no --> M["StopTakeProfit:<br/>SL = ATR × sl_atr_multiple<br/>TP = SL × target_rr (0.2–1.5% sanity band)<br/>units = balance·risk% / SL"]
+    M --> N["MARKET order + SL/TP<br/>client id bc-{nanos}"]
+    N --> O[On close: enrich swap cost → NetPL, log SQLite]
+```
+
+`deviation = (Close − EMA50) / ATR(14)`
 
 ---
 

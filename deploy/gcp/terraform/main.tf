@@ -4,12 +4,6 @@ locals {
     "secretmanager.googleapis.com",
     "iam.googleapis.com",
   ]
-
-  startup_script = templatefile("${path.module}/startup.sh.tpl", {
-    project_id  = var.project_id
-    secret_name = var.credentials_secret_id
-    github_repo = var.github_repo_url
-  })
 }
 
 resource "google_project_service" "apis" {
@@ -116,12 +110,10 @@ resource "google_compute_instance" "vm" {
     scopes = ["cloud-platform"]
   }
 
-  metadata = merge(
-    {
-      startup-script = local.startup_script
-    },
-    var.ssh_public_keys != "" ? { ssh-keys = var.ssh_public_keys } : {}
-  )
+  # Infra-only VM: no startup-script. First boot does not clone/install/enable fxtrade bots.
+  # startup.sh.tpl remains in this directory for optional manual use; do not re-attach for
+  # shared/Tradex-only hosts. App install: tradex repo deploy/gcp/install.sh (or fxtrade install.sh).
+  metadata = var.ssh_public_keys != "" ? { ssh-keys = var.ssh_public_keys } : {}
 
   allow_stopping_for_update = true
 

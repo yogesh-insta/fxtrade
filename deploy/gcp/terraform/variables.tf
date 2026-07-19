@@ -71,7 +71,7 @@ variable "ssh_public_keys" {
 }
 
 variable "github_repo_url" {
-  description = "Git repository cloned on first boot"
+  description = "Unused by apply (startup-script disabled). Kept for optional startup.sh.tpl if re-wired manually."
   type        = string
   default     = "https://github.com/yogesh-insta/fxtrade.git"
 }

@@ -4,7 +4,7 @@ Bare-metal deploy on a single **e2-micro** VM (Ubuntu 22.04/24.04). Target: **$0
 
 ## Infrastructure (Terraform)
 
-**Preferred:** provision the VM, service account, Secret Manager secret, IAM, and firewall with Terraform.
+**Preferred:** provision an **infra-only** VM (service account, Secret Manager secret, IAM, firewall) with Terraform. Apply does **not** run a startup script and does **not** auto-clone or enable fxtrade bots — install apps yourself after SSH (this guide §2, or Tradex `deploy/gcp/install.sh`).
 
 ```bash
 cd deploy/gcp/terraform
@@ -14,7 +14,7 @@ terraform init && terraform plan && terraform apply
 
 Full instructions (import existing VM, upload secrets, GitHub Actions wiring): **[terraform/README.md](terraform/README.md)**.
 
-The sections below describe **legacy manual `gcloud` steps** — use them only if you are not using Terraform.
+The sections below describe **legacy manual `gcloud` steps** and post-SSH install — use manual VM create only if you are not using Terraform.
 
 ## What you provide from GCP
 

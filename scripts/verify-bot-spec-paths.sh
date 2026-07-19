@@ -10,6 +10,9 @@ SPEC_FILES=(
   docs/skills/README.md
   docs/specs/universe_scanner_bot_spec.md
   docs/specs/fx_sentiment_bot_spec.md
+  docs/specs/btc_cfd_bot_spec.md
+  docs/specs/nifty_pulse_scanner_spec.md
+  docs/specs/afl_pulse_scanner_spec.md
   docs/guides/bot_specs_maintenance.md
   .cursor/skills/universe-scanner-logic/SKILL.md
   .cursor/skills/fx-sentiment-logic/SKILL.md

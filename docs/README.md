@@ -6,13 +6,22 @@ Central index for **bot specs**, **guides**, and **Cursor skills**. Start here i
 
 ## Bot specs (logic reference)
 
-Use `@docs/specs/<bot>.md` in Cursor for logic questions.
+Use `@docs/specs/<bot>.md` in Cursor for logic questions. Each spec includes an **algorithm diagram**, **config**, and **algorithm** walkthrough.
+
+### Platform trading bots (OANDA, place live orders)
 
 | Bot | Spec | Cursor skill |
 |-----|------|--------------|
 | `universe_scanner` | [specs/universe_scanner_bot_spec.md](specs/universe_scanner_bot_spec.md) | [.cursor/skills/universe-scanner-logic/SKILL.md](../.cursor/skills/universe-scanner-logic/SKILL.md) |
 | `fx_sentiment` | [specs/fx_sentiment_bot_spec.md](specs/fx_sentiment_bot_spec.md) | [.cursor/skills/fx-sentiment-logic/SKILL.md](../.cursor/skills/fx-sentiment-logic/SKILL.md) |
 | `btc_cfd` | [specs/btc_cfd_bot_spec.md](specs/btc_cfd_bot_spec.md) | *(logic skill not yet added)* |
+
+### Standalone scanners (email alerts only, no orders)
+
+| Scanner | Spec | Notes |
+|---------|------|-------|
+| `nifty-pulse` | [specs/nifty_pulse_scanner_spec.md](specs/nifty_pulse_scanner_spec.md) | NSE swing scanner (SMA uptrend + RSI pullback + sentiment) |
+| `afl-pulse` | [specs/afl_pulse_scanner_spec.md](specs/afl_pulse_scanner_spec.md) | AFL positive-EV value-betting scanner |
 
 ---
 

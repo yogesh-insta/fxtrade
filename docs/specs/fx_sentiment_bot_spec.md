@@ -37,6 +37,55 @@ Range/trend FX strategy with a **Finnhub + Groq sentiment gate**. Supports multi
 
 ---
 
+## Code organisation & storage (where to find things)
+
+### Code layout
+
+```
+cmd/
+├── fxtrade/                  # daemon that runs the bot
+├── strategy-test/           # one-shot strategy cycle (mode + gates)
+└── sentiment-test/          # one-shot sentiment cycle (news → Groq → JSON)
+internal/
+├── bots/
+│   ├── register.go          # registers fx_sentiment (+ legacy alias range_trend)
+│   └── fx_sentiment/
+│       └── bot.go           # wiring: one strategy engine per instrument + sentiment worker + state save
+├── strategy/                # range/trend decision engine
+│   ├── engine.go            # cycle loop, RANGE/TREND execution, TP1 management
+│   ├── range.go             # DetectRange, DetectMode
+│   ├── gates.go             # market-condition gates, sentiment veto, TrendEntry
+│   ├── types.go, exposure.go, report.go
+├── sentiment/               # Finnhub → Groq pipeline + cache
+│   ├── worker.go            # scheduled worker, one Cache per instrument
+│   ├── fetcher.go           # Finnhub news + calendar (+ RSS)
+│   ├── llm.go, payload.go, types.go
+│   ├── cache.go             # in-memory rolling cache (last 5 signals/instrument)
+│   └── audit.go             # appends JSONL audit to logs/sentiment/
+├── market/snapshot.go       # candles + EMA/RSI/ATR indicators
+└── config/strategy.go, config.go  # strategy/range/trend/llm_gate/sentiment/finnhub/llm config
+```
+
+Shared platform stack: `internal/oanda`, `risk`, `execution`, `monitor`, `journal`, `state`, `store/sqlite`, `notify`, `health`, `bot`.
+
+### Runtime artifacts (state, DB, journal, caches, logs)
+
+Paths relative to the working dir (`/opt/fxtrade` on the VM). Per-bot paths from `internal/config/bots.go`.
+
+| Artifact | Path | Written by | Notes |
+|----------|------|-----------|-------|
+| **State** | `data/state-fx_sentiment.json` | `internal/state` | Risk snapshot **+ sentiment cache history** (`BuildSnapshot`/`ApplySnapshot`) — survives restarts |
+| **Trades DB** (SQLite) | `data/fx_sentiment/trades.db` | `internal/store/sqlite` | Closed-trade metadata |
+| **Journal** (JSONL) | `logs/fx_sentiment/journal.jsonl`, `logs/fx_sentiment/trades.jsonl` | `internal/journal` | Per-cycle decisions + trades |
+| **Sentiment cache** | **in-memory**, per instrument (`internal/sentiment/cache.go`) | sentiment worker | Rolling last 5 `SentimentSignal`; **not a file** — persisted only inside the state JSON above |
+| **Sentiment audit** | `logs/sentiment/<YYYY-MM-DD>.jsonl` | `internal/sentiment/audit.go` (`sentiment.audit_dir`, default `logs/sentiment`) | Every LLM call + errors — this is where to look for raw sentiment output |
+| **Halt file** | `.halt.fx_sentiment` | ops (manual) | Presence pauses trading |
+| **Process logs** | systemd journal (`journalctl -u fxtrade@fx_sentiment`) | slog → stdout | |
+
+> **Looking for the sentiment "cache"?** It lives in memory during the run and is checkpointed into `data/state-fx_sentiment.json`. The human-readable history of every LLM decision is in `logs/sentiment/<date>.jsonl`.
+
+---
+
 ## Architecture (two parallel loops)
 
 ```
@@ -50,6 +99,37 @@ Range/trend FX strategy with a **Finnhub + Groq sentiment gate**. Supports multi
 ```
 
 Default instruments: `AUD_USD`, `EUR_USD` (from `instruments` array). Engines run **sequentially** per tick so account-wide checks (correlation guard, sizing) do not race.
+
+---
+
+## Algorithm diagram
+
+```mermaid
+flowchart TD
+    subgraph SW[Sentiment worker · every sentiment.interval_minutes]
+      S1[Finnhub forex news + calendar] --> S2[Normalize headlines]
+      S2 --> S3[Per-instrument price context → JSON]
+      S3 --> S4[Groq LLM llama-3.3-70b] --> S5[(SentimentSignal cache)]
+    end
+
+    subgraph SE[Strategy engine · every strategy.cycle_minutes, per pair]
+      A[Cycle tick] --> B{Halted?}
+      B -- yes --> Z[STAND_ASIDE]
+      B -- no --> C[Market snapshot: W/D/H4 candles, EMA, ATR, RSI, 52w]
+      C --> D[Read sentiment cache]
+      D --> E{CheckMarketConditions<br/>spread / rollover / Friday / event_risk}
+      E -- fail --> Z
+      E -- pass --> F[DetectRange → DetectMode]
+      F --> G{Open position?}
+      G -- yes --> H[Manage: TP1 close 50% at mid,<br/>cancel opposite limits]
+      G -- no --> I{Mode}
+      I -- STAND_ASIDE --> J[Cancel pending limits]
+      I -- RANGE --> K["Place buy limit at support /<br/>sell limit at resistance<br/>(sentiment veto + correlation guard)"]
+      I -- TREND --> L["Weekly regime + H4 + RSI gates<br/>sentiment persistence ≥ N<br/>MARKET entry, ATR stop"]
+    end
+
+    S5 -.reads.-> D
+```
 
 ---
 

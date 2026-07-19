@@ -32,6 +32,78 @@ Opening-range breakout (ORB) scanner on OANDA. Ranks a multi-instrument universe
 
 ---
 
+## Code organisation & storage (where to find things)
+
+### Code layout
+
+```
+cmd/
+├── fxtrade/                  # daemon that runs the bot (imports internal/bots for registration)
+└── scanner-test/            # one-shot dry-run of a single scan cycle
+internal/
+├── bots/
+│   ├── register.go          # init() registers universe_scanner into the bot platform
+│   └── universe_scanner/
+│       └── bot.go           # wiring: risk, monitor, trades DB, engine
+├── scanner/                 # the ORB engine (all scanner-specific logic)
+│   ├── engine.go            # poll loop, entry/exit, force-flat, summaries
+│   ├── scan.go              # per-symbol scan (scanOne, ScanAll)
+│   ├── range.go             # opening-range build + H1 trend bias
+│   ├── rank.go              # ScoreSetup, RankSetups, DetectBreakout
+│   ├── session.go           # session windows, force-flat / entry-cutoff times
+│   ├── universe.go          # presets + account-universe filtering
+│   ├── notify.go            # email notifications
+│   └── schedule.go          # scheduled-summary timing
+└── config/scanner.go        # ScannerConfig + DefaultScannerConfig
+```
+
+Shared platform stack (not scanner-specific): `internal/oanda`, `risk`, `execution`, `monitor`, `journal`, `state`, `store/sqlite`, `notify`, `health`, `bot`.
+
+### Runtime artifacts (state, DB, journal, caches, logs)
+
+Paths are relative to the working dir (`/opt/fxtrade` on the VM). Per-bot paths are derived by `internal/config/bots.go`.
+
+| Artifact | Path | Written by | Notes |
+|----------|------|-----------|-------|
+| **State** | `data/state-universe_scanner.json` | `internal/state` | `StateFileForBot("data/state.json", …)`; risk snapshot, per-session entries |
+| **Trades DB** (SQLite) | `data/universe_scanner/trades.db` | `internal/store/sqlite` | Tables: `trades`, `signals` (`no_setup`, `await_breakout`, `session_already_traded`, `entry_taken`) |
+| **Journal** (JSONL) | `logs/universe_scanner/journal.jsonl`, `logs/universe_scanner/trades.jsonl` | `internal/journal` | Human-tailable decision + trade log |
+| **Halt file** | `.halt.universe_scanner` | ops (manual) | `HaltFileForBot(".halt", …)`; presence pauses trading |
+| **Candle data** | in-memory only | engine | No on-disk cache; refetched each cycle. `candle_cache_seconds` (default 60) is a reserved config knob |
+| **Process logs** | systemd journal (`journalctl -u fxtrade@universe_scanner`) | slog → stdout | |
+
+No sentiment cache (scanner uses OANDA data only).
+
+---
+
+## Algorithm diagram
+
+```mermaid
+flowchart TD
+    A[Poll tick every poll_seconds] --> B{Halted?}
+    B -- yes --> Z[Skip cycle]
+    B -- no --> C[Fetch balance + send scheduled summaries]
+    C --> D[Force-flat positions past force_flat_utc]
+    D --> E{Open universe_scanner trade?}
+    E -- yes, max 1 --> Z
+    E -- no --> F[ScanAll symbols in parallel]
+    F --> G["scanOne per symbol:<br/>in-session? spread ok?<br/>build opening range + H1 bias"]
+    G --> H["ScoreSetup<br/>0.35·range + 0.20·spread<br/>+ 0.30·ratio + 0.15·trend"]
+    H --> I[RankSetups by score ≥ min_setup_score]
+    I --> J{Top setup exists?}
+    J -- no --> Z
+    J -- yes --> K{Breakout confirmed?<br/>bid&gt;High LONG / ask&lt;Low SHORT}
+    K -- no --> L[Record await_breakout] --> Z
+    K -- yes --> M{Trend aligned?<br/>require_trend_alignment}
+    M -- no --> Z
+    M --> N{Session already traded<br/>for instrument?}
+    N -- yes --> Z
+    N -- no --> O["Enter MARKET order<br/>SL = stop_loss_pips × pip<br/>TP = take_profit_rr × SL<br/>units = balance·risk% / SL"]
+    O --> P[Exit via SL/TP, force_flat, or kill switch]
+```
+
+---
+
 ## Runtime loop (every `poll_seconds`, default 10)
 
 ```

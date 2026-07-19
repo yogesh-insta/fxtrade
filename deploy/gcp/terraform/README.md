@@ -1,6 +1,6 @@
 # fxtrade GCP infrastructure (Terraform)
 
-Single-stack Terraform for the fxtrade e2-micro VM, service account, Secret Manager shell, and firewall rules.
+Single-stack Terraform for an **infra-only** e2-micro VM (service account, Secret Manager shell, firewall). Apply does **not** attach a startup script and does **not** auto-install or enable fxtrade bots.
 
 **Project ID (default):** `fxtrade-prod-12345`  
 **VM:** `fxtrade-vm` in `us-east1-b`
@@ -40,9 +40,9 @@ After apply, note the outputs (especially `vm_external_ip`) for GitHub Actions s
 | IAM | SA → `secretAccessor` on that secret only |
 | VM | `fxtrade-vm`, e2-micro, Ubuntu 22.04, 10 GB, tag `fxtrade` |
 | Firewall | SSH (port 22); optional health port |
-| Startup script | git + gcloud CLI, clone repo, `install.sh --enable-bot universe_scanner --dry-run`, fetch credentials if a secret version exists |
+| Startup script | **Not attached** — `startup.sh.tpl` is kept in-repo only; apply leaves a blank VM for Tradex (or manual fxtrade) install |
 
-The startup script logs to `/var/log/fxtrade-startup.log` on the VM.
+Install apps after SSH: Tradex via `tradex/deploy/gcp/install.sh`, or fxtrade via `deploy/gcp/install.sh` (see [../DEPLOY.md](../DEPLOY.md)).
 
 ## Import existing resources
 
@@ -65,7 +65,7 @@ terraform import google_service_account.vm projects/fxtrade-prod-12345/serviceAc
 terraform import google_compute_firewall.ssh projects/fxtrade-prod-12345/global/firewalls/fxtrade-allow-ssh
 ```
 
-Run `terraform plan` after imports. Expect drift on metadata (startup script) and attached service account until you apply once.
+Run `terraform plan` after imports. Expect drift on metadata (e.g. old `startup-script`) and attached service account until you apply once — apply will clear startup-script if present.
 
 To attach an existing VM to the new service account, `terraform apply` may stop/replace the instance metadata — review the plan carefully.
 
@@ -87,14 +87,12 @@ Alternative — one-time via Terraform (local only, never commit `terraform.tfva
 credentials_secret_data = file("/path/to/.credentials")
 ```
 
-Then on the VM:
+Then on the VM (after a manual install has placed `/opt/fxtrade`):
 
 ```bash
 sudo GCP_PROJECT=fxtrade-prod-12345 /opt/fxtrade/deploy/gcp/fetch-credentials.sh fxtrade-credentials
 sudo systemctl restart fxtrade@universe_scanner.service
 ```
-
-Or re-run the startup script logic by rebooting (startup is mostly idempotent except install.sh re-runs).
 
 ## GitHub Actions secrets
 
@@ -119,17 +117,11 @@ Deploy workflow: `.github/workflows/deploy.yml` — pushes binary via SSH on `ma
 
 ## Post-apply checklist
 
-1. Upload secret version (above)
-2. Deploy binary via CI or manual `scp` (see [../DEPLOY.md](../DEPLOY.md))
-3. Verify on VM:
-
-```bash
-gcloud compute ssh fxtrade-vm --zone=us-east1-b --project=fxtrade-prod-12345
-sudo systemctl status fxtrade@universe_scanner.service
-curl -s http://127.0.0.1:8081/health | python3 -m json.tool
-```
-
-4. When ready for live trading, remove dry-run from `/etc/fxtrade/fxtrade.env` and restart.
+1. SSH to the VM (`terraform output` / `gcloud compute ssh`)
+2. Install the app you want (Tradex: `tradex/deploy/gcp/install.sh`; fxtrade bots: [../DEPLOY.md](../DEPLOY.md) §2)
+3. Upload secret version if using Secret Manager (above)
+4. Deploy binary via CI or manual `scp` as needed
+5. Verify services/health for that app
 
 ## Variables reference
 
