@@ -260,7 +260,7 @@ ssh user@VM_IP 'sudo install -m 755 /tmp/fxtrade /opt/fxtrade/bin/fxtrade && \
   sudo systemctl restart fxtrade.service'
 ```
 
-**Via GitHub Actions:** push to `main` (see `.github/workflows/deploy.yml`) after configuring secrets below. The workflow deploys `fxtrade`, `nifty-pulse`, `afl-pulse`, `watchlist.txt`, `watchlist-nifty500-rest.txt`, and `data/afl/`, then restarts every enabled `fxtrade.service` and `fxtrade@*.service` unit.
+**Via GitHub Actions (NiftyPulse only):** push to `main` (see `.github/workflows/deploy.yml`) after configuring secrets below. The workflow is **scoped to NiftyPulse**: it builds and deploys only `nifty-pulse`, the two watchlists, `nifty-pulse.service`, and `nifty-pulse.cron`. It does **not** install or restart the trading bots (`universe_scanner` / `fx_sentiment` / `btc_cfd`), does **not** install the full watch-cron, and never touches `/opt/tradex` — the VM is a shared host. Credentials are managed separately (Secret Manager, NiftyPulse-scoped); the workflow warns if `.credentials` is missing but does not handle secret material. Deploy the trading bots manually (§2/§4 above) if you ever want them on a dedicated VM.
 
 **Cloud Agents / no gcloud SSH:** use `./scripts/vm-exec.sh` or the **VM exec** workflow — see **`docs/guides/vm_access_via_actions.md`**.
 
@@ -500,12 +500,11 @@ Configure in **Settings → Secrets and variables → Actions**:
 
 | Secret | Required | Description |
 |--------|----------|-------------|
-| `GCP_VM_HOST` | Yes | VM external IP or hostname |
-| `GCP_VM_USER` | Yes | SSH username on the VM |
+| `GCP_VM_HOST` | Yes | VM external IP or hostname (keep in sync if the VM IP changes; a reserved static IP avoids churn) |
+| `GCP_VM_USER` | Yes | SSH username on the VM (needs passwordless sudo) |
 | `GCP_SSH_KEY` | Yes | Private key (full PEM/OpenSSH text) |
-| `GCP_VM_PATH` | No | Binary path (default `/opt/fxtrade/bin/fxtrade`) |
 
-Deploy workflow: `.github/workflows/deploy.yml` — runs on push to `main` or manual **workflow_dispatch**.
+Deploy workflow: `.github/workflows/deploy.yml` — NiftyPulse-only, runs on push to `main` or manual **workflow_dispatch**.
 
 CI workflow: `.github/workflows/ci.yml` — `go test ./...` and build on every push/PR.
 
