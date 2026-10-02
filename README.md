@@ -1,5 +1,10 @@
 # fxtrade
 
+**Stack:** Go, OANDA, Gemini, Cloud Run
+
+**Skills:** Trading systems, market scanners, LLM agents
+
+
 Multi-bot trading platform in Go for **OANDA practice**, email-only scanners, and a standalone **BTC/USD sentiment agent**.
 
 | Layer | What |
