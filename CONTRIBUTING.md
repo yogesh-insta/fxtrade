@@ -1,8 +1,10 @@
 # Contributing to fxtrade
 
-All changes land through **pull requests**. Direct pushes to `main` are not allowed once branch protection is enabled (see [Branch protection](#branch-protection-required-checks)).
+All changes land through **pull requests**. Do not commit or push directly to `main`.
 
 **Pre-PR checks:** `./scripts/code-quality.sh` — see also `.cursor/skills/code-quality/SKILL.md`.
+
+**Cursor:** `.cursor/rules/pr-workflow.mdc` is always-on — agents must open a PR instead of pushing `main`.
 
 ---
 
@@ -142,6 +144,8 @@ Add tests when you change non-trivial behavior (`internal/*_test.go`).
 
 Repo admins: enable protection on `main` so PRs are mandatory and CI must pass.
 
+**Private repo on GitHub Free:** classic branch protection is unavailable until you upgrade to **Pro** or make the repo **public**. Until then, rely on this CONTRIBUTING workflow and `.cursor/rules/pr-workflow.mdc`.
+
 **Settings → Branches → Add rule for `main`:**
 
 | Setting | Value |
@@ -151,7 +155,7 @@ Repo admins: enable protection on `main` so PRs are mandatory and CI must pass.
 | Require status checks to pass | Yes |
 | Required check | **`test-and-build`** (job name in `.github/workflows/ci.yml`) |
 | Require branches to be up to date | Recommended |
-| Do not allow bypassing | Recommended |
+| Do not allow bypassing / Include administrators | **Yes** (recommended) |
 | Restrict direct pushes | Yes (no direct push to `main`) |
 
 Detailed steps: **`.github/BRANCH_PROTECTION.md`**
