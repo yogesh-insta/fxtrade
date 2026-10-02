@@ -1,6 +1,6 @@
 # fxtrade
 
-Multi-bot trading platform for **OANDA practice**, email-only scanners, and a standalone **BTC/USD sentiment agent**.
+Multi-bot trading platform in Go for **OANDA practice**, email-only scanners, and a standalone **BTC/USD sentiment agent**.
 
 | Layer | What |
 |-------|------|
